@@ -1,0 +1,514 @@
+import { useMemo, useState, type FormEvent } from "react";
+import { useOrgConfig } from "./config/ConfigContext";
+import type {
+  AccountSizeDef,
+  CommercialStatusDef,
+  OppKindDef,
+  OppKindTargetMode,
+  OppPhaseDef,
+  OppPhaseKpiRole,
+} from "./config/types";
+
+const PHASE_ROLES: { id: OppPhaseKpiRole; label: string }[] = [
+  { id: "whitespace", label: "Whitespace (cible)" },
+  { id: "pipeline", label: "Pipeline (cible)" },
+  { id: "won", label: "Won (CA installé)" },
+  { id: "lost", label: "Lost (hors KPI)" },
+];
+
+const KIND_MODES: { id: OppKindTargetMode; label: string }[] = [
+  { id: "by_phase", label: "Selon la phase" },
+  { id: "renewal", label: "Bucket renouvellement" },
+  { id: "none", label: "Hors cible" },
+];
+
+export default function SalesTaxonomyManager({
+  showInactive,
+}: {
+  showInactive: boolean;
+}) {
+  const {
+    config,
+    addOppPhase,
+    updateOppPhase,
+    removeOppPhase,
+    addOppKind,
+    updateOppKind,
+    removeOppKind,
+    addCommercialStatus,
+    updateCommercialStatus,
+    removeCommercialStatus,
+    addAccountSize,
+    updateAccountSize,
+    removeAccountSize,
+    updateKpiRules,
+  } = useOrgConfig();
+
+  const rules = config.kpiRules;
+
+  const phases = useMemo(
+    () =>
+      [...(config.oppPhases ?? [])]
+        .filter((p) => showInactive || p.active)
+        .sort((a, b) => a.order - b.order),
+    [config.oppPhases, showInactive],
+  );
+  const kinds = useMemo(
+    () =>
+      [...(config.oppKinds ?? [])]
+        .filter((k) => showInactive || k.active)
+        .sort((a, b) => a.order - b.order),
+    [config.oppKinds, showInactive],
+  );
+  const statuses = useMemo(
+    () =>
+      [...(config.commercialStatuses ?? [])]
+        .filter((s) => showInactive || s.active)
+        .sort((a, b) => a.order - b.order),
+    [config.commercialStatuses, showInactive],
+  );
+  const sizes = useMemo(
+    () =>
+      [...(config.accountSizes ?? [])]
+        .filter((s) => showInactive || s.active)
+        .sort((a, b) => a.order - b.order),
+    [config.accountSizes, showInactive],
+  );
+
+  const [phaseLabel, setPhaseLabel] = useState("");
+  const [phaseRole, setPhaseRole] = useState<OppPhaseKpiRole>("pipeline");
+  const [editingPhase, setEditingPhase] = useState<string | null>(null);
+
+  const [kindLabel, setKindLabel] = useState("");
+  const [kindMode, setKindMode] = useState<OppKindTargetMode>("by_phase");
+  const [editingKind, setEditingKind] = useState<string | null>(null);
+
+  const [statusLabel, setStatusLabel] = useState("");
+  const [editingStatus, setEditingStatus] = useState<string | null>(null);
+
+  const [sizeLabel, setSizeLabel] = useState("");
+  const [sizeId, setSizeId] = useState("");
+  const [editingSize, setEditingSize] = useState<string | null>(null);
+
+  const submitPhase = (e: FormEvent) => {
+    e.preventDefault();
+    if (!phaseLabel.trim()) return;
+    if (editingPhase) {
+      updateOppPhase(editingPhase, {
+        label: phaseLabel.trim(),
+        kpiRole: phaseRole,
+      });
+    } else {
+      addOppPhase(phaseLabel, phaseRole);
+    }
+    setEditingPhase(null);
+    setPhaseLabel("");
+    setPhaseRole("pipeline");
+  };
+
+  const startEditPhase = (p: OppPhaseDef) => {
+    setEditingPhase(p.id);
+    setPhaseLabel(p.label);
+    setPhaseRole(p.kpiRole);
+  };
+
+  const submitKind = (e: FormEvent) => {
+    e.preventDefault();
+    if (!kindLabel.trim()) return;
+    if (editingKind) {
+      updateOppKind(editingKind, {
+        label: kindLabel.trim(),
+        targetMode: kindMode,
+      });
+    } else {
+      addOppKind(kindLabel, kindMode);
+    }
+    setEditingKind(null);
+    setKindLabel("");
+    setKindMode("by_phase");
+  };
+
+  const startEditKind = (k: OppKindDef) => {
+    setEditingKind(k.id);
+    setKindLabel(k.label);
+    setKindMode(k.targetMode);
+  };
+
+  const submitStatus = (e: FormEvent) => {
+    e.preventDefault();
+    if (!statusLabel.trim()) return;
+    if (editingStatus) {
+      updateCommercialStatus(editingStatus, { label: statusLabel.trim() });
+    } else {
+      addCommercialStatus(statusLabel);
+    }
+    setEditingStatus(null);
+    setStatusLabel("");
+  };
+
+  const startEditStatus = (s: CommercialStatusDef) => {
+    setEditingStatus(s.id);
+    setStatusLabel(s.label);
+  };
+
+  const submitSize = (e: FormEvent) => {
+    e.preventDefault();
+    if (!sizeLabel.trim()) return;
+    if (editingSize) {
+      updateAccountSize(editingSize, { label: sizeLabel.trim() });
+    } else {
+      addAccountSize(sizeLabel, sizeId || undefined);
+    }
+    setEditingSize(null);
+    setSizeLabel("");
+    setSizeId("");
+  };
+
+  const startEditSize = (s: AccountSizeDef) => {
+    setEditingSize(s.id);
+    setSizeLabel(s.label);
+    setSizeId(s.id);
+  };
+
+  return (
+    <div className="sales-taxonomy-manager">
+      <section className="settings-block">
+        <h3>Règles KPI</h3>
+        <p className="muted">
+          Définit comment sont calculés le CA installé et la cible.
+        </p>
+        <div className="settings-checks">
+          <label>
+            <input
+              type="checkbox"
+              checked={rules.includeSalesInInstalled}
+              onChange={(e) =>
+                updateKpiRules({ includeSalesInInstalled: e.target.checked })
+              }
+            />
+            CA installé : inclure les lignes de vente facturées
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={rules.includeWonOppsInInstalled}
+              onChange={(e) =>
+                updateKpiRules({ includeWonOppsInInstalled: e.target.checked })
+              }
+            />
+            CA installé : inclure les opportunités Won
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={rules.wonCalendarYearOnly}
+              onChange={(e) =>
+                updateKpiRules({ wonCalendarYearOnly: e.target.checked })
+              }
+            />
+            Won : année civile uniquement
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={rules.includeWhitespaceInTarget}
+              onChange={(e) =>
+                updateKpiRules({ includeWhitespaceInTarget: e.target.checked })
+              }
+            />
+            Cible : Whitespace
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={rules.includePipelineInTarget}
+              onChange={(e) =>
+                updateKpiRules({ includePipelineInTarget: e.target.checked })
+              }
+            />
+            Cible : Pipeline
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={rules.includeRenewalInTarget}
+              onChange={(e) =>
+                updateKpiRules({ includeRenewalInTarget: e.target.checked })
+              }
+            />
+            Cible : Renouvellement
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-block">
+        <h3>Phases d’opportunité</h3>
+        <p className="muted">
+          L’id reste stable (ex. Whitespace) — utilisé-le pour les données
+          existantes. Le rôle KPI pilote les buckets.
+        </p>
+        <form className="settings-add" onSubmit={submitPhase}>
+          <input
+            value={phaseLabel}
+            onChange={(e) => setPhaseLabel(e.target.value)}
+            placeholder="Libellé de phase"
+            required
+          />
+          <select
+            value={phaseRole}
+            onChange={(e) => setPhaseRole(e.target.value as OppPhaseKpiRole)}
+          >
+            {PHASE_ROLES.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          <button type="submit">{editingPhase ? "Enregistrer" : "Ajouter"}</button>
+          {editingPhase && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setEditingPhase(null);
+                setPhaseLabel("");
+                setPhaseRole("pipeline");
+              }}
+            >
+              Annuler
+            </button>
+          )}
+        </form>
+        <ul className="settings-list">
+          {phases.map((p) => (
+            <li key={p.id} className={!p.active ? "inactive" : ""}>
+              <button
+                type="button"
+                className="linkish dir-name"
+                onClick={() => startEditPhase(p)}
+              >
+                {p.label}
+              </button>
+              <span className="muted">{p.id}</span>
+              <span className="muted">
+                {PHASE_ROLES.find((r) => r.id === p.kpiRole)?.label ?? p.kpiRole}
+              </span>
+              {p.active ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => removeOppPhase(p.id)}
+                >
+                  Désactiver
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => updateOppPhase(p.id, { active: true })}
+                >
+                  Réactiver
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="settings-block">
+        <h3>Types d’opportunité</h3>
+        <form className="settings-add" onSubmit={submitKind}>
+          <input
+            value={kindLabel}
+            onChange={(e) => setKindLabel(e.target.value)}
+            placeholder="Libellé (ex. Upsell)"
+            required
+          />
+          <select
+            value={kindMode}
+            onChange={(e) => setKindMode(e.target.value as OppKindTargetMode)}
+          >
+            {KIND_MODES.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <button type="submit">{editingKind ? "Enregistrer" : "Ajouter"}</button>
+          {editingKind && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setEditingKind(null);
+                setKindLabel("");
+                setKindMode("by_phase");
+              }}
+            >
+              Annuler
+            </button>
+          )}
+        </form>
+        <ul className="settings-list">
+          {kinds.map((k) => (
+            <li key={k.id} className={!k.active ? "inactive" : ""}>
+              <button
+                type="button"
+                className="linkish dir-name"
+                onClick={() => startEditKind(k)}
+              >
+                {k.label}
+              </button>
+              <span className="muted">{k.id}</span>
+              <span className="muted">
+                {KIND_MODES.find((m) => m.id === k.targetMode)?.label ??
+                  k.targetMode}
+              </span>
+              {k.active ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => removeOppKind(k.id)}
+                >
+                  Désactiver
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => updateOppKind(k.id, { active: true })}
+                >
+                  Réactiver
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="settings-block">
+        <h3>Statuts commerciaux</h3>
+        <form className="settings-add" onSubmit={submitStatus}>
+          <input
+            value={statusLabel}
+            onChange={(e) => setStatusLabel(e.target.value)}
+            placeholder="Libellé (ex. Client)"
+            required
+          />
+          <button type="submit">
+            {editingStatus ? "Enregistrer" : "Ajouter"}
+          </button>
+          {editingStatus && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setEditingStatus(null);
+                setStatusLabel("");
+              }}
+            >
+              Annuler
+            </button>
+          )}
+        </form>
+        <ul className="settings-list">
+          {statuses.map((s) => (
+            <li key={s.id} className={!s.active ? "inactive" : ""}>
+              <button
+                type="button"
+                className="linkish dir-name"
+                onClick={() => startEditStatus(s)}
+              >
+                {s.label}
+              </button>
+              <span className="muted">{s.id}</span>
+              {s.active ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => removeCommercialStatus(s.id)}
+                >
+                  Désactiver
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    updateCommercialStatus(s.id, { active: true })
+                  }
+                >
+                  Réactiver
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="settings-block">
+        <h3>Tranches d’effectif</h3>
+        <form className="settings-add" onSubmit={submitSize}>
+          <input
+            value={sizeLabel}
+            onChange={(e) => setSizeLabel(e.target.value)}
+            placeholder="Libellé affiché"
+            required
+          />
+          {!editingSize && (
+            <input
+              value={sizeId}
+              onChange={(e) => setSizeId(e.target.value)}
+              placeholder="Id (optionnel, ex. 10000+)"
+            />
+          )}
+          <button type="submit">{editingSize ? "Enregistrer" : "Ajouter"}</button>
+          {editingSize && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setEditingSize(null);
+                setSizeLabel("");
+                setSizeId("");
+              }}
+            >
+              Annuler
+            </button>
+          )}
+        </form>
+        <ul className="settings-list">
+          {sizes.map((s) => (
+            <li key={s.id} className={!s.active ? "inactive" : ""}>
+              <button
+                type="button"
+                className="linkish dir-name"
+                onClick={() => startEditSize(s)}
+              >
+                {s.label}
+              </button>
+              <span className="muted">{s.id}</span>
+              {s.active ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => removeAccountSize(s.id)}
+                >
+                  Désactiver
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => updateAccountSize(s.id, { active: true })}
+                >
+                  Réactiver
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
