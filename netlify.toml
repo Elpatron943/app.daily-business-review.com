@@ -1,0 +1,14 @@
+# Netlify — app DBR
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# RESEND_FROM_* = identité d’expéditeur (pas des secrets) ;
+# leur valeur apparaît dans le branding / docs et déclenche le scan Netlify.
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "RESEND_FROM_EMAIL,RESEND_FROM_NAME"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
