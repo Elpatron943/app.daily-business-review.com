@@ -2,10 +2,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { useAuth } from "../auth/AuthContext";
 import type {
   BoFieldDef,
   OppMappingCardEntry,
@@ -542,6 +544,8 @@ type OpportunityContextValue = {
   activeOpportunities: Opportunity[];
   activeOpportunityId: string | null;
   activeOpportunity: Opportunity | null;
+  quotaError: string | null;
+  clearQuotaError: () => void;
   setActiveOpportunityId: (id: string | null) => void;
   addOpportunity: (
     input: Omit<
@@ -567,7 +571,7 @@ type OpportunityContextValue = {
       mappingChecks?: Opportunity["mappingChecks"];
       stakeholders?: OpportunityStakeholder[];
     },
-  ) => string;
+  ) => string | null;
   updateOpportunity: (id: string, patch: Partial<Opportunity>) => void;
   removeOpportunity: (id: string) => void;
   importOpportunitiesBatch: (
@@ -599,7 +603,9 @@ type OpportunityContextValue = {
 const OpportunityContext = createContext<OpportunityContextValue | null>(null);
 
 export function OpportunityProvider({ children }: { children: ReactNode }) {
+  const { billing, setActiveOpportunityCount } = useAuth();
   const [state, setState] = useState<StoredState>(() => load());
+  const [quotaError, setQuotaError] = useState<string | null>(null);
 
   const commit = useCallback((next: StoredState) => {
     setState(next);
@@ -610,6 +616,23 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
     () => state.opportunities.filter((o) => o.active),
     [state.opportunities],
   );
+
+  useEffect(() => {
+    setActiveOpportunityCount(activeOpportunities.length);
+  }, [activeOpportunities.length, setActiveOpportunityCount]);
+
+  const clearQuotaError = useCallback(() => setQuotaError(null), []);
+
+  const assertCanCreateOpportunity = useCallback((): string | null => {
+    if (!billing.canWrite) {
+      return "Abonnement en lecture seule — création d’opportunité impossible.";
+    }
+    if (billing.opportunitiesFull) {
+      const limit = billing.usage.opportunitiesLimit;
+      return `Quota d’opportunités actives atteint (${limit}). Passez à une formule supérieure.`;
+    }
+    return null;
+  }, [billing]);
 
   const activeOpportunity = useMemo(
     () =>
@@ -651,6 +674,12 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         stakeholders?: OpportunityStakeholder[];
       },
     ) => {
+      const blocked = assertCanCreateOpportunity();
+      if (blocked) {
+        setQuotaError(blocked);
+        return null;
+      }
+      setQuotaError(null);
       const id = uid("opp");
       const opportunity: Opportunity = {
         ...input,
@@ -675,7 +704,7 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       });
       return id;
     },
-    [commit, state],
+    [assertCanCreateOpportunity, commit, state],
   );
 
   const updateOpportunity = useCallback(
@@ -726,10 +755,14 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       }));
       let created = 0;
       let updated = 0;
+      let skippedQuota = 0;
       setState((prev) => {
         let opportunities = [...prev.opportunities];
         created = 0;
         updated = 0;
+        skippedQuota = 0;
+        let activeCount = opportunities.filter((o) => o.active).length;
+        const oppLimit = billing.usage.opportunitiesLimit;
         for (const row of prepared) {
           if (!row.accountId) continue;
           const existing = opportunities.some((o) => o.id === row.resolvedId);
@@ -751,6 +784,14 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
             );
             updated++;
           } else {
+            if (!billing.canWrite) {
+              skippedQuota++;
+              continue;
+            }
+            if (oppLimit != null && activeCount >= oppLimit) {
+              skippedQuota++;
+              continue;
+            }
             opportunities.push({
               id: row.resolvedId,
               name: row.name.trim(),
@@ -773,7 +814,13 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
               active: true,
             });
             created++;
+            activeCount++;
           }
+        }
+        if (skippedQuota > 0) {
+          setQuotaError(
+            `${skippedQuota} opportunité(s) non importée(s) — quota ou abonnement lecture seule.`,
+          );
         }
         const next = { ...prev, opportunities };
         persist(next);
@@ -781,7 +828,7 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       });
       return { created, updated };
     },
-    [],
+    [billing.canWrite, billing.usage.opportunitiesLimit],
   );
 
   const setBusinessOutcomeValue = useCallback(
@@ -840,6 +887,8 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       activeOpportunities,
       activeOpportunityId: state.activeOpportunityId,
       activeOpportunity,
+      quotaError,
+      clearQuotaError,
       setActiveOpportunityId,
       addOpportunity,
       updateOpportunity,
@@ -853,6 +902,8 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       state.activeOpportunityId,
       activeOpportunities,
       activeOpportunity,
+      quotaError,
+      clearQuotaError,
       setActiveOpportunityId,
       addOpportunity,
       updateOpportunity,

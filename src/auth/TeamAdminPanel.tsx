@@ -3,7 +3,8 @@ import { roleLabel, useAuth, type AppRole } from "./AuthContext";
 
 /** Gestion de l’équipe commerciale — réservé admin. */
 export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
-  const { profile, team, updateTeamMember, refreshTeam, user } = useAuth();
+  const { profile, team, updateTeamMember, refreshTeam, user, billing } =
+    useAuth();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,8 +43,8 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
           <div>
             <h2>Équipe commerciale</h2>
             <p className="muted">
-              Admin : {profile?.email}. Les commerciaux n’ont pas accès à
-              Personnaliser.
+              Admin : {profile?.email}. Les commerciaux n’ont pas accès aux
+              Settings.
             </p>
           </div>
           <div className="settings-head-actions">
@@ -58,9 +59,25 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
 
         {error ? <p className="auth-error">{error}</p> : null}
 
+        {billing.seatsFull ? (
+          <p className="auth-error" role="status">
+            Quota de sièges atteint (
+            {billing.usage.seatsUsed}/{billing.usage.seatsLimit}). Les nouveaux
+            utilisateurs doivent être créés hors DBR uniquement si des sièges
+            sont disponibles — passez à une formule supérieure depuis la
+            console admin.
+          </p>
+        ) : null}
+
         <p className="muted team-admin-hint">
           Les comptes sont créés hors de DBR (console admin / forfait users).
           Ici, tu gères les rôles et le rattachement à ton équipe commerciale.
+          Formule : {billing.organization?.plan?.name ?? "—"} —{" "}
+          {billing.usage.seatsUsed}
+          {billing.usage.seatsLimit != null
+            ? `/${billing.usage.seatsLimit}`
+            : "/∞"}{" "}
+          sièges.
         </p>
 
         {sorted.length === 0 ? (

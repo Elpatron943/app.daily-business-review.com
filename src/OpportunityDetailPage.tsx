@@ -23,6 +23,7 @@ import {
   useAccountPlans,
   type AccountPlan,
 } from "./accountPlans/AccountPlanContext";
+import { useConfirm } from "./ui/ConfirmDialog";
 
 function showsDealVariables(kind: OpportunityKind) {
   return kind === "up";
@@ -54,6 +55,7 @@ export default function OpportunityDetailPage({
     setProcessAnswer,
     setActiveOpportunityId,
   } = useOpportunities();
+  const askConfirm = useConfirm();
   const { activeAccounts } = useDomain();
   const {
     activeBoFields,
@@ -169,11 +171,19 @@ export default function OpportunityDetailPage({
             type="button"
             className="ghost danger-text"
             onClick={() => {
-              if (confirm(`Désactiver « ${opportunity.name} » ?`)) {
+              void (async () => {
+                const ok = await askConfirm({
+                  title: "Désactiver l’opportunité",
+                  message: `Désactiver « ${opportunity.name} » ?`,
+                  confirmLabel: "Désactiver",
+                  cancelLabel: "Annuler",
+                  danger: true,
+                });
+                if (!ok) return;
                 removeOpportunity(opportunity.id);
                 setActiveOpportunityId(null);
                 onBack();
-              }
+              })();
             }}
           >
             Désactiver

@@ -15,6 +15,17 @@ import {
   type AppRole,
   type UserProfile,
 } from "./types";
+import {
+  countOrganizationSeats,
+  loadOrganizationBilling,
+} from "../billing/loadOrganizationBilling";
+import {
+  effectiveOppLimit,
+  effectiveSeatLimit,
+  isWriteLocked,
+  type BillingState,
+  type OrganizationBilling,
+} from "../billing/types";
 
 type AuthContextValue = {
   configured: boolean;
@@ -26,7 +37,18 @@ type AuthContextValue = {
   isAdmin: boolean;
   team: UserProfile[];
   profileError: string | null;
+  /** True après clic sur le lien e-mail de reset (event PASSWORD_RECOVERY). */
+  passwordRecovery: boolean;
+  organization: OrganizationBilling | null;
+  billing: BillingState;
+  setActiveOpportunityCount: (count: number) => void;
+  refreshBilling: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<string | null>;
+  /** Envoie un e-mail de reset (via SMTP Resend une fois configuré). */
+  resetPassword: (email: string) => Promise<string | null>;
+  /** Définit le nouveau mot de passe pendant une session de recovery. */
+  updatePassword: (password: string) => Promise<string | null>;
+  clearPasswordRecovery: () => void;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   refreshTeam: () => Promise<void>;
@@ -97,38 +119,96 @@ async function fetchTeam(isAdmin: boolean): Promise<UserProfile[]> {
     .filter((p): p is UserProfile => Boolean(p));
 }
 
+function buildBilling(
+  organization: OrganizationBilling | null,
+  seatsUsed: number,
+  activeOpportunities: number,
+): BillingState {
+  const seatsLimit = effectiveSeatLimit(organization);
+  const opportunitiesLimit = effectiveOppLimit(organization);
+  const seatsFull = seatsLimit != null && seatsUsed >= seatsLimit;
+  const opportunitiesFull =
+    opportunitiesLimit != null && activeOpportunities >= opportunitiesLimit;
+  return {
+    organization,
+    usage: {
+      seatsUsed,
+      seatsLimit,
+      activeOpportunities,
+      opportunitiesLimit,
+    },
+    canWrite: !isWriteLocked(organization?.subscription_status),
+    seatsFull,
+    opportunitiesFull,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [team, setTeam] = useState<UserProfile[]>([]);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [organization, setOrganization] = useState<OrganizationBilling | null>(
+    null,
+  );
+  const [seatsUsed, setSeatsUsed] = useState(0);
+  const [activeOpportunityCount, setActiveOpportunityCount] = useState(0);
 
-  const hydrate = useCallback(async (next: Session | null) => {
-    setSession(next);
-    if (!next?.user) {
-      setProfile(null);
-      setTeam([]);
-      setProfileError(null);
-      setLoading(false);
+  const refreshBilling = useCallback(async (orgId?: string | null) => {
+    const id = orgId ?? null;
+    if (!id) {
+      setOrganization(null);
+      setSeatsUsed(0);
       return;
     }
-    setLoading(true);
-    const { profile: p, error } = await fetchProfile(next.user.id);
-    setProfile(p);
-    setProfileError(error);
-    if (p?.role === "admin") {
-      setTeam(await fetchTeam(true));
-    } else {
-      setTeam([]);
-    }
-    setLoading(false);
+    const [org, seats] = await Promise.all([
+      loadOrganizationBilling(id),
+      countOrganizationSeats(id),
+    ]);
+    setOrganization(org);
+    setSeatsUsed(seats);
   }, []);
+
+  const hydrate = useCallback(
+    async (next: Session | null) => {
+      setSession(next);
+      if (!next?.user) {
+        setProfile(null);
+        setTeam([]);
+        setProfileError(null);
+        setOrganization(null);
+        setSeatsUsed(0);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      const { profile: p, error } = await fetchProfile(next.user.id);
+      setProfile(p);
+      setProfileError(error);
+      if (p?.role === "admin") {
+        setTeam(await fetchTeam(true));
+      } else {
+        setTeam([]);
+      }
+      await refreshBilling(p?.organization_id ?? null);
+      setLoading(false);
+    },
+    [refreshBilling],
+  );
 
   useEffect(() => {
     if (!supabase) {
       setLoading(false);
       return;
+    }
+
+    const hash = window.location.hash.replace(/^#/, "");
+    const search = window.location.search.replace(/^\?/, "");
+    const params = new URLSearchParams(hash || search);
+    if (params.get("type") === "recovery") {
+      setPasswordRecovery(true);
     }
 
     let mounted = true;
@@ -139,7 +219,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, next) => {
+    } = supabase.auth.onAuthStateChange((event, next) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setPasswordRecovery(true);
+      }
+      if (event === "SIGNED_OUT") {
+        setPasswordRecovery(false);
+      }
       void hydrate(next);
     });
 
@@ -158,8 +244,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return error?.message ?? null;
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    if (!supabase) return "Supabase n’est pas configuré.";
+    const trimmed = email.trim();
+    if (!trimmed) return "Indique ton e-mail.";
+    const redirectTo = `${window.location.origin}/`;
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+      redirectTo,
+    });
+    return error?.message ?? null;
+  }, []);
+
+  const updatePassword = useCallback(async (password: string) => {
+    if (!supabase) return "Supabase n’est pas configuré.";
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) return error.message;
+    setPasswordRecovery(false);
+    if (window.location.hash || window.location.search.includes("code=")) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    return null;
+  }, []);
+
+  const clearPasswordRecovery = useCallback(() => {
+    setPasswordRecovery(false);
+  }, []);
+
   const signOut = useCallback(async () => {
     if (!supabase) return;
+    setPasswordRecovery(false);
     await supabase.auth.signOut();
   }, []);
 
@@ -168,7 +281,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { profile: p, error } = await fetchProfile(session.user.id);
     setProfile(p);
     setProfileError(error);
-  }, [session]);
+    await refreshBilling(p?.organization_id ?? null);
+  }, [session, refreshBilling]);
 
   const refreshTeam = useCallback(async () => {
     if (profile?.role !== "admin") {
@@ -176,7 +290,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setTeam(await fetchTeam(true));
-  }, [profile?.role]);
+    await refreshBilling(profile.organization_id);
+  }, [profile, refreshBilling]);
 
   const updateTeamMember = useCallback(
     async (
@@ -200,6 +315,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const role = profile?.role ?? null;
   const isAdmin = role === "admin";
 
+  const billing = useMemo(
+    () => buildBilling(organization, seatsUsed, activeOpportunityCount),
+    [organization, seatsUsed, activeOpportunityCount],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       configured: isSupabaseConfigured,
@@ -211,7 +331,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       team,
       profileError,
+      passwordRecovery,
+      organization,
+      billing,
+      setActiveOpportunityCount,
+      refreshBilling: () => refreshBilling(profile?.organization_id ?? null),
       signIn,
+      resetPassword,
+      updatePassword,
+      clearPasswordRecovery,
       signOut,
       refreshProfile,
       refreshTeam,
@@ -225,7 +353,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       team,
       profileError,
+      passwordRecovery,
+      organization,
+      billing,
+      refreshBilling,
       signIn,
+      resetPassword,
+      updatePassword,
+      clearPasswordRecovery,
       signOut,
       refreshProfile,
       refreshTeam,

@@ -16,6 +16,7 @@ import {
   resolveAccountSector,
 } from "./SameSectorPanel";
 import type { AppPage } from "./navigation";
+import { useConfirm } from "./ui/ConfirmDialog";
 
 export type DataSection =
   | "entreprises"
@@ -88,6 +89,7 @@ function DataEntryPanelInner({
     activeAccountSizes,
   } = useOrgConfig();
   const { resetSales } = useSales();
+  const askConfirm = useConfirm();
 
   const entreprises = activeAccounts.filter((a) => a.type === "Entreprise");
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -677,14 +679,19 @@ function DataEntryPanelInner({
           type="button"
           className="danger"
           onClick={() => {
-            if (
-              confirm(
-                "Réinitialiser toutes les données de saisie (entreprises, contacts, liens, ventes) ?",
-              )
-            ) {
+            void (async () => {
+              const ok = await askConfirm({
+                title: "Réinitialiser les données",
+                message:
+                  "Réinitialiser toutes les données de saisie (entreprises, contacts, liens, ventes) ?",
+                confirmLabel: "Réinitialiser",
+                cancelLabel: "Annuler",
+                danger: true,
+              });
+              if (!ok) return;
               resetDomain();
               resetSales();
-            }
+            })();
           }}
         >
           Réinitialiser les données

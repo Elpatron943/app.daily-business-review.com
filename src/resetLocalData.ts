@@ -2,7 +2,7 @@
 const POWERMAP_PREFIX = "powermap.";
 
 /** Incrémente pour forcer un nouveau wipe (une fois par navigateur). */
-export const LOCAL_RESET_VERSION = "fresh-2026-07-27";
+export const LOCAL_RESET_VERSION = "fresh-2026-07-27b";
 
 const RESET_MARKER = "powermap._local_reset_version";
 

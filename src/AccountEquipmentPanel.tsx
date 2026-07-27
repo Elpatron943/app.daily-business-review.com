@@ -229,6 +229,7 @@ export default function AccountEquipmentPanel({
         config.oppMappingSubtypes ?? [],
       ),
     });
+    if (!id) return;
     setDraft(null);
     sessionStorage.setItem("powermap.openOppDetail", id);
     onOpenOpportunities?.();

@@ -33,6 +33,7 @@ import {
   useOpportunities,
   type Opportunity,
 } from "./opportunities/OpportunityContext";
+import { useConfirm } from "./ui/ConfirmDialog";
 
 const ACTION_STATUSES: ActionStatus[] = ["Todo", "Doing", "Done"];
 
@@ -56,6 +57,7 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
     removeAction,
     getPlanForOpportunity,
   } = useAccountPlans();
+  const askConfirm = useConfirm();
   const { activeOpportunities } = useOpportunities();
   const { activeAccounts, activeContacts } = useDomain();
   const { soldSolutions } = useSales();
@@ -269,10 +271,18 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
             type="button"
             className="ghost danger-text"
             onClick={() => {
-              if (confirm(`Désactiver le plan de « ${title} » ?`)) {
+              void (async () => {
+                const ok = await askConfirm({
+                  title: "Désactiver le plan",
+                  message: `Désactiver le plan de « ${title} » ?`,
+                  confirmLabel: "Désactiver",
+                  cancelLabel: "Annuler",
+                  danger: true,
+                });
+                if (!ok) return;
                 removePlan(plan.id);
                 onBack();
-              }
+              })();
             }}
           >
             Désactiver

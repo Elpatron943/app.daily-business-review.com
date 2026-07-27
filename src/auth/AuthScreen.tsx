@@ -1,20 +1,42 @@
 import { useState, type FormEvent } from "react";
 import { useAuth } from "./AuthContext";
+import LanguageSwitcher from "../i18n/LanguageSwitcher";
+import { useT } from "../i18n/LocaleContext";
 
 export default function AuthScreen() {
-  const { configured, signIn } = useAuth();
+  const { configured, signIn, resetPassword } = useAuth();
+  const t = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     setBusy(true);
     try {
       const err = await signIn(email, password);
       if (err) setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    setError(null);
+    setInfo(null);
+    if (!email.trim()) {
+      setError(t("auth.forgotNeedEmail"));
+      return;
+    }
+    setBusy(true);
+    try {
+      const err = await resetPassword(email);
+      if (err) setError(err);
+      else setInfo(t("auth.forgotSent"));
     } finally {
       setBusy(false);
     }
@@ -31,11 +53,8 @@ export default function AuthScreen() {
               className="auth-logo"
             />
           </div>
-          <p className="muted">
-            Ajoute <code>VITE_SUPABASE_URL</code> et{" "}
-            <code>VITE_SUPABASE_ANON_KEY</code> dans <code>.env.local</code>,
-            puis relance <code>npm run dev</code>.
-          </p>
+          <LanguageSwitcher className="auth-lang" />
+          <p className="muted">{t("auth.configHint")}</p>
         </div>
       </div>
     );
@@ -52,10 +71,12 @@ export default function AuthScreen() {
           />
         </div>
 
-        <h2 className="auth-title">Connexion</h2>
+        <LanguageSwitcher className="auth-lang" />
+
+        <h2 className="auth-title">{t("auth.loginTitle")}</h2>
 
         <label>
-          E-mail
+          {t("auth.email")}
           <input
             type="email"
             autoComplete="email"
@@ -65,7 +86,7 @@ export default function AuthScreen() {
           />
         </label>
         <label>
-          Mot de passe
+          {t("auth.password")}
           <input
             type="password"
             autoComplete="current-password"
@@ -76,10 +97,22 @@ export default function AuthScreen() {
           />
         </label>
 
+        <div className="auth-forgot-row">
+          <button
+            type="button"
+            className="linkish auth-forgot"
+            disabled={busy}
+            onClick={() => void handleForgotPassword()}
+          >
+            {t("auth.forgot")}
+          </button>
+        </div>
+
         {error ? <p className="auth-error">{error}</p> : null}
+        {info ? <p className="auth-info">{info}</p> : null}
 
         <button type="submit" className="primary-cta" disabled={busy}>
-          {busy ? "…" : "Se connecter"}
+          {busy ? "…" : t("auth.signIn")}
         </button>
       </form>
     </div>

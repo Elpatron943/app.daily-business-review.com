@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+import { LocaleProvider } from "./i18n/LocaleContext";
+import { ConfirmProvider } from "./ui/ConfirmDialog";
 import { ConfigProvider } from "./config/ConfigContext";
 import { DomainProvider } from "./domain/DomainContext";
 import { AccountPlanProvider } from "./accountPlans/AccountPlanContext";
@@ -14,18 +16,22 @@ applyLocalResetIfNeeded();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <AuthProvider>
-      <ConfigProvider>
-        <DomainProvider>
-          <SalesProvider>
-            <OpportunityProvider>
-              <AccountPlanProvider>
-                <App />
-              </AccountPlanProvider>
-            </OpportunityProvider>
-          </SalesProvider>
-        </DomainProvider>
-      </ConfigProvider>
-    </AuthProvider>
+    <LocaleProvider>
+      <ConfirmProvider>
+        <AuthProvider>
+          <ConfigProvider>
+            <DomainProvider>
+              <SalesProvider>
+                <OpportunityProvider>
+                  <AccountPlanProvider>
+                    <App />
+                  </AccountPlanProvider>
+                </OpportunityProvider>
+              </SalesProvider>
+            </DomainProvider>
+          </ConfigProvider>
+        </AuthProvider>
+      </ConfirmProvider>
+    </LocaleProvider>
   </StrictMode>,
 );

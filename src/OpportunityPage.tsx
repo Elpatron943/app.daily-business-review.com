@@ -14,6 +14,7 @@ import {
 import { summarizeCatalogue } from "./catalogue/formatCatalogue";
 import OppScorePills from "./OppScorePills";
 import { ensureRequiredMappingChecks } from "./opportunities/mappingScore";
+import { useAuth } from "./auth/AuthContext";
 
 function showsDealVariables(kind: OpportunityKind) {
   return kind === "up";
@@ -28,7 +29,10 @@ export default function OpportunityPage() {
     activeOpportunities,
     setActiveOpportunityId,
     addOpportunity,
+    quotaError,
+    clearQuotaError,
   } = useOpportunities();
+  const { billing } = useAuth();
   const { activeAccounts } = useDomain();
   const {
     activeSolutions,
@@ -149,6 +153,7 @@ export default function OpportunityPage() {
         config.oppMappingSubtypes ?? [],
       ),
     });
+    if (!id) return;
     setCreating(false);
     setCreateKind("prospect");
     setCreateSolutionId("");
@@ -176,17 +181,34 @@ export default function OpportunityPage() {
         <button
           type="button"
           className="primary-cta"
-          onClick={() => setCreating(true)}
-          disabled={entreprises.length === 0}
+          onClick={() => {
+            clearQuotaError();
+            setCreating(true);
+          }}
+          disabled={
+            entreprises.length === 0 ||
+            !billing.canWrite ||
+            billing.opportunitiesFull
+          }
           title={
             entreprises.length === 0
               ? "Crée d’abord une entreprise"
-              : undefined
+              : !billing.canWrite
+                ? "Abonnement en lecture seule"
+                : billing.opportunitiesFull
+                  ? "Quota d’opportunités actives atteint"
+                  : undefined
           }
         >
           Ajouter une opportunité
         </button>
       </header>
+
+      {quotaError ? (
+        <p className="auth-error" role="alert">
+          {quotaError}
+        </p>
+      ) : null}
 
       <div
         className="opp-stage-toggle"

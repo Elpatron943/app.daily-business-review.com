@@ -19,6 +19,7 @@ import {
   type ProcessDomainDef,
   type ProcessQuestionDef,
 } from "./config/types";
+import { useConfirm } from "./ui/ConfirmDialog";
 
 type Tab =
   | "intel"
@@ -60,6 +61,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
     swapProcessQuestionOrder,
     resetConfig,
   } = useOrgConfig();
+  const askConfirm = useConfirm();
   const [tab, setTab] = useState<Tab>("intel");
   const [newContactLabel, setNewContactLabel] = useState("");
   const [newContactColor, setNewContactColor] = useState("#0f766e");
@@ -122,7 +124,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
       <div className="settings-panel settings-panel-wide">
         <header className="settings-head">
           <div>
-            <h2>Personnalisation</h2>
+            <h2>Settings</h2>
           </div>
           <button type="button" className="settings-close" onClick={onClose}>
             Fermer
@@ -598,13 +600,17 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
             type="button"
             className="danger"
             onClick={() => {
-              if (
-                confirm(
-                  "Réinitialiser catalogues (directions, solutions, modules, variables, types, process, business outcomes) ?",
-                )
-              ) {
-                resetConfig();
-              }
+              void (async () => {
+                const ok = await askConfirm({
+                  title: "Réinitialiser",
+                  message:
+                    "Réinitialiser catalogues (directions, solutions, modules, variables, types, process, business outcomes) ?",
+                  confirmLabel: "Réinitialiser",
+                  cancelLabel: "Annuler",
+                  danger: true,
+                });
+                if (ok) resetConfig();
+              })();
             }}
           >
             Réinitialiser

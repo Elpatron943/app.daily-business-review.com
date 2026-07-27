@@ -132,6 +132,50 @@ body {
   display: none;
 }
 
+.billing-quota-banner {
+  margin: 0.65rem 0.75rem 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 85%, #000);
+}
+
+.billing-quota-plan {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.billing-quota-lock {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.billing-quota-meters {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.billing-quota-full {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.billing-readonly-hint {
+  margin: 0.5rem 0.75rem 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  color: var(--amber);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
 .sidebar-nav {
   flex: 1;
   overflow: auto;
@@ -242,6 +286,83 @@ body {
   color: var(--ink);
 }
 
+.auth-forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.35rem;
+}
+
+.auth-forgot {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.auth-forgot:hover:not(:disabled) {
+  color: var(--gold);
+}
+
+.lang-switcher {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.lang-switcher-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--line);
+  background: var(--panel-elevated, var(--panel));
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 0.28rem 0.45rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.lang-switcher-btn svg {
+  display: block;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+.lang-switcher-btn.active {
+  border-color: var(--gold);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--gold) 14%, var(--panel));
+}
+
+.lang-switcher-btn:hover:not(.active) {
+  border-color: color-mix(in srgb, var(--gold) 40%, var(--line));
+  color: var(--ink);
+}
+
+.sidebar-lang {
+  width: 100%;
+  justify-content: stretch;
+  margin-bottom: 0.55rem;
+}
+
+.sidebar-lang .lang-switcher-btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.auth-lang {
+  justify-content: center;
+  margin: 0.15rem 0 0.35rem;
+}
+
 .auth-brand .muted {
   margin: 0.2rem 0 0;
   font-size: 0.85rem;
@@ -287,7 +408,10 @@ body {
   font-size: 0.85rem;
 }
 
-.auth-card .primary-cta {
+.auth-card .ghost {
+  width: 100%;
+  margin-top: 0.25rem;
+}
   width: 100%;
   margin-top: 0.25rem;
 }
@@ -4562,6 +4686,55 @@ h4 {
   display: grid;
   place-items: center;
   padding: 1rem;
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(8, 10, 14, 0.62);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  backdrop-filter: blur(2px);
+}
+
+.confirm-dialog {
+  width: min(100%, 26rem);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  padding: 1.25rem 1.3rem 1.15rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.confirm-dialog-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.confirm-dialog-message {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+}
+
+.confirm-dialog-actions .danger,
+.confirm-dialog-actions .primary-cta,
+.confirm-dialog-actions .ghost {
+  min-width: 5.5rem;
 }
 
 .settings-panel {

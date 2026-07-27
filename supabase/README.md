@@ -6,6 +6,12 @@
 |---------|------|
 | `schema.sql` | Auth / `profiles` (bootstrap initial) |
 | `migrations/20260727220000_dbr_domain.sql` | Tables métier + `organizations` + RLS |
+| `migrations/20260727223000_commercial_plans.sql` | Formules commerciales + liaison orgs |
+| `EMAIL_RESEND.md` | SMTP Resend pour les e-mails Auth |
+
+## E-mails Auth (Resend)
+
+Configurer le SMTP custom Resend dans le dashboard Supabase — voir **[EMAIL_RESEND.md](./EMAIL_RESEND.md)**.
 
 ## Appliquer la migration
 
@@ -24,6 +30,8 @@ supabase db push
 ## Tables créées
 
 - `organizations` — tenant (équipe / forfait)
+- `commercial_plans` — catalogue formules (Trial / Team / Business / Enterprise)
+- `organizations.commercial_plan_id`, `seat_quantity`, `subscription_status`
 - `profiles.organization_id` — rattachement user → org
 - `org_configs` — catalogue OrgConfig (`jsonb`)
 - `domain_ui_state` — positions carte

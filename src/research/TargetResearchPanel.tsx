@@ -208,7 +208,7 @@ export default function TargetResearchPanel({
     if (existing) return existing;
     const directionId = resolveDirectionId(persona, activeDirections);
     if (!directionId) {
-      setError("Aucune direction catalogue — crée-en dans Personnaliser.");
+      setError("Aucune direction catalogue — crée-en dans Settings.");
       return null;
     }
     return upsertContact({

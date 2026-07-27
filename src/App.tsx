@@ -78,8 +78,12 @@ import {
 import { useOpportunities } from "./opportunities/OpportunityContext";
 import { useAuth } from "./auth/AuthContext";
 import AuthScreen from "./auth/AuthScreen";
+import ResetPasswordScreen from "./auth/ResetPasswordScreen";
 import TeamAdminPanel from "./auth/TeamAdminPanel";
-import { roleLabel } from "./auth/types";
+import BillingQuotaBanner from "./billing/BillingQuotaBanner";
+import LanguageSwitcher from "./i18n/LanguageSwitcher";
+import { useT } from "./i18n/LocaleContext";
+import type { MessageKey } from "./i18n/messages";
 
 function statusClass(s: CommercialStatus) {
   return `status-${s.toLowerCase()}`;
@@ -453,9 +457,24 @@ export default function App() {
     profile,
     isAdmin,
     profileError,
+    passwordRecovery,
     signOut,
+    billing,
   } = useAuth();
+  const t = useT();
   const [teamOpen, setTeamOpen] = useState(false);
+
+  function navLabel(id: AppPage): string {
+    const key =
+      id === "account-plans"
+        ? "nav.accountPlans"
+        : (`nav.${id}` as MessageKey);
+    return t(key);
+  }
+
+  function roleText(role: "admin" | "user") {
+    return role === "admin" ? t("role.admin") : t("role.user");
+  }
   const {
     activeSolutions,
     activeContactTypes,
@@ -1546,10 +1565,14 @@ export default function App() {
     return (
       <div className="auth-screen">
         <div className="auth-card">
-          <p className="muted">Chargement de la session…</p>
+          <p className="muted">{t("auth.loading")}</p>
         </div>
       </div>
     );
+  }
+
+  if (passwordRecovery) {
+    return <ResetPasswordScreen />;
   }
 
   if (!user) {
@@ -1560,14 +1583,11 @@ export default function App() {
     return (
       <div className="auth-screen">
         <div className="auth-card">
-          <h1>Profil requis</h1>
+          <h1>{t("auth.profileRequired")}</h1>
           <p className="auth-error">{profileError}</p>
-          <p className="muted">
-            Ouvre Supabase → SQL Editor et exécute le fichier{" "}
-            <code>supabase/schema.sql</code>, puis reconnecte-toi.
-          </p>
+          <p className="muted">{t("auth.profileHint")}</p>
           <button type="button" className="ghost" onClick={() => void signOut()}>
-            Déconnexion
+            {t("sidebar.signOut")}
           </button>
         </div>
       </div>
@@ -1596,8 +1616,20 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Navigation principale">
-          <p className="sidebar-group">Vue</p>
+        <BillingQuotaBanner />
+
+        {!billing.canWrite ? (
+          <p className="billing-readonly-hint" role="status">
+            {t("billing.readonly")}
+            {billing.organization?.subscription_status
+              ? ` (${billing.organization.subscription_status})`
+              : ""}
+            .
+          </p>
+        ) : null}
+
+        <nav className="sidebar-nav" aria-label={t("nav.aria")}>
+          <p className="sidebar-group">{t("nav.group.view")}</p>
           {NAV_MAIN.map((item) => (
             <button
               key={item.id}
@@ -1605,11 +1637,11 @@ export default function App() {
               className={page === item.id ? "active" : ""}
               onClick={() => navigate(item.id)}
             >
-              {item.label}
+              {navLabel(item.id)}
             </button>
           ))}
 
-          <p className="sidebar-group">Données en entrée</p>
+          <p className="sidebar-group">{t("nav.group.data")}</p>
           {NAV_DATA.map((item) => (
             <button
               key={item.id}
@@ -1617,19 +1649,20 @@ export default function App() {
               className={page === item.id ? "active" : ""}
               onClick={() => navigate(item.id)}
             >
-              {item.label}
+              {navLabel(item.id)}
             </button>
           ))}
         </nav>
 
         <div className="sidebar-foot">
+          <LanguageSwitcher className="sidebar-lang" />
           <p className="sidebar-user muted" title={user.email ?? undefined}>
             {user.email}
             {profile ? (
               <>
                 <br />
                 <span className={`role-pill role-${profile.role}`}>
-                  {roleLabel[profile.role]}
+                  {roleText(profile.role)}
                 </span>
               </>
             ) : null}
@@ -1639,7 +1672,7 @@ export default function App() {
             className="ghost tiny"
             onClick={() => void signOut()}
           >
-            Déconnexion
+            {t("sidebar.signOut")}
           </button>
           {isAdmin && (
             <button
@@ -1647,21 +1680,17 @@ export default function App() {
               className="ghost tiny"
               onClick={() => setTeamOpen(true)}
             >
-              Équipe
+              {t("sidebar.team")}
             </button>
           )}
-          {isAdmin ? (
+          {isAdmin && (
             <button
               type="button"
               className="settings-trigger"
               onClick={() => setSettingsOpen(true)}
             >
-              Personnaliser
+              {t("sidebar.settings")}
             </button>
-          ) : (
-            <p className="sidebar-settings-locked muted">
-              Settings réservés à l’admin
-            </p>
           )}
         </div>
       </aside>
@@ -1693,7 +1722,7 @@ export default function App() {
                   accounts={activeAccounts}
                   value={accountPickerValue}
                   onChange={selectMapFocusAccount}
-                  ariaLabel="Choisir le compte à cartographier"
+                  ariaLabel={t("map.pickAccount")}
                 />
                 <SameSectorPanel
                   accounts={activeAccounts}

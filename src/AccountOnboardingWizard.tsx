@@ -202,6 +202,7 @@ export default function AccountOnboardingWizard({
         config.oppMappingSubtypes ?? [],
       ),
     });
+    if (!id) return;
     setOpportunityId(id);
     setStep("ask-plan");
   }
