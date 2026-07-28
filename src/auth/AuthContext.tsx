@@ -52,6 +52,12 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   refreshTeam: () => Promise<void>;
+  /** Invite un user (admin only) — e-mail d’invitation Supabase/Resend. */
+  inviteUser: (input: {
+    email: string;
+    fullName?: string;
+    role?: AppRole;
+  }) => Promise<string | null>;
   updateTeamMember: (
     userId: string,
     patch: { role?: AppRole; manager_id?: string | null; full_name?: string },
@@ -107,11 +113,15 @@ async function fetchProfile(userId: string): Promise<{
   return { profile: mapProfile(data as Record<string, unknown>), error: null };
 }
 
-async function fetchTeam(isAdmin: boolean): Promise<UserProfile[]> {
-  if (!supabase || !isAdmin) return [];
+async function fetchTeam(
+  isAdmin: boolean,
+  organizationId: string | null,
+): Promise<UserProfile[]> {
+  if (!supabase || !isAdmin || !organizationId) return [];
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
+    .eq("organization_id", organizationId)
     .order("created_at", { ascending: true });
   if (error || !data) return [];
   return data
@@ -188,7 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(p);
       setProfileError(error);
       if (p?.role === "admin") {
-        setTeam(await fetchTeam(true));
+        setTeam(await fetchTeam(true, p.organization_id));
       } else {
         setTeam([]);
       }
@@ -289,9 +299,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTeam([]);
       return;
     }
-    setTeam(await fetchTeam(true));
+    setTeam(await fetchTeam(true, profile.organization_id));
     await refreshBilling(profile.organization_id);
   }, [profile, refreshBilling]);
+
+  const inviteUser = useCallback(
+    async (input: {
+      email: string;
+      fullName?: string;
+      role?: AppRole;
+    }) => {
+      if (!supabase) return "Supabase n’est pas configuré.";
+      if (profile?.role !== "admin") {
+        return "Seul un admin peut ajouter un utilisateur.";
+      }
+      const {
+        data: { session: current },
+      } = await supabase.auth.getSession();
+      if (!current?.access_token) return "Session expirée — reconnecte-toi.";
+
+      const res = await fetch("/api/invite-user", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${current.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: input.email,
+          fullName: input.fullName,
+          role: input.role ?? "user",
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+      };
+      if (!res.ok) {
+        return payload.error || `Invitation impossible (${res.status}).`;
+      }
+      await refreshTeam();
+      return null;
+    },
+    [profile, refreshTeam],
+  );
 
   const updateTeamMember = useCallback(
     async (
@@ -299,11 +349,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       patch: { role?: AppRole; manager_id?: string | null; full_name?: string },
     ) => {
       if (!supabase) return "Supabase n’est pas configuré.";
-      if (profile?.role !== "admin") return "Réservé aux admins.";
+      if (profile?.role !== "admin") {
+        return "Seul un admin peut modifier un profil.";
+      }
+      if (!profile.organization_id) {
+        return "Organisation manquante.";
+      }
+
+      const { data: target, error: targetErr } = await supabase
+        .from("profiles")
+        .select("organization_id")
+        .eq("id", userId)
+        .maybeSingle();
+      if (targetErr) return targetErr.message;
+      if (
+        !target ||
+        target.organization_id !== profile.organization_id
+      ) {
+        return "Profil hors de ton organisation.";
+      }
+
       const { error } = await supabase
         .from("profiles")
         .update(patch)
-        .eq("id", userId);
+        .eq("id", userId)
+        .eq("organization_id", profile.organization_id);
       if (error) return error.message;
       await refreshTeam();
       if (userId === profile.id) await refreshProfile();
@@ -343,6 +413,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refreshProfile,
       refreshTeam,
+      inviteUser,
       updateTeamMember,
     }),
     [
@@ -364,6 +435,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refreshProfile,
       refreshTeam,
+      inviteUser,
       updateTeamMember,
     ],
   );

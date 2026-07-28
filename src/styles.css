@@ -459,6 +459,52 @@ body {
   font-size: 0.85rem;
 }
 
+.team-invite-block {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.team-invite-block h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.team-invite-form {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr auto auto;
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.team-invite-form label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.team-invite-form input,
+.team-invite-form select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+}
+
+.team-invite-form .primary-cta {
+  height: 2.35rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 800px) {
+  .team-invite-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .app-main {
   min-width: 0;
   min-height: 0;

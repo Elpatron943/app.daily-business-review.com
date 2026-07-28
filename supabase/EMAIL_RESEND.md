@@ -53,7 +53,14 @@ Ajoute au minimum :
 - Site URL : `http://localhost:5173` (dev) ou ton domaine prod
 - Redirect URLs : `http://localhost:5173/**` et l’URL de prod
 
-## Branding e-mails
+## Invitation d’utilisateurs (admin DBR)
+
+Les admins invitent depuis **Équipe → Ajouter un utilisateur**.
+
+- Local : proxy Vite `/api/invite-user` (nécessite `SUPABASE_SERVICE_ROLE_KEY` dans `.env.local`)
+- Prod : Netlify function `invite-user` (même variable d’environnement Netlify)
+
+L’invitation part via Supabase Auth → SMTP Resend.
 
 Les e-mails transactionnels envoyés via l’API Resend (scripts) utilisent le logo
 `src/assets/logos/logo.png` (fallback `public/logos/logo.png`) en image inline (CID).

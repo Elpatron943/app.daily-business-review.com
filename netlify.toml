@@ -2,11 +2,18 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
 # RESEND_FROM_* = identité d’expéditeur (pas des secrets) ;
 # leur valeur apparaît dans le branding / docs et déclenche le scan Netlify.
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "RESEND_FROM_EMAIL,RESEND_FROM_NAME"
+
+# API serverless avant le fallback SPA
+[[redirects]]
+  from = "/api/invite-user"
+  to = "/.netlify/functions/invite-user"
+  status = 200
 
 [[redirects]]
   from = "/*"

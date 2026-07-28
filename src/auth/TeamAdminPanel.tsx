@@ -1,12 +1,25 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { roleLabel, useAuth, type AppRole } from "./AuthContext";
 
 /** Gestion de l’équipe commerciale — réservé admin. */
 export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
-  const { profile, team, updateTeamMember, refreshTeam, user, billing } =
-    useAuth();
+  const {
+    profile,
+    team,
+    updateTeamMember,
+    inviteUser,
+    refreshTeam,
+    user,
+    billing,
+  } = useAuth();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const [newEmail, setNewEmail] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState<AppRole>("user");
+  const [inviting, setInviting] = useState(false);
 
   const sorted = useMemo(
     () =>
@@ -19,6 +32,7 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
 
   async function setRole(userId: string, role: AppRole) {
     setError(null);
+    setInfo(null);
     setBusyId(userId);
     const err = await updateTeamMember(userId, { role });
     if (err) setError(err);
@@ -28,12 +42,40 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
   async function setInMyTeam(userId: string, inTeam: boolean) {
     if (!user) return;
     setError(null);
+    setInfo(null);
     setBusyId(userId);
     const err = await updateTeamMember(userId, {
       manager_id: inTeam ? user.id : null,
     });
     if (err) setError(err);
     setBusyId(null);
+  }
+
+  async function handleInvite(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    if (billing.seatsFull) {
+      setError("Quota de sièges atteint — impossible d’ajouter un utilisateur.");
+      return;
+    }
+    setInviting(true);
+    const err = await inviteUser({
+      email: newEmail,
+      fullName: newName,
+      role: newRole,
+    });
+    setInviting(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setInfo(
+      `Invitation envoyée à ${newEmail.trim()}. L’utilisateur définit son mot de passe via l’e-mail.`,
+    );
+    setNewEmail("");
+    setNewName("");
+    setNewRole("user");
   }
 
   return (
@@ -43,12 +85,16 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
           <div>
             <h2>Équipe commerciale</h2>
             <p className="muted">
-              Admin : {profile?.email}. Les commerciaux n’ont pas accès aux
-              Settings.
+              Admin : {profile?.email}. Les commerciaux ne peuvent ni ajouter
+              d’utilisateurs ni modifier les profils.
             </p>
           </div>
           <div className="settings-head-actions">
-            <button type="button" className="ghost" onClick={() => void refreshTeam()}>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => void refreshTeam()}
+            >
               Actualiser
             </button>
             <button type="button" className="ghost" onClick={onClose}>
@@ -58,30 +104,72 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
         </header>
 
         {error ? <p className="auth-error">{error}</p> : null}
+        {info ? <p className="auth-info">{info}</p> : null}
 
         {billing.seatsFull ? (
           <p className="auth-error" role="status">
             Quota de sièges atteint (
-            {billing.usage.seatsUsed}/{billing.usage.seatsLimit}). Les nouveaux
-            utilisateurs doivent être créés hors DBR uniquement si des sièges
-            sont disponibles — passez à une formule supérieure depuis la
-            console admin.
+            {billing.usage.seatsUsed}/{billing.usage.seatsLimit}). Passez à une
+            formule supérieure pour inviter de nouveaux utilisateurs.
           </p>
         ) : null}
 
-        <p className="muted team-admin-hint">
-          Les comptes sont créés hors de DBR (console admin / forfait users).
-          Ici, tu gères les rôles et le rattachement à ton équipe commerciale.
-          Formule : {billing.organization?.plan?.name ?? "—"} —{" "}
-          {billing.usage.seatsUsed}
-          {billing.usage.seatsLimit != null
-            ? `/${billing.usage.seatsLimit}`
-            : "/∞"}{" "}
-          sièges.
-        </p>
+        <section className="team-invite-block">
+          <h3>Ajouter un utilisateur</h3>
+          <p className="muted team-admin-hint">
+            Formule : {billing.organization?.plan?.name ?? "—"} —{" "}
+            {billing.usage.seatsUsed}
+            {billing.usage.seatsLimit != null
+              ? `/${billing.usage.seatsLimit}`
+              : "/∞"}{" "}
+            sièges. Un e-mail d’invitation est envoyé (Resend / SMTP Supabase).
+          </p>
+          <form className="team-invite-form" onSubmit={(e) => void handleInvite(e)}>
+            <label>
+              E-mail
+              <input
+                type="email"
+                required
+                autoComplete="off"
+                value={newEmail}
+                disabled={inviting || billing.seatsFull}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="prenom@entreprise.com"
+              />
+            </label>
+            <label>
+              Nom
+              <input
+                type="text"
+                value={newName}
+                disabled={inviting || billing.seatsFull}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Prénom Nom"
+              />
+            </label>
+            <label>
+              Rôle
+              <select
+                value={newRole}
+                disabled={inviting || billing.seatsFull}
+                onChange={(e) => setNewRole(e.target.value as AppRole)}
+              >
+                <option value="user">Commercial</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="primary-cta"
+              disabled={inviting || billing.seatsFull || !newEmail.trim()}
+            >
+              {inviting ? "…" : "Inviter"}
+            </button>
+          </form>
+        </section>
 
         {sorted.length === 0 ? (
-          <p className="muted">Aucun profil visible.</p>
+          <p className="muted">Aucun profil dans l’organisation.</p>
         ) : (
           <div className="ecosystem-table-wrap">
             <table className="ecosystem-table">
