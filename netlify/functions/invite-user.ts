@@ -28,10 +28,13 @@ export async function handler(event: NetlifyEvent) {
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SERVICE_KEY ||
     "";
+  const anonKey =
+    process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
 
   if (!supabaseUrl || !serviceKey) {
     return json(500, {
-      error: "SUPABASE_SERVICE_ROLE_KEY manquante sur Netlify.",
+      error:
+        "Invitation indisponible pour le moment. Contacte ton administrateur.",
     });
   }
 
@@ -39,7 +42,7 @@ export async function handler(event: NetlifyEvent) {
     event.headers.authorization || event.headers.Authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) {
-    return json(401, { error: "Authorization Bearer requis." });
+    return json(401, { error: "Session expirée — reconnecte-toi." });
   }
 
   try {
@@ -55,7 +58,7 @@ export async function handler(event: NetlifyEvent) {
       "";
 
     const result = await inviteOrganizationUser(
-      { supabaseUrl, serviceRoleKey: serviceKey },
+      { supabaseUrl, serviceRoleKey: serviceKey, anonKey },
       token,
       {
         email: body.email ?? "",

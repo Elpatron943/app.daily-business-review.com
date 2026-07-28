@@ -25,6 +25,9 @@ export default defineConfig(({ mode }) => {
   if (env.VITE_SUPABASE_URL) {
     process.env.VITE_SUPABASE_URL = env.VITE_SUPABASE_URL;
   }
+  if (env.VITE_SUPABASE_ANON_KEY) {
+    process.env.VITE_SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY;
+  }
   if (env.SUPABASE_URL) {
     process.env.SUPABASE_URL = env.SUPABASE_URL;
   }

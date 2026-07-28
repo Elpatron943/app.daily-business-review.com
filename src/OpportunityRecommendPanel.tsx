@@ -92,14 +92,13 @@ export default function OpportunityRecommendPanel({ opportunity }: Props) {
 
       {status && !status.configured && (
         <p className="muted warn-hint">
-          Clé OpenAI absente. Ajoute{" "}
-          <code>OPENAI_API_KEY</code> dans <code>.env.local</code> puis
-          relance <code>npm run dev</code>.
+          L’analyse IA n’est pas encore configurée. Contacte ton
+          administrateur.
         </p>
       )}
       {status && status.available === false && (
         <p className="muted warn-hint">
-          Proxy OpenAI indisponible (relance le serveur Vite).
+          L’analyse IA est temporairement indisponible. Réessaie plus tard.
         </p>
       )}
       {error && <p className="form-error">{error}</p>}
@@ -109,7 +108,6 @@ export default function OpportunityRecommendPanel({ opportunity }: Props) {
           <p className="muted settings-hint">
             Mis à jour le{" "}
             {new Date(recos.updatedAt).toLocaleString("fr-FR")}
-            {recos.model ? ` · ${recos.model}` : ""}
           </p>
           <BriefMarkdown text={recos.content} />
         </article>

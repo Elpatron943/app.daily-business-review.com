@@ -67,11 +67,11 @@ const fr: Record<MessageKey, string> = {
   "auth.forgotSent":
     "Si un compte existe pour cet e-mail, un lien de réinitialisation vient d’être envoyé.",
   "auth.configHint":
-    "Ajoute VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY dans .env.local, puis relance npm run dev.",
+    "La connexion n’est pas disponible pour le moment. Réessaie plus tard ou contacte ton administrateur.",
   "auth.loading": "Chargement de la session…",
   "auth.profileRequired": "Profil requis",
   "auth.profileHint":
-    "Ouvre Supabase → SQL Editor et exécute le fichier supabase/schema.sql, puis reconnecte-toi.",
+    "Ton profil n’est pas encore prêt. Déconnecte-toi puis reconnecte-toi, ou contacte ton administrateur.",
   "reset.title": "Nouveau mot de passe",
   "reset.newPassword": "Nouveau mot de passe",
   "reset.confirm": "Confirmer",
@@ -112,11 +112,11 @@ const en: Record<MessageKey, string> = {
   "auth.forgotSent":
     "If an account exists for this email, a reset link has been sent.",
   "auth.configHint":
-    "Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local, then restart npm run dev.",
+    "Sign-in is unavailable right now. Try again later or contact your administrator.",
   "auth.loading": "Loading session…",
   "auth.profileRequired": "Profile required",
   "auth.profileHint":
-    "Open Supabase → SQL Editor, run supabase/schema.sql, then sign in again.",
+    "Your profile isn’t ready yet. Sign out and back in, or contact your administrator.",
   "reset.title": "New password",
   "reset.newPassword": "New password",
   "reset.confirm": "Confirm",

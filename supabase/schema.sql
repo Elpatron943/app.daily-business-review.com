@@ -16,14 +16,10 @@ create table if not exists public.profiles (
   email text not null,
   full_name text,
   role public.app_role not null default 'user',
-  -- Admin qui manage ce commercial (null pour un admin racine)
-  manager_id uuid references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint profiles_manager_not_self check (manager_id is distinct from id)
+  updated_at timestamptz not null default now()
 );
 
-create index if not exists profiles_manager_id_idx on public.profiles (manager_id);
 create index if not exists profiles_role_idx on public.profiles (role);
 
 alter table public.profiles enable row level security;
@@ -48,13 +44,12 @@ drop policy if exists "profiles_update_own_name" on public.profiles;
 drop policy if exists "profiles_admin_update_team" on public.profiles;
 drop policy if exists "profiles_insert_own" on public.profiles;
 
--- Lecture : soi-même, membres de mon équipe, ou tout si admin
+-- Lecture : soi-même, ou toute l’org si admin
 create policy "profiles_select_own_or_team"
   on public.profiles for select
   to authenticated
   using (
     id = auth.uid()
-    or manager_id = auth.uid()
     or public.is_admin()
   );
 
@@ -65,7 +60,7 @@ create policy "profiles_update_own"
   using (id = auth.uid())
   with check (id = auth.uid());
 
--- Admin : maj rôle / rattachement équipe
+-- Admin : maj rôle dans l’organisation
 create policy "profiles_admin_update_team"
   on public.profiles for update
   to authenticated
@@ -86,10 +81,9 @@ security definer
 set search_path = public
 as $$
 begin
-  if (old.role is distinct from new.role)
-     or (old.manager_id is distinct from new.manager_id) then
+  if old.role is distinct from new.role then
     if not public.is_admin() then
-      raise exception 'Seul un admin peut modifier le rôle ou l’équipe';
+      raise exception 'Seul un admin peut modifier le rôle';
     end if;
   end if;
   return new;

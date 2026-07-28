@@ -67,7 +67,7 @@ export async function runTargetResearch(input: {
     throw new Error(
       data.error ||
         (res.status === 404
-          ? "Proxy Perplexity indisponible — lance l’app avec npm run dev."
+          ? "Recherche cible temporairement indisponible. Réessaie plus tard."
           : `Erreur recherche (${res.status})`),
     );
   }

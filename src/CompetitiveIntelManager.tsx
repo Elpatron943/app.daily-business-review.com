@@ -216,7 +216,7 @@ export default function CompetitiveIntelManager({
       </section>
 
       <section className="intel-block" aria-label="Critères recherche IA">
-        <h3>Critères de recherche cible (Perplexity)</h3>
+        <h3>Critères de recherche cible</h3>
         <ul className="settings-list intel-criteria-list">
           {researchCriteria.map((c) => (
             <li

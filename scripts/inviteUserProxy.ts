@@ -44,11 +44,15 @@ export function inviteUserProxy(): Plugin {
           process.env.SUPABASE_SERVICE_ROLE_KEY ||
           process.env.SUPABASE_SERVICE_KEY ||
           "";
+        const anonKey =
+          process.env.VITE_SUPABASE_ANON_KEY ||
+          process.env.SUPABASE_ANON_KEY ||
+          "";
 
         if (!supabaseUrl || !serviceKey) {
           sendJson(res, 500, {
             error:
-              "SUPABASE_SERVICE_ROLE_KEY manquante dans .env.local (jamais préfixer VITE_).",
+              "Invitation indisponible pour le moment. Contacte ton administrateur.",
           });
           return;
         }
@@ -56,7 +60,7 @@ export function inviteUserProxy(): Plugin {
         const auth = req.headers.authorization || "";
         const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
         if (!token) {
-          sendJson(res, 401, { error: "Authorization Bearer requis." });
+          sendJson(res, 401, { error: "Session expirée — reconnecte-toi." });
           return;
         }
 
@@ -68,7 +72,11 @@ export function inviteUserProxy(): Plugin {
             role?: "admin" | "user";
           };
           const result = await inviteOrganizationUser(
-            { supabaseUrl, serviceRoleKey: serviceKey },
+            {
+              supabaseUrl,
+              serviceRoleKey: serviceKey,
+              anonKey,
+            },
             token,
             {
               email: body.email ?? "",

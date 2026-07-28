@@ -722,8 +722,7 @@ export default function DashboardCatalogueAnalysis({
       <section className="dash-analysis-block" aria-label="Par module">
         <h3>Par module</h3>
         <p className="dash-analysis-hint muted">
-          Présence = part des opportunités de la solution qui cochent ce module
-          (proxy pipeline).
+          Présence = part des opportunités de la solution qui cochent ce module.
         </p>
         <div className="ecosystem-table-wrap">
           <table className="ecosystem-table dash-analysis-table">

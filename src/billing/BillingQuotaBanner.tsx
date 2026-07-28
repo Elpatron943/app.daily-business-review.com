@@ -24,11 +24,20 @@ export default function BillingQuotaBanner() {
         <span className={seatsFull ? "billing-quota-full" : undefined}>
           {formatQuotaLabel(usage.seatsUsed, usage.seatsLimit)} sièges
         </span>
-        <span aria-hidden>·</span>
-        <span className={opportunitiesFull ? "billing-quota-full" : undefined}>
-          {formatQuotaLabel(usage.activeOpportunities, usage.opportunitiesLimit)}{" "}
-          opp.
-        </span>
+        {usage.opportunitiesLimit != null ? (
+          <>
+            <span aria-hidden>·</span>
+            <span
+              className={opportunitiesFull ? "billing-quota-full" : undefined}
+            >
+              {formatQuotaLabel(
+                usage.activeOpportunities,
+                usage.opportunitiesLimit,
+              )}{" "}
+              opp.
+            </span>
+          </>
+        ) : null}
       </div>
     </div>
   );

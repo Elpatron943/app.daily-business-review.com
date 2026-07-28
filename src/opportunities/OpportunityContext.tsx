@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -17,6 +18,13 @@ import type {
 import { defaultConfig } from "../config/defaults";
 import type { Status } from "../data";
 import { ENGAGEMENT_STATUSES } from "../data";
+import { supabase } from "../supabase/client";
+import {
+  loadOrgOpportunities,
+  logSyncError,
+  upsertOpportunitiesRemote,
+  upsertOpportunityRemote,
+} from "../sync";
 import type {
   ProcessAnswer,
   ProcessAnswerStatus,
@@ -450,7 +458,11 @@ function uid(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function load(): StoredState {
+function emptyStoredState(): StoredState {
+  return { opportunities: [], activeOpportunityId: null };
+}
+
+function loadLocal(): StoredState {
   try {
     const raw = localStorage.getItem(OPPORTUNITIES_STORAGE_KEY);
     if (!raw) {
@@ -535,7 +547,7 @@ function load(): StoredState {
   }
 }
 
-function persist(state: StoredState) {
+function persistLocal(state: StoredState) {
   localStorage.setItem(OPPORTUNITIES_STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -603,14 +615,73 @@ type OpportunityContextValue = {
 const OpportunityContext = createContext<OpportunityContextValue | null>(null);
 
 export function OpportunityProvider({ children }: { children: ReactNode }) {
-  const { billing, setActiveOpportunityCount } = useAuth();
-  const [state, setState] = useState<StoredState>(() => load());
+  const {
+    billing,
+    setActiveOpportunityCount,
+    profile,
+    loading: authLoading,
+  } = useAuth();
+  const orgId = profile?.organization_id ?? null;
+  const orgIdRef = useRef<string | null>(orgId);
+  orgIdRef.current = orgId;
+
+  const [state, setState] = useState<StoredState>(() => emptyStoredState());
   const [quotaError, setQuotaError] = useState<string | null>(null);
 
-  const commit = useCallback((next: StoredState) => {
-    setState(next);
-    persist(next);
+  useEffect(() => {
+    if (authLoading) return;
+    let cancelled = false;
+
+    (async () => {
+      if (!orgId || !supabase) {
+        if (!cancelled) setState(loadLocal());
+        return;
+      }
+      try {
+        const opportunities = await loadOrgOpportunities(orgId);
+        if (cancelled) return;
+        const next: StoredState = {
+          opportunities,
+          activeOpportunityId:
+            opportunities.find((o) => o.active)?.id ?? null,
+        };
+        persistLocal(next);
+        setState(next);
+      } catch (err) {
+        logSyncError("loadOpportunities", err);
+        if (!cancelled) {
+          const next = emptyStoredState();
+          persistLocal(next);
+          setState(next);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, orgId]);
+
+  const pushOpportunity = useCallback((opportunity: Opportunity) => {
+    const id = orgIdRef.current;
+    if (!id || !supabase) return;
+    void upsertOpportunityRemote(id, opportunity).catch((err) =>
+      logSyncError("upsertOpportunity", err),
+    );
   }, []);
+
+  const commit = useCallback(
+    (next: StoredState, syncIds?: string[]) => {
+      setState(next);
+      persistLocal(next);
+      if (!syncIds?.length) return;
+      for (const oid of syncIds) {
+        const opp = next.opportunities.find((o) => o.id === oid);
+        if (opp) pushOpportunity(opp);
+      }
+    },
+    [pushOpportunity],
+  );
 
   const activeOpportunities = useMemo(
     () => state.opportunities.filter((o) => o.active),
@@ -698,10 +769,13 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         stakeholders: migrateStakeholders(input.stakeholders ?? []),
         aiRecommendations: null,
       };
-      commit({
-        opportunities: [...state.opportunities, opportunity],
-        activeOpportunityId: id,
-      });
+      commit(
+        {
+          opportunities: [...state.opportunities, opportunity],
+          activeOpportunityId: id,
+        },
+        [id],
+      );
       return id;
     },
     [assertCanCreateOpportunity, commit, state],
@@ -709,12 +783,15 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
 
   const updateOpportunity = useCallback(
     (id: string, patch: Partial<Opportunity>) => {
-      commit({
-        ...state,
-        opportunities: state.opportunities.map((o) =>
-          o.id === id ? { ...o, ...patch, id: o.id } : o,
-        ),
-      });
+      commit(
+        {
+          ...state,
+          opportunities: state.opportunities.map((o) =>
+            o.id === id ? { ...o, ...patch, id: o.id } : o,
+          ),
+        },
+        [id],
+      );
     },
     [commit, state],
   );
@@ -728,7 +805,7 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         state.activeOpportunityId === id
           ? (opportunities.find((o) => o.active)?.id ?? null)
           : state.activeOpportunityId;
-      commit({ opportunities, activeOpportunityId });
+      commit({ opportunities, activeOpportunityId }, [id]);
     },
     [commit, state],
   );
@@ -823,9 +900,24 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
           );
         }
         const next = { ...prev, opportunities };
-        persist(next);
+        persistLocal(next);
         return next;
       });
+      const id = orgIdRef.current;
+      if (id && supabase) {
+        try {
+          const raw = localStorage.getItem(OPPORTUNITIES_STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as StoredState;
+            void upsertOpportunitiesRemote(
+              id,
+              parsed.opportunities ?? [],
+            ).catch((err) => logSyncError("importOpportunities", err));
+          }
+        } catch (err) {
+          logSyncError("importOpportunitiesBatch", err);
+        }
+      }
       return { created, updated };
     },
     [billing.canWrite, billing.usage.opportunitiesLimit],
@@ -833,20 +925,23 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
 
   const setBusinessOutcomeValue = useCallback(
     (opportunityId: string, fieldId: string, value: number) => {
-      commit({
-        ...state,
-        opportunities: state.opportunities.map((o) =>
-          o.id === opportunityId
-            ? {
-                ...o,
-                businessOutcomes: {
-                  ...o.businessOutcomes,
-                  [fieldId]: value,
-                },
-              }
-            : o,
-        ),
-      });
+      commit(
+        {
+          ...state,
+          opportunities: state.opportunities.map((o) =>
+            o.id === opportunityId
+              ? {
+                  ...o,
+                  businessOutcomes: {
+                    ...o.businessOutcomes,
+                    [fieldId]: value,
+                  },
+                }
+              : o,
+          ),
+        },
+        [opportunityId],
+      );
     },
     [commit, state],
   );
@@ -858,25 +953,30 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       patch: Partial<ProcessAnswer> & { status?: ProcessAnswerStatus },
     ) => {
       const today = new Date().toISOString().slice(0, 10);
-      commit({
-        ...state,
-        opportunities: state.opportunities.map((o) => {
-          if (o.id !== opportunityId) return o;
-          const prev = o.processAnswers?.[questionId] ?? { status: "None" as const };
-          return {
-            ...o,
-            processAnswers: {
-              ...o.processAnswers,
-              [questionId]: {
-                ...prev,
-                ...patch,
-                status: patch.status ?? prev.status,
-                updatedAt: today,
+      commit(
+        {
+          ...state,
+          opportunities: state.opportunities.map((o) => {
+            if (o.id !== opportunityId) return o;
+            const prev = o.processAnswers?.[questionId] ?? {
+              status: "None" as const,
+            };
+            return {
+              ...o,
+              processAnswers: {
+                ...o.processAnswers,
+                [questionId]: {
+                  ...prev,
+                  ...patch,
+                  status: patch.status ?? prev.status,
+                  updatedAt: today,
+                },
               },
-            },
-          };
-        }),
-      });
+            };
+          }),
+        },
+        [opportunityId],
+      );
     },
     [commit, state],
   );

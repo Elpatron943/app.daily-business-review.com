@@ -274,13 +274,14 @@ export default function TargetResearchPanel({
 
       {status && !status.available && (
         <p className="target-research-banner warn">
-          Proxy indisponible. Lance l’app avec <code>npm run dev</code>.
+          La recherche cible est temporairement indisponible. Réessaie plus
+          tard.
         </p>
       )}
       {status?.available && !status.configured && (
         <p className="target-research-banner warn">
-          Clé absente. Ajoute <code>PERPLEXITY_API_KEY</code> dans{" "}
-          <code>.env.local</code> puis relance le serveur.
+          La recherche cible n’est pas encore configurée. Contacte ton
+          administrateur.
         </p>
       )}
 

@@ -39,18 +39,6 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
     setBusyId(null);
   }
 
-  async function setInMyTeam(userId: string, inTeam: boolean) {
-    if (!user) return;
-    setError(null);
-    setInfo(null);
-    setBusyId(userId);
-    const err = await updateTeamMember(userId, {
-      manager_id: inTeam ? user.id : null,
-    });
-    if (err) setError(err);
-    setBusyId(null);
-  }
-
   async function handleInvite(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -122,7 +110,7 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
             {billing.usage.seatsLimit != null
               ? `/${billing.usage.seatsLimit}`
               : "/∞"}{" "}
-            sièges. Un e-mail d’invitation est envoyé (Resend / SMTP Supabase).
+            sièges. Un e-mail d’invitation est envoyé.
           </p>
           <form className="team-invite-form" onSubmit={(e) => void handleInvite(e)}>
             <label>
@@ -178,14 +166,12 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
                   <th>E-mail</th>
                   <th>Nom</th>
                   <th>Rôle</th>
-                  <th>Dans mon équipe</th>
                   <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((m) => {
                   const isSelf = m.id === user?.id;
-                  const inTeam = m.manager_id === user?.id;
                   return (
                     <tr key={m.id}>
                       <td>
@@ -197,23 +183,6 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
                         <span className={`role-pill role-${m.role}`}>
                           {roleLabel[m.role]}
                         </span>
-                      </td>
-                      <td>
-                        {isSelf ? (
-                          "—"
-                        ) : (
-                          <label className="sold-check">
-                            <input
-                              type="checkbox"
-                              checked={inTeam}
-                              disabled={busyId === m.id}
-                              onChange={(e) =>
-                                void setInMyTeam(m.id, e.target.checked)
-                              }
-                            />
-                            <span>{inTeam ? "Oui" : "Non"}</span>
-                          </label>
-                        )}
                       </td>
                       <td>
                         {!isSelf && (

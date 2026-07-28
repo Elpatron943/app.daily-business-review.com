@@ -58,13 +58,13 @@ async function postOpenAiAnalyze(
     throw new Error(
       data.error ||
         (res.status === 404
-          ? "Proxy OpenAI introuvable — relance npm run dev"
-          : `Erreur OpenAI (${res.status})`),
+          ? "Analyse IA temporairement indisponible. Réessaie plus tard."
+          : `Analyse IA indisponible (${res.status})`),
     );
   }
 
   if (!data.content?.trim()) {
-    throw new Error("Réponse OpenAI vide");
+    throw new Error("Réponse IA vide");
   }
 
   return {

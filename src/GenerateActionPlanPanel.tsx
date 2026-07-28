@@ -170,7 +170,7 @@ export default function GenerateActionPlanPanel({
           onClick={handleGenerate}
           title={
             !status?.configured
-              ? "Configure OPENAI_API_KEY dans .env.local"
+              ? "L’IA n’est pas encore configurée"
               : !opportunity
                 ? "Lie une opportunité au plan"
                 : undefined
@@ -188,7 +188,7 @@ export default function GenerateActionPlanPanel({
       )}
       {status && !status.configured && (
         <p className="entry-error">
-          OpenAI non configuré (OPENAI_API_KEY manquante).
+          L’IA n’est pas encore configurée. Contacte ton administrateur.
         </p>
       )}
       {error && <p className="entry-error">{error}</p>}

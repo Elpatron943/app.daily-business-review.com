@@ -2,7 +2,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -24,6 +26,16 @@ import {
   type ContactRelationType,
   type Status,
 } from "../data";
+import { useAuth } from "../auth/AuthContext";
+import { supabase } from "../supabase/client";
+import {
+  loadOrgAccountsContacts,
+  logSyncError,
+  upsertAccountRemote,
+  upsertAccountsRemote,
+  upsertContactRemote,
+  upsertContactsRemote,
+} from "../sync";
 
 const STORAGE_KEY = "powermap.domain.v1";
 
@@ -161,7 +173,17 @@ function migrateCompanyRelationType(
   return null;
 }
 
-function load(): DomainState {
+function emptyDomainState(): DomainState {
+  return {
+    accounts: [],
+    contacts: [],
+    companyRelations: [],
+    contactRelations: [],
+    layoutPositions: emptyLayoutPositions(),
+  };
+}
+
+function loadLocal(): DomainState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
@@ -246,7 +268,7 @@ function load(): DomainState {
   }
 }
 
-function persist(state: DomainState) {
+function persistLocal(state: DomainState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -373,11 +395,77 @@ type DomainContextValue = {
 const DomainContext = createContext<DomainContextValue | null>(null);
 
 export function DomainProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<DomainState>(() => load());
+  const { profile, loading: authLoading } = useAuth();
+  const orgId = profile?.organization_id ?? null;
+  const remoteEnabled = Boolean(supabase && orgId);
+  const orgIdRef = useRef<string | null>(orgId);
+  orgIdRef.current = orgId;
+
+  const [state, setState] = useState<DomainState>(() => emptyDomainState());
+
+  useEffect(() => {
+    if (authLoading) return;
+    let cancelled = false;
+
+    (async () => {
+      if (!orgId || !supabase) {
+        if (!cancelled) setState(loadLocal());
+        return;
+      }
+      try {
+        const { accounts, contacts } = await loadOrgAccountsContacts(orgId);
+        if (cancelled) return;
+        setState((prev) => {
+          const next: DomainState = {
+            ...prev,
+            accounts,
+            contacts,
+            companyRelations: prev.companyRelations.length
+              ? prev.companyRelations
+              : [],
+            contactRelations: prev.contactRelations.length
+              ? prev.contactRelations
+              : [],
+          };
+          persistLocal(next);
+          return next;
+        });
+      } catch (err) {
+        logSyncError("loadDomain", err);
+        if (!cancelled) {
+          setState((prev) => {
+            const next = { ...prev, accounts: [], contacts: [] };
+            persistLocal(next);
+            return next;
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, orgId]);
+
+  const pushAccount = useCallback((account: Account) => {
+    const id = orgIdRef.current;
+    if (!id || !supabase) return;
+    void upsertAccountRemote(id, account).catch((err) =>
+      logSyncError("upsertAccount", err),
+    );
+  }, []);
+
+  const pushContact = useCallback((contact: Contact) => {
+    const id = orgIdRef.current;
+    if (!id || !supabase) return;
+    void upsertContactRemote(id, contact).catch((err) =>
+      logSyncError("upsertContact", err),
+    );
+  }, []);
 
   const commit = useCallback((next: DomainState) => {
     setState(next);
-    persist(next);
+    persistLocal(next);
   }, []);
 
   const activeAccounts = useMemo(
@@ -399,34 +487,34 @@ export function DomainProvider({ children }: { children: ReactNode }) {
       },
     ): string => {
       let resultId = input.id ?? "";
+      let synced: Account | null = null;
       setState((prev) => {
         if (input.id) {
           resultId = input.id;
-          const next = {
-            ...prev,
-            accounts: prev.accounts.map((a) =>
-              a.id === input.id
-                ? {
-                    ...a,
-                    name: input.name.trim(),
-                    type: input.type,
-                    commercialStatus: input.commercialStatus,
-                    holdingId:
-                      input.type === "Holding" ? null : input.holdingId,
-                    sector: input.sector?.trim() || undefined,
-                    size: input.size,
-                    active: input.active ?? a.active,
-                    x: input.x ?? a.x,
-                    y: input.y ?? a.y,
-                    researchBrief:
-                      input.researchBrief !== undefined
-                        ? input.researchBrief
-                        : a.researchBrief,
-                  }
-                : a,
-            ),
-          };
-          persist(next);
+          const nextAccounts = prev.accounts.map((a) =>
+            a.id === input.id
+              ? {
+                  ...a,
+                  name: input.name.trim(),
+                  type: input.type,
+                  commercialStatus: input.commercialStatus,
+                  holdingId:
+                    input.type === "Holding" ? null : input.holdingId,
+                  sector: input.sector?.trim() || undefined,
+                  size: input.size,
+                  active: input.active ?? a.active,
+                  x: input.x ?? a.x,
+                  y: input.y ?? a.y,
+                  researchBrief:
+                    input.researchBrief !== undefined
+                      ? input.researchBrief
+                      : a.researchBrief,
+                }
+              : a,
+          );
+          synced = nextAccounts.find((a) => a.id === input.id) ?? null;
+          const next = { ...prev, accounts: nextAccounts };
+          persistLocal(next);
           return next;
         }
         const pos = accountPosition(
@@ -447,40 +535,50 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           active: true,
         };
         resultId = account.id;
+        synced = account;
         const next = { ...prev, accounts: [...prev.accounts, account] };
-        persist(next);
+        persistLocal(next);
         return next;
       });
+      if (synced) pushAccount(synced);
       return resultId;
     },
-    [],
+    [pushAccount],
   );
 
-  const removeAccount = useCallback((id: string) => {
-    setState((prev) => {
-      const next = {
-        ...prev,
-        accounts: prev.accounts.map((a) =>
+  const removeAccount = useCallback(
+    (id: string) => {
+      let synced: Account | null = null;
+      setState((prev) => {
+        const nextAccounts = prev.accounts.map((a) =>
           a.id === id ? { ...a, active: false } : a,
-        ),
-      };
-      persist(next);
-      return next;
-    });
-  }, []);
+        );
+        synced = nextAccounts.find((a) => a.id === id) ?? null;
+        const next = { ...prev, accounts: nextAccounts };
+        persistLocal(next);
+        return next;
+      });
+      if (synced) pushAccount(synced);
+    },
+    [pushAccount],
+  );
 
-  const restoreAccount = useCallback((id: string) => {
-    setState((prev) => {
-      const next = {
-        ...prev,
-        accounts: prev.accounts.map((a) =>
+  const restoreAccount = useCallback(
+    (id: string) => {
+      let synced: Account | null = null;
+      setState((prev) => {
+        const nextAccounts = prev.accounts.map((a) =>
           a.id === id ? { ...a, active: true } : a,
-        ),
-      };
-      persist(next);
-      return next;
-    });
-  }, []);
+        );
+        synced = nextAccounts.find((a) => a.id === id) ?? null;
+        const next = { ...prev, accounts: nextAccounts };
+        persistLocal(next);
+        return next;
+      });
+      if (synced) pushAccount(synced);
+    },
+    [pushAccount],
+  );
 
   const upsertContact = useCallback(
     (
@@ -492,27 +590,27 @@ export function DomainProvider({ children }: { children: ReactNode }) {
       },
     ): string => {
       let resultId = input.id ?? "";
+      let synced: Contact | null = null;
       setState((prev) => {
         if (input.id) {
           resultId = input.id;
-          const next = {
-            ...prev,
-            contacts: prev.contacts.map((c) =>
-              c.id === input.id
-                ? {
-                    ...c,
-                    name: input.name.trim(),
-                    title: input.title.trim(),
-                    accountId: input.accountId,
-                    directionId: input.directionId,
-                    active: input.active ?? c.active,
-                    x: input.x ?? c.x,
-                    y: input.y ?? c.y,
-                  }
-                : c,
-            ),
-          };
-          persist(next);
+          const nextContacts = prev.contacts.map((c) =>
+            c.id === input.id
+              ? {
+                  ...c,
+                  name: input.name.trim(),
+                  title: input.title.trim(),
+                  accountId: input.accountId,
+                  directionId: input.directionId,
+                  active: input.active ?? c.active,
+                  x: input.x ?? c.x,
+                  y: input.y ?? c.y,
+                }
+              : c,
+          );
+          synced = nextContacts.find((c) => c.id === input.id) ?? null;
+          const next = { ...prev, contacts: nextContacts };
+          persistLocal(next);
           return next;
         }
         const pos = contactPosition(
@@ -532,40 +630,50 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           active: true,
         };
         resultId = contact.id;
+        synced = contact;
         const next = { ...prev, contacts: [...prev.contacts, contact] };
-        persist(next);
+        persistLocal(next);
         return next;
       });
+      if (synced) pushContact(synced);
       return resultId;
     },
-    [],
+    [pushContact],
   );
 
-  const removeContact = useCallback((id: string) => {
-    setState((prev) => {
-      const next = {
-        ...prev,
-        contacts: prev.contacts.map((c) =>
+  const removeContact = useCallback(
+    (id: string) => {
+      let synced: Contact | null = null;
+      setState((prev) => {
+        const nextContacts = prev.contacts.map((c) =>
           c.id === id ? { ...c, active: false } : c,
-        ),
-      };
-      persist(next);
-      return next;
-    });
-  }, []);
+        );
+        synced = nextContacts.find((c) => c.id === id) ?? null;
+        const next = { ...prev, contacts: nextContacts };
+        persistLocal(next);
+        return next;
+      });
+      if (synced) pushContact(synced);
+    },
+    [pushContact],
+  );
 
-  const restoreContact = useCallback((id: string) => {
-    setState((prev) => {
-      const next = {
-        ...prev,
-        contacts: prev.contacts.map((c) =>
+  const restoreContact = useCallback(
+    (id: string) => {
+      let synced: Contact | null = null;
+      setState((prev) => {
+        const nextContacts = prev.contacts.map((c) =>
           c.id === id ? { ...c, active: true } : c,
-        ),
-      };
-      persist(next);
-      return next;
-    });
-  }, []);
+        );
+        synced = nextContacts.find((c) => c.id === id) ?? null;
+        const next = { ...prev, contacts: nextContacts };
+        persistLocal(next);
+        return next;
+      });
+      if (synced) pushContact(synced);
+    },
+    [pushContact],
+  );
 
   const upsertCompanyRelation = useCallback(
     (input: Omit<CompanyRelation, "id"> & { id?: string }) => {
@@ -585,7 +693,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
                 : r,
             ),
           };
-          persist(next);
+          persistLocal(next);
           return next;
         }
         const rel: CompanyRelation = {
@@ -598,7 +706,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           ...prev,
           companyRelations: [...prev.companyRelations, rel],
         };
-        persist(next);
+        persistLocal(next);
         return next;
       });
     },
@@ -611,7 +719,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         ...prev,
         companyRelations: prev.companyRelations.filter((r) => r.id !== id),
       };
-      persist(next);
+      persistLocal(next);
       return next;
     });
   }, []);
@@ -661,7 +769,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
               },
             ];
           }
-          persist(next);
+          persistLocal(next);
           return next;
         }
         const rel: ContactRelation = {
@@ -674,7 +782,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           ...prev,
           contactRelations: [...relations, rel],
         };
-        persist(next);
+        persistLocal(next);
         return next;
       });
     },
@@ -687,7 +795,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         ...prev,
         contactRelations: prev.contactRelations.filter((r) => r.id !== id),
       };
-      persist(next);
+      persistLocal(next);
       return next;
     });
   }, []);
@@ -701,7 +809,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         );
         if (!parentId) {
           const next = { ...prev, contactRelations: without };
-          persist(next);
+          persistLocal(next);
           return next;
         }
         if (childId === parentId) {
@@ -726,7 +834,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           ...prev,
           contactRelations: [...without, rel],
         };
-        persist(next);
+        persistLocal(next);
         return next;
       });
       return ok;
@@ -737,6 +845,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
   const setAccountHolding = useCallback(
     (entrepriseId: string, holdingId: string | null): boolean => {
       let ok = true;
+      let synced: Account | null = null;
       setState((prev) => {
         const child = prev.accounts.find((a) => a.id === entrepriseId);
         if (!child || child.type !== "Entreprise" || child.active === false) {
@@ -755,50 +864,55 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           }
         }
         if (child.holdingId === holdingId) return prev;
-        const next = {
-          ...prev,
-          accounts: prev.accounts.map((a) =>
-            a.id === entrepriseId ? { ...a, holdingId } : a,
-          ),
-        };
-        persist(next);
+        const nextAccounts = prev.accounts.map((a) =>
+          a.id === entrepriseId ? { ...a, holdingId } : a,
+        );
+        synced = nextAccounts.find((a) => a.id === entrepriseId) ?? null;
+        const next = { ...prev, accounts: nextAccounts };
+        persistLocal(next);
         return next;
       });
+      if (synced) pushAccount(synced);
       return ok;
     },
-    [],
+    [pushAccount],
   );
 
-  const setMapNodePosition = useCallback((id: string, x: number, y: number) => {
-    setState((prev) => {
-      if (prev.accounts.some((a) => a.id === id)) {
-        const next = {
-          ...prev,
-          accounts: prev.accounts.map((a) =>
+  const setMapNodePosition = useCallback(
+    (id: string, x: number, y: number) => {
+      let syncedAccount: Account | null = null;
+      let syncedContact: Contact | null = null;
+      setState((prev) => {
+        if (prev.accounts.some((a) => a.id === id)) {
+          const nextAccounts = prev.accounts.map((a) =>
             a.id === id ? { ...a, x, y } : a,
-          ),
-        };
-        persist(next);
-        return next;
-      }
-      if (prev.contacts.some((c) => c.id === id)) {
+          );
+          syncedAccount = nextAccounts.find((a) => a.id === id) ?? null;
+          const next = { ...prev, accounts: nextAccounts };
+          persistLocal(next);
+          return next;
+        }
+        if (prev.contacts.some((c) => c.id === id)) {
+          const nextContacts = prev.contacts.map((c) =>
+            c.id === id ? { ...c, x, y } : c,
+          );
+          syncedContact = nextContacts.find((c) => c.id === id) ?? null;
+          const next = { ...prev, contacts: nextContacts };
+          persistLocal(next);
+          return next;
+        }
         const next = {
           ...prev,
-          contacts: prev.contacts.map((c) =>
-            c.id === id ? { ...c, x, y } : c,
-          ),
+          layoutPositions: { ...prev.layoutPositions, [id]: { x, y } },
         };
-        persist(next);
+        persistLocal(next);
         return next;
-      }
-      const next = {
-        ...prev,
-        layoutPositions: { ...prev.layoutPositions, [id]: { x, y } },
-      };
-      persist(next);
-      return next;
-    });
-  }, []);
+      });
+      if (syncedAccount) pushAccount(syncedAccount);
+      if (syncedContact) pushContact(syncedContact);
+    },
+    [pushAccount, pushContact],
+  );
 
   const importDomainBatch = useCallback(
     (input: {
@@ -1016,9 +1130,30 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         }
 
         const next = { ...prev, accounts, contacts };
-        persist(next);
+        persistLocal(next);
         return next;
       });
+
+      const id = orgIdRef.current;
+      if (id && supabase) {
+        // Re-read from localStorage snapshot just written — use state after setState is hard;
+        // push via a follow-up read of what we committed by re-running isn't available.
+        // Instead: load from the last persist by parsing STORAGE_KEY.
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as DomainState;
+            void upsertAccountsRemote(id, parsed.accounts ?? []).catch((err) =>
+              logSyncError("importAccounts", err),
+            );
+            void upsertContactsRemote(id, parsed.contacts ?? []).catch((err) =>
+              logSyncError("importContacts", err),
+            );
+          }
+        } catch (err) {
+          logSyncError("importDomainBatch", err);
+        }
+      }
 
       return {
         keyToAccountId,
@@ -1032,6 +1167,10 @@ export function DomainProvider({ children }: { children: ReactNode }) {
   );
 
   const resetDomain = useCallback(() => {
+    if (remoteEnabled) {
+      commit(emptyDomainState());
+      return;
+    }
     commit({
       accounts: structuredClone(defaultAccounts),
       contacts: structuredClone(defaultContacts),
@@ -1039,7 +1178,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
       contactRelations: structuredClone(defaultContactRelations),
       layoutPositions: emptyLayoutPositions(),
     });
-  }, [commit]);
+  }, [commit, remoteEnabled]);
 
   const value = useMemo(
     () => ({

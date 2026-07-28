@@ -17,26 +17,53 @@ function adminClient(url: string, serviceKey: string) {
   });
 }
 
+/** Valide le JWT utilisateur (évite getUser(jwt) sur client service_role). */
+async function userFromAccessToken(
+  url: string,
+  anonKey: string,
+  accessToken: string,
+): Promise<{ user: User | null; error: string | null }> {
+  const client = createClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await client.auth.getUser();
+  if (error || !data.user) {
+    return {
+      user: null,
+      error: error?.message || "Session invalide.",
+    };
+  }
+  return { user: data.user, error: null };
+}
+
 async function assertCallerAdmin(
   url: string,
   serviceKey: string,
+  anonKey: string,
   accessToken: string,
 ): Promise<
   | { ok: true; user: User; organizationId: string }
   | { ok: false; status: number; error: string }
 > {
-  const admin = adminClient(url, serviceKey);
-  const { data: userData, error: userErr } = await admin.auth.getUser(
+  const { user, error: authErr } = await userFromAccessToken(
+    url,
+    anonKey || serviceKey,
     accessToken,
   );
-  if (userErr || !userData.user) {
-    return { ok: false, status: 401, error: "Session invalide." };
+  if (!user) {
+    return {
+      ok: false,
+      status: 401,
+      error: authErr || "Session invalide — reconnecte-toi.",
+    };
   }
 
+  const admin = adminClient(url, serviceKey);
   const { data: profile, error: profileErr } = await admin
     .from("profiles")
     .select("id, role, organization_id")
-    .eq("id", userData.user.id)
+    .eq("id", user.id)
     .maybeSingle();
 
   if (profileErr || !profile) {
@@ -59,7 +86,7 @@ async function assertCallerAdmin(
 
   return {
     ok: true,
-    user: userData.user,
+    user,
     organizationId: String(profile.organization_id),
   };
 }
@@ -120,6 +147,7 @@ export async function inviteOrganizationUser(
   env: {
     supabaseUrl: string;
     serviceRoleKey: string;
+    anonKey?: string;
   },
   accessToken: string,
   input: InviteUserInput,
@@ -134,6 +162,7 @@ export async function inviteOrganizationUser(
   const caller = await assertCallerAdmin(
     env.supabaseUrl,
     env.serviceRoleKey,
+    env.anonKey || "",
     accessToken,
   );
   if (!caller.ok) return caller;

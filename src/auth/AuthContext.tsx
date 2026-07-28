@@ -44,7 +44,7 @@ type AuthContextValue = {
   setActiveOpportunityCount: (count: number) => void;
   refreshBilling: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<string | null>;
-  /** Envoie un e-mail de reset (via SMTP Resend une fois configuré). */
+  /** Envoie un e-mail de reset de mot de passe. */
   resetPassword: (email: string) => Promise<string | null>;
   /** Définit le nouveau mot de passe pendant une session de recovery. */
   updatePassword: (password: string) => Promise<string | null>;
@@ -52,7 +52,7 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   refreshTeam: () => Promise<void>;
-  /** Invite un user (admin only) — e-mail d’invitation Supabase/Resend. */
+  /** Invite un utilisateur (admin only). */
   inviteUser: (input: {
     email: string;
     fullName?: string;
@@ -60,7 +60,7 @@ type AuthContextValue = {
   }) => Promise<string | null>;
   updateTeamMember: (
     userId: string,
-    patch: { role?: AppRole; manager_id?: string | null; full_name?: string },
+    patch: { role?: AppRole; full_name?: string },
   ) => Promise<string | null>;
 };
 
@@ -74,7 +74,6 @@ function mapProfile(row: Record<string, unknown>): UserProfile | null {
     email: typeof row.email === "string" ? row.email : "",
     full_name: typeof row.full_name === "string" ? row.full_name : null,
     role,
-    manager_id: typeof row.manager_id === "string" ? row.manager_id : null,
     organization_id:
       typeof row.organization_id === "string" ? row.organization_id : null,
     created_at: typeof row.created_at === "string" ? row.created_at : "",
@@ -86,7 +85,12 @@ async function fetchProfile(userId: string): Promise<{
   profile: UserProfile | null;
   error: string | null;
 }> {
-  if (!supabase) return { profile: null, error: "Supabase non configuré." };
+  if (!supabase) {
+    return {
+      profile: null,
+      error: "Service indisponible. Réessaie plus tard.",
+    };
+  }
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
@@ -97,8 +101,7 @@ async function fetchProfile(userId: string): Promise<{
     if (error.code === "42P01" || /relation .* does not exist/i.test(error.message)) {
       return {
         profile: null,
-        error:
-          "Table profiles absente — exécute supabase/schema.sql dans le SQL Editor Supabase.",
+        error: "Profil indisponible. Contacte ton administrateur.",
       };
     }
     return { profile: null, error: error.message };
@@ -107,7 +110,7 @@ async function fetchProfile(userId: string): Promise<{
     return {
       profile: null,
       error:
-        "Profil introuvable. Vérifie le trigger handle_new_user (schema.sql).",
+        "Profil introuvable. Déconnecte-toi puis reconnecte-toi, ou contacte ton administrateur.",
     };
   }
   return { profile: mapProfile(data as Record<string, unknown>), error: null };
@@ -246,7 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [hydrate]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    if (!supabase) return "Supabase n’est pas configuré.";
+    if (!supabase) return "Service indisponible. Réessaie plus tard.";
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -255,7 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
-    if (!supabase) return "Supabase n’est pas configuré.";
+    if (!supabase) return "Service indisponible. Réessaie plus tard.";
     const trimmed = email.trim();
     if (!trimmed) return "Indique ton e-mail.";
     const redirectTo = `${window.location.origin}/`;
@@ -266,7 +269,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updatePassword = useCallback(async (password: string) => {
-    if (!supabase) return "Supabase n’est pas configuré.";
+    if (!supabase) return "Service indisponible. Réessaie plus tard.";
     const { error } = await supabase.auth.updateUser({ password });
     if (error) return error.message;
     setPasswordRecovery(false);
@@ -309,19 +312,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       fullName?: string;
       role?: AppRole;
     }) => {
-      if (!supabase) return "Supabase n’est pas configuré.";
+      if (!supabase) return "Service indisponible. Réessaie plus tard.";
       if (profile?.role !== "admin") {
         return "Seul un admin peut ajouter un utilisateur.";
       }
-      const {
-        data: { session: current },
-      } = await supabase.auth.getSession();
-      if (!current?.access_token) return "Session expirée — reconnecte-toi.";
+      // getSession() seul peut renvoyer un JWT expiré → 401 côté proxy.
+      const { data: refreshed, error: refreshErr } =
+        await supabase.auth.refreshSession();
+      const accessToken = refreshed.session?.access_token;
+      if (refreshErr || !accessToken) {
+        return "Session expirée — reconnecte-toi.";
+      }
 
       const res = await fetch("/api/invite-user", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${current.access_token}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -346,9 +352,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateTeamMember = useCallback(
     async (
       userId: string,
-      patch: { role?: AppRole; manager_id?: string | null; full_name?: string },
+      patch: { role?: AppRole; full_name?: string },
     ) => {
-      if (!supabase) return "Supabase n’est pas configuré.";
+      if (!supabase) return "Service indisponible. Réessaie plus tard.";
       if (profile?.role !== "admin") {
         return "Seul un admin peut modifier un profil.";
       }

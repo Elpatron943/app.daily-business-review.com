@@ -5,7 +5,6 @@ export type UserProfile = {
   email: string;
   full_name: string | null;
   role: AppRole;
-  manager_id: string | null;
   organization_id: string | null;
   created_at: string;
   updated_at: string;
