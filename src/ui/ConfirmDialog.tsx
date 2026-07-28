@@ -69,6 +69,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [pending, close]);
 
+  const value = useMemo(() => ({ confirm }), [confirm]);
+
   const o = pending?.options;
 
   return (
