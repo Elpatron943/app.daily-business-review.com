@@ -196,7 +196,8 @@ export default function SalesTaxonomyManager({
                 updateKpiRules({ includeWonOppsInInstalled: e.target.checked })
               }
             />
-            CA installé : inclure les opportunités Won
+            CA installé : aussi sommer les opportunités Won (déconseillé —
+            un passage en Won crée déjà une ligne de vente)
           </label>
           <label>
             <input
@@ -206,7 +207,7 @@ export default function SalesTaxonomyManager({
                 updateKpiRules({ wonCalendarYearOnly: e.target.checked })
               }
             />
-            Won : année civile uniquement
+            Won : année civile uniquement (si sommation Won activée)
           </label>
           <label>
             <input
@@ -236,7 +237,7 @@ export default function SalesTaxonomyManager({
                 updateKpiRules({ includeRenewalInTarget: e.target.checked })
               }
             />
-            Cible : Renouvellement
+            Cible : Renouvellements en cours
           </label>
         </div>
       </section>

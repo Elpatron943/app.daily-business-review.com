@@ -496,7 +496,8 @@ export type KpiRulesConfig = {
 
 export const DEFAULT_KPI_RULES: KpiRulesConfig = {
   includeSalesInInstalled: true,
-  includeWonOppsInInstalled: true,
+  /** Won matérialise une ligne de vente — pas de double comptage. */
+  includeWonOppsInInstalled: false,
   wonCalendarYearOnly: true,
   includeWhitespaceInTarget: true,
   includePipelineInTarget: true,

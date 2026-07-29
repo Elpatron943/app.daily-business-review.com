@@ -1,4 +1,9 @@
-export { loadOrgCrm, loadOrgAccountsContacts, loadOrgOpportunities } from "./loadOrgCrm";
+export {
+  loadOrgCrm,
+  loadOrgAccountsContacts,
+  loadOrgOpportunities,
+  loadOrgSoldSolutions,
+} from "./loadOrgCrm";
 export type { OrgCrmSnapshot } from "./loadOrgCrm";
 export {
   upsertAccountRemote,
@@ -7,6 +12,7 @@ export {
   upsertContactsRemote,
   upsertOpportunityRemote,
   upsertOpportunitiesRemote,
+  upsertSoldSolutionsRemote,
   replaceOpportunityStakeholdersRemote,
   logSyncError,
 } from "./persistCrm";

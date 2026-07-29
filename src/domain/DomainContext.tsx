@@ -36,6 +36,7 @@ import {
   upsertContactRemote,
   upsertContactsRemote,
 } from "../sync";
+import { idFromExternalKey } from "../import/bulkImport";
 
 const STORAGE_KEY = "powermap.domain.v1";
 
@@ -153,7 +154,8 @@ function normalizeResearchBrief(
 }
 
 function migrateCommercialStatus(status: string): CommercialStatus {
-  if (status === "Competitor" || status === "SameSector") return "Other";
+  if (status === "Competitor") return "Concurrent";
+  if (status === "SameSector" || status === "Other") return "Prospect";
   return status as CommercialStatus;
 }
 
@@ -951,6 +953,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
       contacts: Array<{
         action: "create" | "update";
         id?: string;
+        externalKey?: string;
         name: string;
         title: string;
         accountKey: string;
@@ -959,21 +962,30 @@ export function DomainProvider({ children }: { children: ReactNode }) {
       }>;
     }) => {
       const keyToAccountId: Record<string, string> = {};
-      // Ids stables avant setState (Strict Mode safe)
       const preparedAccounts = input.accounts.map((row) => {
-        const id =
-          row.action === "update" && row.id
-            ? row.id
-            : uid(row.type === "Holding" ? "hold" : "ent");
+        let id: string;
+        if (row.action === "update" && row.id) {
+          id = row.id;
+        } else if (row.externalKey?.trim()) {
+          id = idFromExternalKey(row.externalKey, "ent");
+        } else {
+          id = uid(row.type === "Holding" ? "hold" : "ent");
+        }
         if (row.externalKey) keyToAccountId[row.externalKey] = id;
         keyToAccountId[id] = id;
         return { ...row, resolvedId: id };
       });
-      const preparedContacts = input.contacts.map((row) => ({
-        ...row,
-        resolvedId:
-          row.action === "update" && row.id ? row.id : uid("c"),
-      }));
+      const preparedContacts = input.contacts.map((row) => {
+        let resolvedId: string;
+        if (row.action === "update" && row.id) {
+          resolvedId = row.id;
+        } else if (row.externalKey?.trim()) {
+          resolvedId = idFromExternalKey(row.externalKey, "c");
+        } else {
+          resolvedId = uid("c");
+        }
+        return { ...row, resolvedId };
+      });
 
       let createdAccounts = 0;
       let updatedAccounts = 0;

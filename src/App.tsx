@@ -25,7 +25,6 @@ import DashboardPage from "./DashboardPage";
 import AccountPlanPage from "./AccountPlanPage";
 import OptionalModulePage from "./OptionalModulePage";
 import SoldSolutionEditor from "./SoldSolutionEditor";
-import AccountSearchSelect from "./AccountSearchSelect";
 import SameSectorPanel, {
   buildPeerGroups,
   type PeerFilters,
@@ -44,7 +43,7 @@ import {
   isOptionalModulePage,
   NAV_DATA,
   NAV_MAIN,
-  NAV_OPTIONAL_MODULES,
+  NAV_PILOTAGE,
   type AppPage,
 } from "./navigation";
 import {
@@ -65,7 +64,6 @@ import {
   soldLineMatchesDirection,
   isCompanyLevelSoldLine,
   soldLineDirectionIds,
-  type Account,
   type AccountType,
   type CommercialStatus,
   type CompanyRelationType,
@@ -101,7 +99,7 @@ function KpiPanel({ kpis }: { kpis: ScopeKpis }) {
         <div className="kpi-card">
           <span className="kpi-label">CA installé</span>
           <strong>{formatEur(kpis.billedAmount)}</strong>
-          <span className="kpi-sublabel">facturé + Closed Won</span>
+          <span className="kpi-sublabel">stock facturé</span>
         </div>
         <div className="kpi-card kpi-potential">
           <span className="kpi-label">Pipeline</span>
@@ -114,9 +112,9 @@ function KpiPanel({ kpis }: { kpis: ScopeKpis }) {
           <span className="kpi-sublabel">à qualifier</span>
         </div>
         <div className="kpi-card">
-          <span className="kpi-label">Renouvellement</span>
+          <span className="kpi-label">Renouvellements en cours</span>
           <strong>{formatEur(kpis.renewalAmount)}</strong>
-          <span className="kpi-sublabel">ouverts</span>
+          <span className="kpi-sublabel">ouverts · pas encore gagnés</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Montant cible</span>
@@ -433,27 +431,6 @@ const contactEdgeStyle: Record<
   Knows: { stroke: "#64748b", strokeDasharray: "2 3", width: 1.75 },
 };
 
-function accountKind(
-  accountId: string,
-  accountList: Account[],
-): "holding" | "entreprise" | "partner" {
-  const account = accountList.find((a) => a.id === accountId);
-  if (!account) return "entreprise";
-
-  const root = account.holdingId
-    ? (accountList.find((h) => h.id === account.holdingId) ?? account)
-    : account;
-
-  if (
-    account.commercialStatus === "Partner" ||
-    root.commercialStatus === "Partner"
-  ) {
-    return "partner";
-  }
-  if (account.type === "Holding") return "holding";
-  return "entreprise";
-}
-
 export default function App() {
   const {
     loading: authLoading,
@@ -487,6 +464,7 @@ export default function App() {
     activeSolutions,
     activeContactTypes,
     activeDirections,
+    activeCommercialStatuses,
     solutionLabel,
     contactTypeLabel,
     directionLabel,
@@ -567,10 +545,6 @@ export default function App() {
   const [page, setPage] = useState<AppPage>("dashboard");
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showHoldings, setShowHoldings] = useState(true);
-  const [showEntreprises, setShowEntreprises] = useState(true);
-  const [showPartners, setShowPartners] = useState(true);
-  const [showCompetitors, setShowCompetitors] = useState(true);
 
   const navigate = useCallback((next: AppPage) => {
     if (next === "account-plans") {
@@ -592,9 +566,12 @@ export default function App() {
     }
   }, [page, billing.organization?.optional_modules]);
 
-  const [showDirections, setShowDirections] = useState(true);
-  const [showContacts, setShowContacts] = useState(true);
-  const [showContactLinks, setShowContactLinks] = useState(true);
+  const [visibleCommercialStatuses, setVisibleCommercialStatuses] = useState<
+    Record<string, boolean>
+  >({});
+  const [showDirections, setShowDirections] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
+  const [showContactLinks, setShowContactLinks] = useState(false);
   const [visibleRoles, setVisibleRoles] = useState<Record<string, boolean>>(
     {},
   );
@@ -607,53 +584,70 @@ export default function App() {
     setVisibleRoles((prev) => {
       const next = { ...prev };
       for (const t of activeContactTypes) {
-        if (next[t.id] === undefined) next[t.id] = true;
+        if (next[t.id] === undefined) next[t.id] = false;
       }
       return next;
     });
   }, [activeContactTypes]);
 
   useEffect(() => {
+    setVisibleCommercialStatuses((prev) => {
+      const next = { ...prev };
+      for (const s of activeCommercialStatuses) {
+        if (next[s.id] === undefined) next[s.id] = false;
+      }
+      return next;
+    });
+  }, [activeCommercialStatuses]);
+
+  useEffect(() => {
     setVisibleSolutions((prev) => {
       const next = { ...prev };
       for (const s of activeSolutions) {
-        if (next[s.id] === undefined) next[s.id] = true;
+        if (next[s.id] === undefined) next[s.id] = false;
       }
       return next;
     });
   }, [activeSolutions]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  /** Compte choisi dans la liste déroulante = cœur du graphe (indépendant du clic carte). */
-  const [mapFocusAccountId, setMapFocusAccountId] = useState<string | null>(
-    null,
+  const isCommercialStatusVisible = useCallback(
+    (status: string) => visibleCommercialStatuses[status] === true,
+    [visibleCommercialStatuses],
   );
+
+  /** Solutions vendues + contacts : uniquement Client / Prospect. */
+  const isCrmDetailStatus = useCallback(
+    (status: string) => status === "Client" || status === "Prospect",
+    [],
+  );
+
+  const crmDetailFiltersVisible =
+    isCommercialStatusVisible("Client") ||
+    isCommercialStatusVisible("Prospect");
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [peerFilters, setPeerFilters] = useState<PeerFilters>({
-    sameSector: true,
+    sameSector: false,
     sameEffectif: false,
   });
 
-  useEffect(() => {
-    if (mapFocusAccountId) return;
-    const first =
-      activeAccounts.find((a) => a.type === "Holding")?.id ??
-      activeAccounts[0]?.id ??
-      null;
-    if (first) {
-      setMapFocusAccountId(first);
-      if (!selectedId) setSelectedId(first);
+  /** Compte focus = nœud compte cliqué, ou entreprise du contact / direction. */
+  const focusAccountId = useMemo(() => {
+    if (!selectedId) return null;
+    if (activeAccounts.some((a) => a.id === selectedId)) return selectedId;
+    const contact = activeContacts.find((c) => c.id === selectedId);
+    if (contact) return contact.accountId;
+    const dir = parseDirectionNodeId(selectedId);
+    if (dir) {
+      const member = activeContacts.find(
+        (c) =>
+          c.directionId === dir.directionId &&
+          holdingIdOfAccount(c.accountId) === dir.holdingId,
+      );
+      return member?.accountId ?? dir.holdingId;
     }
-  }, [mapFocusAccountId, selectedId, activeAccounts]);
-
-  useEffect(() => {
-    if (!mapFocusAccountId) return;
-    if (activeAccounts.some((a) => a.id === mapFocusAccountId)) return;
-    const first =
-      activeAccounts.find((a) => a.type === "Holding")?.id ??
-      activeAccounts[0]?.id ??
-      null;
-    setMapFocusAccountId(first);
-  }, [mapFocusAccountId, activeAccounts]);
+    return null;
+  }, [selectedId, activeAccounts, activeContacts, holdingIdOfAccount]);
 
   const toggleRole = (role: string) => {
     setVisibleRoles((prev) => ({ ...prev, [role]: !prev[role] }));
@@ -669,28 +663,37 @@ export default function App() {
   const activeSolutionIds = useMemo(
     () =>
       new Set(
-        activeSolutions.filter((s) => visibleSolutions[s.id] !== false).map((s) => s.id),
+        activeSolutions
+          .filter((s) => visibleSolutions[s.id] === true)
+          .map((s) => s.id),
       ),
     [visibleSolutions, activeSolutions],
   );
 
-  const allSolutionsActive =
-    activeSolutions.length > 0 &&
-    activeSolutions.every((s) => visibleSolutions[s.id] !== false);
+  /** Aucune case cochée = pas de filtre solution (tout passe). */
+  const solutionFilterActive = activeSolutionIds.size > 0;
 
   const accountPassesSolutionFilter = useCallback(
     (accountId: string) => {
-      if (allSolutionsActive) return true;
+      const acc = activeAccounts.find((a) => a.id === accountId);
+      if (acc && !isCrmDetailStatus(acc.commercialStatus)) return true;
+      if (!solutionFilterActive) return true;
       const related = soldSolutions.filter((s) => s.accountId === accountId);
       if (related.length === 0) return true;
       return related.some((s) => activeSolutionIds.has(s.solutionId));
     },
-    [allSolutionsActive, activeSolutionIds, soldSolutions],
+    [
+      activeAccounts,
+      isCrmDetailStatus,
+      solutionFilterActive,
+      activeSolutionIds,
+      soldSolutions,
+    ],
   );
 
   const directionPassesSolutionFilter = useCallback(
     (directionId: string, accountId: string) => {
-      if (allSolutionsActive) return true;
+      if (!solutionFilterActive) return true;
       const atDirection = soldSolutions.filter((s) =>
         soldLineMatchesDirection(s, directionId),
       );
@@ -706,145 +709,96 @@ export default function App() {
       }
       return false;
     },
-    [allSolutionsActive, activeSolutionIds, soldSolutions],
+    [solutionFilterActive, activeSolutionIds, soldSolutions],
   );
 
   const peerGroups = useMemo(
-    () => buildPeerGroups(activeAccounts, mapFocusAccountId, peerFilters),
-    [activeAccounts, mapFocusAccountId, peerFilters],
+    () => buildPeerGroups(activeAccounts, focusAccountId, peerFilters),
+    [activeAccounts, focusAccountId, peerFilters],
   );
 
-  /** Mode comparables : vue entreprise ↔ entreprise uniquement (pas directions / contacts). */
-  const peerCompareMode =
-    peerFilters.sameSector || peerFilters.sameEffectif;
+  /** Comparables actifs seulement si Client/Prospect + critère renseigné. */
+  const peerOverlayActive =
+    crmDetailFiltersVisible &&
+    ((peerFilters.sameSector && Boolean(peerGroups.sector)) ||
+      (peerFilters.sameEffectif && Boolean(peerGroups.effectif)));
 
+  /**
+   * Visibilité carte :
+   * 1) Statut = filtre principal (tous les comptes au(x) statut(s) coché(s))
+   * 2) Compte focus toujours visible (sélection / KPI)
+   * 3) Comparables = ajoutent les pairs, sans masquer le reste
+   */
   const visibleAccountIds = useMemo(() => {
-    const focusHoldingId = (() => {
-      if (!mapFocusAccountId) return null;
-      const acc = activeAccounts.find((a) => a.id === mapFocusAccountId);
-      if (!acc) return null;
-      return acc.type === "Holding" ? acc.id : acc.holdingId ?? acc.id;
-    })();
-
     const ids = new Set<string>();
+
     for (const a of activeAccounts) {
-      if (focusHoldingId) {
-        const inFocus =
-          a.id === focusHoldingId ||
-          a.holdingId === focusHoldingId ||
-          a.id === mapFocusAccountId;
-        if (!inFocus) continue;
-      }
-      const kind = accountKind(a.id, activeAccounts);
-      if (kind === "holding" && !showHoldings) continue;
-      if (kind === "entreprise" && !showEntreprises) continue;
-      if (kind === "partner" && !showPartners) continue;
+      if (!a.active) continue;
+      if (!isCommercialStatusVisible(a.commercialStatus)) continue;
       if (!accountPassesSolutionFilter(a.id)) continue;
       ids.add(a.id);
     }
 
-    /** Comparables (même secteur / même effectif) autour du compte cœur. */
-    for (const { holding, entreprises } of peerGroups.groups) {
-      if (!peerCompareMode && holding && (showHoldings || showEntreprises)) {
-        ids.add(holding.id);
-      }
-      for (const e of entreprises) {
-        if (!showEntreprises) continue;
-        if (!accountPassesSolutionFilter(e.id)) continue;
-        ids.add(e.id);
-        if (!peerCompareMode && e.holdingId) ids.add(e.holdingId);
-      }
-    }
-
-    /** Étend le périmètre aux comptes liés (concurrents, partenaires). */
-    const ecosystemEnabled: CompanyRelationType[] = [];
-    if (showCompetitors) ecosystemEnabled.push("CompetitorOf");
-    if (showPartners) ecosystemEnabled.push("PartnerOf");
-
-    if (ecosystemEnabled.length > 0 && ids.size > 0) {
-      let grew = true;
-      while (grew) {
-        grew = false;
-        for (const rel of companyRelations) {
-          if (!ecosystemEnabled.includes(rel.relation)) continue;
-          const srcIn = ids.has(rel.source);
-          const tgtIn = ids.has(rel.target);
-          if (srcIn === tgtIn) continue;
-          const outsider = srcIn ? rel.target : rel.source;
-          const acc = activeAccounts.find((a) => a.id === outsider);
-          if (!acc || !acc.active) continue;
-          const kind = accountKind(acc.id, activeAccounts);
-          if (kind === "holding" && !showHoldings) continue;
-          if (kind === "entreprise" && !showEntreprises) continue;
-          ids.add(acc.id);
-          if (!peerCompareMode && acc.holdingId) ids.add(acc.holdingId);
-          if (!peerCompareMode && acc.type === "Holding") {
-            for (const child of activeAccounts) {
-              if (child.holdingId === acc.id) ids.add(child.id);
+    if (focusAccountId) {
+      const focus = activeAccounts.find((a) => a.id === focusAccountId);
+      if (focus?.active !== false) {
+        ids.add(focusAccountId);
+        if (focus?.holdingId) ids.add(focus.holdingId);
+        if (focus?.type === "Holding") {
+          for (const child of activeAccounts) {
+            if (
+              child.holdingId === focus.id &&
+              isCommercialStatusVisible(child.commercialStatus) &&
+              accountPassesSolutionFilter(child.id)
+            ) {
+              ids.add(child.id);
             }
           }
-          grew = true;
         }
       }
     }
 
+    /** Pairs ajoutés même hors filtre statut (exploration explicite). */
+    if (peerOverlayActive) {
+      for (const { holding, entreprises } of peerGroups.groups) {
+        if (holding) ids.add(holding.id);
+        for (const e of entreprises) {
+          if (!accountPassesSolutionFilter(e.id)) continue;
+          ids.add(e.id);
+          if (e.holdingId) ids.add(e.holdingId);
+        }
+      }
+    }
+
+    /** Holdings orphelins sans enfant visible ni CA → hors carte. */
     for (const a of activeAccounts) {
       if (a.type !== "Holding" || !ids.has(a.id)) continue;
-      if (peerCompareMode && a.id !== mapFocusAccountId) {
-        ids.delete(a.id);
-        continue;
-      }
+      if (a.id === focusAccountId) continue;
       const children = activeAccounts.filter((c) => c.holdingId === a.id);
-      if (children.length === 0) continue;
       const anyChild = children.some((c) => ids.has(c.id));
-      if (!anyChild) {
-        const holdingSales = soldSolutions.filter((s) => s.accountId === a.id);
-        if (holdingSales.length === 0) ids.delete(a.id);
-      }
-    }
-
-    /** Comparables : uniquement le cœur + entreprises pairs (statut visible). */
-    if (peerCompareMode) {
-      const peerEntrepriseIds = new Set(
-        peerGroups.groups.flatMap((g) => g.entreprises.map((e) => e.id)),
-      );
-      for (const id of [...ids]) {
-        const acc = activeAccounts.find((a) => a.id === id);
-        if (!acc) continue;
-        if (acc.type === "Holding") {
-          if (acc.id !== mapFocusAccountId) ids.delete(id);
-          continue;
-        }
-        if (
-          acc.type === "Entreprise" &&
-          acc.id !== mapFocusAccountId &&
-          !peerEntrepriseIds.has(acc.id)
-        ) {
-          ids.delete(id);
-        }
-      }
+      if (anyChild) continue;
+      const holdingSales = soldSolutions.filter((s) => s.accountId === a.id);
+      if (holdingSales.length === 0) ids.delete(a.id);
     }
 
     return ids;
   }, [
     activeAccounts,
-    mapFocusAccountId,
+    focusAccountId,
     peerGroups,
-    peerCompareMode,
-    showHoldings,
-    showEntreprises,
-    showPartners,
-    showCompetitors,
-    companyRelations,
+    peerOverlayActive,
+    isCommercialStatusVisible,
     accountPassesSolutionFilter,
     soldSolutions,
   ]);
 
   const visibleDirectionIds = useMemo(() => {
     const ids = new Set<string>();
-    if (peerCompareMode || !showDirections) return ids;
+    if (!crmDetailFiltersVisible || !showDirections) return ids;
     for (const c of activeContacts) {
       if (!visibleAccountIds.has(c.accountId)) continue;
+      const acc = activeAccounts.find((a) => a.id === c.accountId);
+      if (!acc || !isCrmDetailStatus(acc.commercialStatus)) continue;
       const holdingId = holdingIdOfAccount(c.accountId);
       if (!holdingId || !visibleAccountIds.has(holdingId)) continue;
       if (!activeDirections.some((d) => d.id === c.directionId)) continue;
@@ -853,23 +807,27 @@ export default function App() {
     }
     return ids;
   }, [
-    peerCompareMode,
+    crmDetailFiltersVisible,
     showDirections,
     visibleAccountIds,
     directionPassesSolutionFilter,
     activeContacts,
     activeDirections,
+    activeAccounts,
+    isCrmDetailStatus,
     holdingIdOfAccount,
   ]);
 
   const visibleContactIds = useMemo(() => {
     const ids = new Set<string>();
-    if (peerCompareMode || !showContacts) return ids;
+    if (!crmDetailFiltersVisible || !showContacts) return ids;
     const stakeByContact = new Map(
       (activeOpportunity?.stakeholders ?? []).map((s) => [s.contactId, s]),
     );
     for (const c of activeContacts) {
       if (!visibleAccountIds.has(c.accountId)) continue;
+      const acc = activeAccounts.find((a) => a.id === c.accountId);
+      if (!acc || !isCrmDetailStatus(acc.commercialStatus)) continue;
       if (showDirections) {
         const holdingId = holdingIdOfAccount(c.accountId);
         if (
@@ -883,14 +841,19 @@ export default function App() {
       }
       const stake = stakeByContact.get(c.id);
       if (stake?.role) {
-        if (!visibleRoles[stake.role]) continue;
-        if (!activeContactTypes.some((t) => t.id === stake.role)) continue;
+        const roleFilterActive = activeContactTypes.some(
+          (t) => visibleRoles[t.id] === true,
+        );
+        if (roleFilterActive) {
+          if (visibleRoles[stake.role] !== true) continue;
+          if (!activeContactTypes.some((t) => t.id === stake.role)) continue;
+        }
       }
       ids.add(c.id);
     }
     return ids;
   }, [
-    peerCompareMode,
+    crmDetailFiltersVisible,
     showContacts,
     showDirections,
     visibleAccountIds,
@@ -898,6 +861,8 @@ export default function App() {
     visibleRoles,
     activeContactTypes,
     activeContacts,
+    activeAccounts,
+    isCrmDetailStatus,
     holdingIdOfAccount,
     activeOpportunity,
   ]);
@@ -905,21 +870,18 @@ export default function App() {
   const graphNodes: Node[] = useMemo(() => {
     const list: Node[] = [];
 
-    const focusAccount = mapFocusAccountId
-      ? activeAccounts.find((a) => a.id === mapFocusAccountId)
+    const focusAccount = focusAccountId
+      ? activeAccounts.find((a) => a.id === focusAccountId)
       : undefined;
+    const peerEntrepriseIds = peerOverlayActive
+      ? peerGroups.groups.flatMap((g) => g.entreprises.map((e) => e.id))
+      : [];
     const peerLayout =
-      peerCompareMode && focusAccount
+      peerOverlayActive && focusAccount && peerEntrepriseIds.length > 0
         ? peerCompareLayoutPositions(
             focusAccount.id,
             { x: focusAccount.x, y: focusAccount.y },
-            [...visibleAccountIds].filter(
-              (id) =>
-                id !== focusAccount.id &&
-                activeAccounts.some(
-                  (a) => a.id === id && a.type === "Entreprise",
-                ),
-            ),
+            peerEntrepriseIds.filter((id) => visibleAccountIds.has(id)),
           )
         : null;
 
@@ -943,24 +905,26 @@ export default function App() {
         undefined,
         salesTaxonomy,
       );
-      const chips = rollup.bySolution
-        .filter(
-          (s) =>
-            s.billedAmount > 0 ||
-            s.potentialAmount > 0 ||
-            s.whitespaceAmount > 0,
-        )
-        .map((s) => ({
-          name: s.name,
-          amount:
-            s.potentialAmount > 0
-              ? s.potentialAmount
-              : s.whitespaceAmount > 0
-                ? s.whitespaceAmount
-                : s.targetAmount,
-        }));
+      const chips = isCrmDetailStatus(a.commercialStatus)
+        ? rollup.bySolution
+            .filter(
+              (s) =>
+                s.billedAmount > 0 ||
+                s.potentialAmount > 0 ||
+                s.whitespaceAmount > 0,
+            )
+            .map((s) => ({
+              name: s.name,
+              amount:
+                s.potentialAmount > 0
+                  ? s.potentialAmount
+                  : s.whitespaceAmount > 0
+                    ? s.whitespaceAmount
+                    : s.targetAmount,
+            }))
+        : [];
       const isFocus = Boolean(
-        mapFocusAccountId && a.id === mapFocusAccountId,
+        focusAccountId && a.id === focusAccountId,
       );
       const layoutPos = peerLayout?.get(a.id);
       list.push({
@@ -980,8 +944,12 @@ export default function App() {
               ? activeAccounts.find((h) => h.id === a.holdingId)?.name
               : undefined,
           solutions: chips,
-          billed: rollup.billedAmount,
-          potential: rollup.potentialAmount,
+          billed: isCrmDetailStatus(a.commercialStatus)
+            ? rollup.billedAmount
+            : 0,
+          potential: isCrmDetailStatus(a.commercialStatus)
+            ? rollup.potentialAmount
+            : 0,
           isFocus,
         },
       });
@@ -1010,7 +978,7 @@ export default function App() {
         data: {
           name: dir.name,
           accountName: holding.name,
-          commercialStatus: "Other" as CommercialStatus,
+          commercialStatus: "Prospect" as CommercialStatus,
           memberCount: activeContacts.filter(
             (c) =>
               c.directionId === parsed.directionId &&
@@ -1055,8 +1023,9 @@ export default function App() {
 
     return list;
   }, [
-    peerCompareMode,
-    mapFocusAccountId,
+    peerOverlayActive,
+    peerGroups,
+    focusAccountId,
     selectedId,
     visibleAccountIds,
     visibleDirectionIds,
@@ -1071,20 +1040,22 @@ export default function App() {
     activeOpportunity,
     activeOpportunities,
     layoutPositions,
+    isCrmDetailStatus,
+    salesTaxonomy,
   ]);
 
   const mapStructureKey = useMemo(
     () =>
       [
-        peerCompareMode ? "1" : "0",
-        mapFocusAccountId ?? "",
+        peerOverlayActive ? "1" : "0",
+        focusAccountId ?? "",
         [...visibleAccountIds].sort().join(","),
         [...visibleDirectionIds].sort().join(","),
         [...visibleContactIds].sort().join(","),
       ].join("|"),
     [
-      peerCompareMode,
-      mapFocusAccountId,
+      peerOverlayActive,
+      focusAccountId,
       visibleAccountIds,
       visibleDirectionIds,
       visibleContactIds,
@@ -1125,7 +1096,6 @@ export default function App() {
 
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
-      if (peerCompareMode) return false;
       const source = connection.source;
       const target = connection.target;
       if (!source || !target || source === target) return false;
@@ -1143,7 +1113,7 @@ export default function App() {
       const tgtC = activeContacts.find((c) => c.id === target);
       return Boolean(srcC && tgtC);
     },
-    [peerCompareMode, activeAccounts, activeContacts],
+    [activeAccounts, activeContacts],
   );
 
   const onConnect: OnConnect = useCallback(
@@ -1205,7 +1175,6 @@ export default function App() {
     };
 
     for (const e of holdingEdges) {
-      if (peerCompareMode) continue;
       const s = companyEdgeStyle.holdingOf;
       pushIfVisible({
         id: e.id,
@@ -1218,19 +1187,8 @@ export default function App() {
     }
 
     for (const e of companyRelations) {
-      if (peerCompareMode) continue;
-      if (e.relation === "PartnerOf" && !showPartners) continue;
-      if (e.relation === "CompetitorOf" && !showCompetitors) continue;
       /** Même secteur stocké : remplacé par les arêtes Comparables dynamiques. */
       if (e.relation === "SameSectorAs") continue;
-      if (
-        (e.relation === "SupplierOf" ||
-          e.relation === "CustomerOf" ||
-          e.relation === "InvestorIn") &&
-        !showPartners
-      ) {
-        continue;
-      }
       const s = companyEdgeStyle[e.relation];
       pushIfVisible({
         id: e.id,
@@ -1249,8 +1207,12 @@ export default function App() {
       });
     }
 
-    /** Liens comparables depuis le compte cœur. */
-    if (mapFocusAccountId && visible.has(mapFocusAccountId)) {
+    /** Liens comparables (overlay) depuis le compte sélectionné. */
+    if (
+      peerOverlayActive &&
+      focusAccountId &&
+      visible.has(focusAccountId)
+    ) {
       const peerStyle = companyEdgeStyle.SameSectorAs;
       const peerLabel =
         peerFilters.sameSector && peerFilters.sameEffectif
@@ -1264,8 +1226,8 @@ export default function App() {
         for (const ent of entreprises) {
           if (!visible.has(ent.id)) continue;
           pushIfVisible({
-            id: `peer-${mapFocusAccountId}-${ent.id}`,
-            source: mapFocusAccountId,
+            id: `peer-${focusAccountId}-${ent.id}`,
+            source: focusAccountId,
             target: ent.id,
             sourceHandle: "side",
             targetHandle: "side-in",
@@ -1340,9 +1302,7 @@ export default function App() {
 
     return list;
   }, [
-    peerCompareMode,
-    showPartners,
-    showCompetitors,
+    peerOverlayActive,
     showDirections,
     showContacts,
     showContactLinks,
@@ -1356,7 +1316,7 @@ export default function App() {
     contactRelations,
     activeContacts,
     activeAccounts,
-    mapFocusAccountId,
+    focusAccountId,
     peerGroups,
     peerFilters,
   ]);
@@ -1367,23 +1327,12 @@ export default function App() {
       visibleAccountIds.has(selectedId) ||
       visibleDirectionIds.has(selectedId) ||
       visibleContactIds.has(selectedId);
-    if (!stillVisible) {
-      const fallback =
-        (mapFocusAccountId && visibleAccountIds.has(mapFocusAccountId)
-          ? mapFocusAccountId
-          : null) ??
-        activeAccounts.find((a) => a.type === "Holding")?.id ??
-        activeAccounts[0]?.id ??
-        null;
-      setSelectedId(fallback);
-    }
+    if (!stillVisible) setSelectedId(null);
   }, [
     selectedId,
-    mapFocusAccountId,
     visibleAccountIds,
     visibleDirectionIds,
     visibleContactIds,
-    activeAccounts,
   ]);
 
   const selectedContact = activeContacts.find((c) => c.id === selectedId);
@@ -1516,31 +1465,11 @@ export default function App() {
         );
       }
     }
-    const fallbackId =
-      activeAccounts.find((a) => a.type === "Holding")?.id ??
-      activeAccounts[0]?.id;
-    if (!fallbackId) {
-      return aggregateKpis(
-        [],
-        "Aucun compte",
-        solutionLabel,
-        [],
-        undefined,
-        salesTaxonomy,
-      );
-    }
-    const fallback = activeAccounts.find((a) => a.id === fallbackId)!;
     return aggregateKpis(
-      salesForAccountScope(fallbackId, soldSolutions, activeAccounts),
-      fallback.type === "Holding"
-        ? `Groupe ${fallback.name}`
-        : `Entreprise ${fallback.name}`,
+      [],
+      "Aucune sélection",
       solutionLabel,
-      opportunitiesForAccountScope(
-        fallbackId,
-        activeOpportunities,
-        activeAccounts,
-      ),
+      [],
       undefined,
       salesTaxonomy,
     );
@@ -1561,13 +1490,6 @@ export default function App() {
     setSelectedId(node.id);
   }, []);
 
-  function selectMapFocusAccount(id: string) {
-    setMapFocusAccountId(id);
-    setSelectedId(id);
-  }
-
-  const accountPickerValue = mapFocusAccountId;
-  const focusAccountId = mapFocusAccountId;
   const peerNodeIds = useMemo(() => {
     const ids: string[] = [];
     for (const { entreprises } of peerGroups.groups) {
@@ -1670,25 +1592,18 @@ export default function App() {
             </button>
           ))}
 
-          {NAV_OPTIONAL_MODULES.some((m) =>
-            isModuleEnabled(billing.organization?.optional_modules, m.id),
-          ) ? (
-            <>
-              <p className="sidebar-group">{t("nav.group.modules")}</p>
-              {NAV_OPTIONAL_MODULES.filter((m) =>
-                isModuleEnabled(billing.organization?.optional_modules, m.id),
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={page === item.id ? "active" : ""}
-                  onClick={() => navigate(item.id)}
-                >
-                  {navLabel(item.id)}
-                </button>
-              ))}
-            </>
-          ) : null}
+          <p className="sidebar-group">{t("nav.group.pilotage")}</p>
+          {NAV_PILOTAGE.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={page === item.id ? "active" : ""}
+              onClick={() => navigate(item.id)}
+            >
+              {navLabel(item.id)}
+            </button>
+          ))}
+
         </nav>
 
         <div className="sidebar-foot">
@@ -1759,19 +1674,15 @@ export default function App() {
           <div className="app map-app">
             <header className="topbar">
               <div className="brand">
-                <AccountSearchSelect
-                  accounts={activeAccounts}
-                  value={accountPickerValue}
-                  onChange={selectMapFocusAccount}
-                  ariaLabel={t("map.pickAccount")}
-                />
-                <SameSectorPanel
-                  accounts={activeAccounts}
-                  focusAccountId={accountPickerValue}
-                  onOpenAccount={selectMapFocusAccount}
-                  filters={peerFilters}
-                  onFiltersChange={setPeerFilters}
-                />
+                {crmDetailFiltersVisible ? (
+                  <SameSectorPanel
+                    accounts={activeAccounts}
+                    focusAccountId={focusAccountId}
+                    onOpenAccount={(id) => setSelectedId(id)}
+                    filters={peerFilters}
+                    onFiltersChange={setPeerFilters}
+                  />
+                ) : null}
               </div>
               <div className="opp">
                 <div className="opp-account-meta">
@@ -1832,59 +1743,41 @@ export default function App() {
                   <main className="canvas-wrap">
                     <div className="filters-stack">
                       <div className="filters">
-                        <span className="filters-label">Entreprises</span>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={showHoldings}
-                            onChange={(e) => setShowHoldings(e.target.checked)}
-                          />
-                          Groupes
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={showEntreprises}
-                            onChange={(e) =>
-                              setShowEntreprises(e.target.checked)
-                            }
-                          />
-                          Entreprises
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={showPartners}
-                            onChange={(e) => setShowPartners(e.target.checked)}
-                          />
-                          Partenaires
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={showCompetitors}
-                            onChange={(e) =>
-                              setShowCompetitors(e.target.checked)
-                            }
-                          />
-                          Concurrents
-                        </label>
-                      </div>
-
-                      <div className="filters filters-solutions">
-                        <span className="filters-label">Solutions vendues</span>
-                        {activeSolutions.map((s) => (
-                          <label key={s.id} className="solution-filter">
+                        <span className="filters-label">Statut</span>
+                        {activeCommercialStatuses.map((s) => (
+                          <label key={s.id}>
                             <input
                               type="checkbox"
-                              checked={visibleSolutions[s.id] !== false}
-                              onChange={() => toggleSolution(s.id)}
+                              checked={visibleCommercialStatuses[s.id] === true}
+                              onChange={() =>
+                                setVisibleCommercialStatuses((prev) => ({
+                                  ...prev,
+                                  [s.id]: !prev[s.id],
+                                }))
+                              }
                             />
-                            {s.name}
+                            {statusLabel(s.id)}
                           </label>
                         ))}
                       </div>
 
+                      {crmDetailFiltersVisible ? (
+                        <div className="filters filters-solutions">
+                          <span className="filters-label">Solutions vendues</span>
+                          {activeSolutions.map((s) => (
+                            <label key={s.id} className="solution-filter">
+                              <input
+                                type="checkbox"
+                                checked={visibleSolutions[s.id] === true}
+                                onChange={() => toggleSolution(s.id)}
+                              />
+                              {s.name}
+                            </label>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {crmDetailFiltersVisible ? (
                       <div className="filters filters-contacts">
                         <span className="filters-label">Contacts</span>
                         <label>
@@ -1921,7 +1814,7 @@ export default function App() {
                           <label key={role.id} className="role-filter">
                             <input
                               type="checkbox"
-                              checked={visibleRoles[role.id] !== false}
+                              checked={visibleRoles[role.id] === true}
                               onChange={() => toggleRole(role.id)}
                               disabled={!showContacts}
                             />
@@ -1934,6 +1827,7 @@ export default function App() {
                           </label>
                         ))}
                       </div>
+                      ) : null}
                     </div>
 
                     <ReactFlow

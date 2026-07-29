@@ -9,6 +9,12 @@ export type HubSpotMappingConfig = {
     sectorProp: string;
     /** Propriété HS owner → accounts.owner_profile_id */
     ownerProp: string;
+    /** CA installé : code / nom solution DBR (optionnel, vide = désactivé) */
+    soldSolutionProp: string;
+    /** Modules séparés par ; (libellés catalogue) */
+    soldModulesProp: string;
+    /** Montant CA facturé */
+    soldAmountProp: string;
   };
   contact: {
     firstnameProp: string;
@@ -50,6 +56,9 @@ export const DEFAULT_HUBSPOT_MAPPING: HubSpotMappingConfig = {
     domainProp: "domain",
     sectorProp: "industry",
     ownerProp: "hubspot_owner_id",
+    soldSolutionProp: "",
+    soldModulesProp: "",
+    soldAmountProp: "",
   },
   contact: {
     firstnameProp: "firstname",

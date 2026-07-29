@@ -55,12 +55,22 @@ export function buildPeerGroups(
   hint: string | null;
 } {
   if (!focusAccountId) {
-    return { sector: null, effectif: null, groups: [], hint: null };
+    return {
+      sector: null,
+      effectif: null,
+      groups: [],
+      hint: "Sélectionnez une entreprise sur la carte.",
+    };
   }
 
   const focus = accounts.find((a) => a.id === focusAccountId) ?? null;
   if (!focus) {
-    return { sector: null, effectif: null, groups: [], hint: null };
+    return {
+      sector: null,
+      effectif: null,
+      groups: [],
+      hint: "Sélectionnez une entreprise sur la carte.",
+    };
   }
 
   const focusHolding =
@@ -182,6 +192,10 @@ export default function SameSectorPanel({
   return (
     <section className="same-sector-panel" aria-label="Comptes comparables">
       <h3>Comparables</h3>
+      <p className="muted peer-overlay-hint">
+        Après le filtre Statut, cliquez une entreprise sur la carte. Les
+        comparables s’ajoutent autour de cette sélection.
+      </p>
       <div className="peer-filters" role="group" aria-label="Critères">
         <label>
           <input

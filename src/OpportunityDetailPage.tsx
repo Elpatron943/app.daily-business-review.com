@@ -41,6 +41,7 @@ type Tab =
   | "recherche"
   | "contacts"
   | "recos"
+  | "plans"
   | "scripts";
 
 type Props = {
@@ -95,6 +96,7 @@ export default function OpportunityDetailPage({
       pending === "recherche" ||
       pending === "contacts" ||
       pending === "recos" ||
+      pending === "plans" ||
       pending === "scripts"
     ) {
       sessionStorage.removeItem("powermap.openOppTab");
@@ -431,6 +433,13 @@ export default function OpportunityDetailPage({
         >
           Recos IA
         </button>
+        <button
+          type="button"
+          className={tab === "plans" ? "active" : ""}
+          onClick={() => setTab("plans")}
+        >
+          Plan d’actions
+        </button>
         {(showPhoneScript || showEmailScript) && (
           <button
             type="button"
@@ -499,12 +508,9 @@ export default function OpportunityDetailPage({
         />
       )}
 
-      {tab === "recos" && (
-        <>
-          <OpportunityRecommendPanel opportunity={opportunity} />
-          <OpportunityActionPlanGen opportunity={opportunity} />
-        </>
-      )}
+      {tab === "recos" && <OpportunityRecommendPanel opportunity={opportunity} />}
+
+      {tab === "plans" && <OpportunityActionPlanGen opportunity={opportunity} />}
 
       {tab === "scripts" && (showPhoneScript || showEmailScript) && (
         <section className="entry-subsection">

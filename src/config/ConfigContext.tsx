@@ -317,15 +317,25 @@ function normalizeOppKinds(raw: OppKindDef[] | undefined): OppKindDef[] {
 function normalizeCommercialStatuses(
   raw: CommercialStatusDef[] | undefined,
 ): CommercialStatusDef[] {
+  const defaults = structuredClone(defaultConfig.commercialStatuses);
   if (!Array.isArray(raw) || raw.length === 0) {
-    return structuredClone(defaultConfig.commercialStatuses);
+    return defaults;
   }
-  return raw.map((s, i) => ({
-    id: s.id || `status-${i + 1}`,
-    label: s.label || s.id || `Statut ${i + 1}`,
-    active: s.active !== false,
-    order: s.order ?? i + 1,
-  }));
+  const normalized = raw
+    .filter((s) => s.id !== "Other")
+    .map((s, i) => ({
+      id: s.id || `status-${i + 1}`,
+      label: s.label || s.id || `Statut ${i + 1}`,
+      active: s.active !== false,
+      order: s.order ?? i + 1,
+    }));
+  // Garantit les statuts catalogue manquants (ex. Concurrent ajouté après coup).
+  for (const def of defaults) {
+    if (!normalized.some((s) => s.id === def.id)) {
+      normalized.push({ ...def, order: normalized.length + 1 });
+    }
+  }
+  return normalized;
 }
 
 function normalizeAccountSizes(
@@ -507,9 +517,22 @@ function loadConfig(): OrgConfig {
       accountSizes: normalizeAccountSizes(
         (parsed as OrgConfig & { accountSizes?: AccountSizeDef[] }).accountSizes,
       ),
-      kpiRules: normalizeKpiRules(
-        (parsed as OrgConfig & { kpiRules?: KpiRulesConfig }).kpiRules,
-      ),
+      kpiRules: (() => {
+        const rules = normalizeKpiRules(
+          (parsed as OrgConfig & { kpiRules?: KpiRulesConfig }).kpiRules,
+        );
+        // Migration unique : CA installé = stock facturé (Won → ligne de vente).
+        const migKey = "powermap.kpi.installedSalesOnly.v1";
+        try {
+          if (!localStorage.getItem(migKey)) {
+            localStorage.setItem(migKey, "1");
+            return { ...rules, includeWonOppsInInstalled: false };
+          }
+        } catch {
+          /* ignore */
+        }
+        return rules;
+      })(),
     };
   } catch {
     return structuredClone(defaultConfig);

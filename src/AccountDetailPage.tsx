@@ -6,10 +6,8 @@ import {
   salesForAccountScope,
   opportunitiesForAccountScope,
   aggregateKpis,
-  ECOSYSTEM_COMPANY_RELATIONS,
   type AccountSize,
   type CommercialStatus,
-  type CompanyRelationType,
 } from "./data";
 import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
@@ -21,16 +19,7 @@ import SoldSolutionEditor from "./SoldSolutionEditor";
 import TargetResearchPanel from "./research/TargetResearchPanel";
 import { useOpportunities } from "./opportunities/OpportunityContext";
 
-const COMPANY_REL_GROUPS: { label: string; types: CompanyRelationType[] }[] = [
-  {
-    label: "Écosystème",
-    types: [...ECOSYSTEM_COMPANY_RELATIONS],
-  },
-  {
-    label: "Autres liens",
-    types: ["SupplierOf", "CustomerOf", "InvestorIn"],
-  },
-];
+type EcosystemLinkType = "CompetitorOf" | "PartnerOf";
 
 type Tab =
   | "fiche"
@@ -83,8 +72,7 @@ export default function AccountDetailPage({
   const { activeOpportunities } = useOpportunities();
   const [tab, setTab] = useState<Tab>("fiche");
   const [relTo, setRelTo] = useState("");
-  const [relType, setRelType] = useState<CompanyRelationType>("PartnerOf");
-  const [relDirection, setRelDirection] = useState<"out" | "in">("out");
+  const [relType, setRelType] = useState<EcosystemLinkType>("CompetitorOf");
   const [relError, setRelError] = useState("");
 
   const [cName, setCName] = useState("");
@@ -143,16 +131,30 @@ export default function AccountDetailPage({
   const ownRelations = useMemo(() => {
     if (!account) return [];
     return companyRelations.filter(
-      (r) => r.source === account.id || r.target === account.id,
+      (r) =>
+        (r.relation === "CompetitorOf" || r.relation === "PartnerOf") &&
+        (r.source === account.id || r.target === account.id),
     );
   }, [account, companyRelations]);
 
+  const canLinkEcosystem =
+    account?.type === "Entreprise" &&
+    (account.commercialStatus === "Client" ||
+      account.commercialStatus === "Prospect");
+
   const linkableAccounts = useMemo(() => {
     if (!account) return [];
+    const wantedStatus =
+      relType === "CompetitorOf" ? "Concurrent" : "Partner";
     return activeAccounts
-      .filter((a) => a.id !== account.id)
+      .filter(
+        (a) =>
+          a.id !== account.id &&
+          a.type === "Entreprise" &&
+          a.commercialStatus === wantedStatus,
+      )
       .sort((a, b) => a.name.localeCompare(b.name, "fr"));
-  }, [account, activeAccounts]);
+  }, [account, activeAccounts, relType]);
 
   useEffect(() => {
     if (
@@ -162,6 +164,27 @@ export default function AccountDetailPage({
       setTab("fiche");
     }
   }, [account?.type, tab]);
+
+  useEffect(() => {
+    if (account?.commercialStatus === "Other") {
+      upsertAccount({
+        id: account.id,
+        name: account.name,
+        type: account.type,
+        commercialStatus: "Prospect",
+        holdingId: account.holdingId,
+        sector: account.sector,
+        size: account.size,
+        x: account.x,
+        y: account.y,
+        active: account.active,
+      });
+    }
+  }, [account, upsertAccount]);
+
+  useEffect(() => {
+    setRelTo("");
+  }, [relType]);
 
   useEffect(() => {
     if (!cDir && activeDirections[0]) setCDir(activeDirections[0].id);
@@ -178,26 +201,24 @@ export default function AccountDetailPage({
   function handleAddRelation(e: FormEvent) {
     e.preventDefault();
     setRelError("");
-    if (!account || !relTo) return;
+    if (!account || !relTo || !canLinkEcosystem) return;
     if (relTo === account.id) {
       setRelError("Choisis un autre compte.");
       return;
     }
-    const source = relDirection === "out" ? account.id : relTo;
-    const target = relDirection === "out" ? relTo : account.id;
     const exists = companyRelations.some(
       (r) =>
         r.relation === relType &&
-        ((r.source === source && r.target === target) ||
-          (r.source === target && r.target === source)),
+        ((r.source === account.id && r.target === relTo) ||
+          (r.source === relTo && r.target === account.id)),
     );
     if (exists) {
-      setRelError("Ce lien existe déjà (dans un sens ou l’autre).");
+      setRelError("Ce lien existe déjà.");
       return;
     }
     upsertCompanyRelation({
-      source,
-      target,
+      source: account.id,
+      target: relTo,
       relation: relType,
     });
     setRelTo("");
@@ -317,7 +338,7 @@ export default function AccountDetailPage({
             <strong>{formatEur(kpis.whitespaceAmount)}</strong>
           </article>
           <article>
-            <span>Renouvellement</span>
+            <span>Renouvellements en cours</span>
             <strong>{formatEur(kpis.renewalAmount)}</strong>
           </article>
           <article>
@@ -538,18 +559,24 @@ export default function AccountDetailPage({
               <label>
                 Statut
                 <select
-                  value={account.commercialStatus}
+                  value={
+                    account.commercialStatus === "Other"
+                      ? "Prospect"
+                      : account.commercialStatus
+                  }
                   onChange={(e) =>
                     patch({
                       commercialStatus: e.target.value as CommercialStatus,
                     })
                   }
                 >
-                  {activeCommercialStatuses.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {statusLabel(s.id)}
-                    </option>
-                  ))}
+                  {activeCommercialStatuses
+                    .filter((s) => s.id !== "Other")
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {statusLabel(s.id)}
+                      </option>
+                    ))}
                 </select>
               </label>
 
@@ -651,6 +678,102 @@ export default function AccountDetailPage({
             </section>
           )}
 
+          {canLinkEcosystem ? (
+            <section className="entry-subsection">
+              <h2>Concurrents & partenaires</h2>
+              <p className="muted entry-hint">
+                Lie ce compte à des entreprises au statut Concurrent ou
+                Partenaire.
+              </p>
+              <ul className="entry-list">
+                {ownRelations.length === 0 && (
+                  <li className="muted">Aucun lien.</li>
+                )}
+                {ownRelations.map((r) => {
+                  const otherId =
+                    r.source === account.id ? r.target : r.source;
+                  const other = accounts.find((a) => a.id === otherId);
+                  return (
+                    <li key={r.id}>
+                      <div>
+                        <strong>{companyRelationLabel[r.relation]}</strong>
+                        <span className="meta">
+                          {other ? (
+                            onOpenAccount ? (
+                              <button
+                                type="button"
+                                className="ghost linkish"
+                                onClick={() => onOpenAccount(other.id)}
+                              >
+                                {other.name}
+                              </button>
+                            ) : (
+                              other.name
+                            )
+                          ) : (
+                            otherId
+                          )}
+                          {other
+                            ? ` · ${statusLabel(other.commercialStatus)}`
+                            : ""}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => removeCompanyRelation(r.id)}
+                      >
+                        Retirer
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <form className="entry-form" onSubmit={handleAddRelation}>
+                <div className="entry-grid">
+                  <label>
+                    Type de lien
+                    <select
+                      value={relType}
+                      onChange={(e) =>
+                        setRelType(e.target.value as EcosystemLinkType)
+                      }
+                    >
+                      <option value="CompetitorOf">Concurrent</option>
+                      <option value="PartnerOf">Partenaire</option>
+                    </select>
+                  </label>
+                  <label>
+                    Entreprise
+                    <select
+                      value={relTo}
+                      onChange={(e) => setRelTo(e.target.value)}
+                      required
+                    >
+                      <option value="">Choisir…</option>
+                      {linkableAccounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {linkableAccounts.length === 0 ? (
+                  <p className="muted">
+                    Aucune entreprise au statut{" "}
+                    {relType === "CompetitorOf" ? "Concurrent" : "Partenaire"}{" "}
+                    à lier. Créez-en une d’abord.
+                  </p>
+                ) : null}
+                {relError && <p className="entry-error">{relError}</p>}
+                <button type="submit" disabled={linkableAccounts.length === 0}>
+                  Ajouter le lien
+                </button>
+              </form>
+            </section>
+          ) : null}
+
           {account.type === "Entreprise" && (
             <section className="entry-subsection sold-on-fiche">
               <h2>Solutions vendues</h2>
@@ -663,115 +786,6 @@ export default function AccountDetailPage({
               Solutions vendues : fiche d’une <strong>Entreprise</strong>.
             </p>
           )}
-
-          <section className="entry-subsection">
-            <h2>Relations & écosystème</h2>
-            <p className="muted entry-hint">
-              Partenaires, concurrents, même secteur et autres liens business —
-              saisis ici (plus de page Écosystème dédiée).
-            </p>
-            <ul className="entry-list">
-              {ownRelations.length === 0 && (
-                <li className="muted">Aucun lien.</li>
-              )}
-              {ownRelations.map((r) => {
-                const otherId =
-                  r.source === account.id ? r.target : r.source;
-                const other = accounts.find((a) => a.id === otherId);
-                const outbound = r.source === account.id;
-                return (
-                  <li key={r.id}>
-                    <div>
-                      <strong>
-                        {outbound ? "→" : "←"}{" "}
-                        {companyRelationLabel[r.relation]}
-                      </strong>
-                      <span className="meta">
-                        {outbound ? "vers" : "depuis"}{" "}
-                        {other ? (
-                          onOpenAccount ? (
-                            <button
-                              type="button"
-                              className="ghost linkish"
-                              onClick={() => onOpenAccount(other.id)}
-                            >
-                              {other.name}
-                            </button>
-                          ) : (
-                            other.name
-                          )
-                        ) : (
-                          otherId
-                        )}
-                        {other
-                          ? ` · ${accountTypeLabel[other.type]}`
-                          : ""}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => removeCompanyRelation(r.id)}
-                    >
-                      Retirer
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <form className="entry-form" onSubmit={handleAddRelation}>
-              <div className="entry-grid">
-                <label>
-                  Sens
-                  <select
-                    value={relDirection}
-                    onChange={(e) =>
-                      setRelDirection(e.target.value as "out" | "in")
-                    }
-                  >
-                    <option value="out">Ce compte → autre</option>
-                    <option value="in">Autre → ce compte</option>
-                  </select>
-                </label>
-                <label>
-                  Type
-                  <select
-                    value={relType}
-                    onChange={(e) =>
-                      setRelType(e.target.value as CompanyRelationType)
-                    }
-                  >
-                    {COMPANY_REL_GROUPS.map((group) => (
-                      <optgroup key={group.label} label={group.label}>
-                        {group.types.map((t) => (
-                          <option key={t} value={t}>
-                            {companyRelationLabel[t]}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Autre compte
-                  <select
-                    value={relTo}
-                    onChange={(e) => setRelTo(e.target.value)}
-                    required
-                  >
-                    <option value="">Choisir…</option>
-                    {linkableAccounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} · {accountTypeLabel[a.type]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {relError && <p className="entry-error">{relError}</p>}
-              <button type="submit">Ajouter le lien</button>
-            </form>
-          </section>
         </>
       )}
 

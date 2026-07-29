@@ -28,7 +28,6 @@ import {
 } from "./accountPlans/planQuarters";
 import { summarizeCatalogue } from "./catalogue/formatCatalogue";
 import AccountPlanOverviewOnFiche from "./accountPlans/AccountPlanOverviewOnFiche";
-import GenerateActionPlanPanel from "./GenerateActionPlanPanel";
 import {
   useOpportunities,
   type Opportunity,
@@ -36,6 +35,7 @@ import {
 import { useConfirm } from "./ui/ConfirmDialog";
 
 const ACTION_STATUSES: ActionStatus[] = ["Todo", "Doing", "Done"];
+const ACTION_SCOPE_PLAN_ID = "__plan__";
 
 type Tab = "fiche" | "objectifs" | "overview";
 
@@ -74,6 +74,10 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
       .map((id) => activeOpportunities.find((o) => o.id === id))
       .filter((o): o is Opportunity => Boolean(o));
   }, [plan, activeOpportunities]);
+
+  const [actionScopeId, setActionScopeId] = useState<string>(
+    () => opportunities[0]?.id ?? ACTION_SCOPE_PLAN_ID,
+  );
 
   const primaryAccountId = opportunities[0]?.primaryAccountId ?? plan?.accountId ?? null;
 
@@ -204,9 +208,24 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
     objFilter === "all"
       ? plan.objectives
       : plan.objectives.filter((o) => o.status === objFilter);
-  const sortedActions = [...plan.actions].sort((a, b) =>
-    (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
-  );
+  const effectiveActionScopeId =
+    actionScopeId === ACTION_SCOPE_PLAN_ID ||
+    opportunities.some((o) => o.id === actionScopeId)
+      ? actionScopeId
+      : ACTION_SCOPE_PLAN_ID;
+
+  const hasPlanLevelActions = plan.actions.some((a) => !a.opportunityId);
+
+  const scopedActions = plan.actions
+    .filter((a) => {
+      if (effectiveActionScopeId === ACTION_SCOPE_PLAN_ID) {
+        return !a.opportunityId;
+      }
+      return a.opportunityId === effectiveActionScopeId;
+    })
+    .sort((a, b) =>
+      (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
+    );
 
   function linkOpportunity(opportunityId: string) {
     const opp = activeOpportunities.find((o) => o.id === opportunityId);
@@ -239,11 +258,16 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
   function handleAddAction(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const oppId =
+      effectiveActionScopeId === ACTION_SCOPE_PLAN_ID
+        ? null
+        : effectiveActionScopeId;
     addAction(plan!.id, {
       title: String(fd.get("title") ?? ""),
       dueDate: String(fd.get("dueDate") ?? "") || undefined,
       owner: String(fd.get("owner") ?? "") || undefined,
       status: "Todo",
+      opportunityId: oppId,
     });
     e.currentTarget.reset();
   }
@@ -414,7 +438,7 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
           className={tab === "objectifs" ? "active" : ""}
           onClick={() => setTab("objectifs")}
         >
-          Objectifs &amp; Actions
+          Plan
         </button>
         <button
           type="button"
@@ -466,7 +490,7 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
             </label>
             <div className="plan-cible-readonly">
               <span className="plan-cible-label">
-                Cible (whitespace + pipeline + renouvellement)
+                Cible (whitespace + pipeline + renouv. en cours)
               </span>
               <strong>
                 {kpis ? formatEur(kpis.targetAmount) : formatEur(dealTotal)}
@@ -645,16 +669,46 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
           </section>
 
           <section className="opp-signals">
-            <h3>Timeline actions</h3>
+            <h3>Actions du plan</h3>
             <p className="muted">
-              Actions du plan — toujours rattachées à cet account plan.
+              Actions du plan — filtre par opportunité rattachée.
             </p>
-            <GenerateActionPlanPanel plan={plan} />
-            {sortedActions.length === 0 ? (
+            <nav
+              className="plan-action-scope-tabs"
+              aria-label="Actions par opportunité"
+            >
+              {(
+                opportunities.length === 0 || hasPlanLevelActions
+              ) && (
+                <button
+                  type="button"
+                  className={
+                    effectiveActionScopeId === ACTION_SCOPE_PLAN_ID
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() => setActionScopeId(ACTION_SCOPE_PLAN_ID)}
+                >
+                  Général
+                </button>
+              )}
+              {opportunities.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  className={effectiveActionScopeId === o.id ? "active" : ""}
+                  onClick={() => setActionScopeId(o.id)}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </nav>
+
+            {scopedActions.length === 0 ? (
               <p className="muted">Aucune action planifiée.</p>
             ) : (
               <ol className="plan-timeline">
-                {sortedActions.map((a) => {
+                {scopedActions.map((a) => {
                   const overdue = isActionOverdue(a, today);
                   return (
                     <li

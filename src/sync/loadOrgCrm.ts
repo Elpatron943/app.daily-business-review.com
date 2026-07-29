@@ -1,10 +1,11 @@
 import { supabase } from "../supabase/client";
-import type { Account, Contact } from "../data";
+import type { Account, Contact, SoldSolution } from "../data";
 import type { Opportunity } from "../opportunities/OpportunityContext";
 import {
   accountFromRow,
   contactFromRow,
   opportunityFromRow,
+  soldSolutionFromRow,
   stakeholderFromRow,
 } from "./mappers";
 
@@ -12,35 +13,41 @@ export type OrgCrmSnapshot = {
   accounts: Account[];
   contacts: Contact[];
   opportunities: Opportunity[];
+  soldSolutions: SoldSolution[];
 };
 
 export async function loadOrgCrm(
   organizationId: string,
 ): Promise<OrgCrmSnapshot> {
   if (!supabase) {
-    return { accounts: [], contacts: [], opportunities: [] };
+    return { accounts: [], contacts: [], opportunities: [], soldSolutions: [] };
   }
 
-  const [accountsRes, contactsRes, oppsRes, stakesRes] = await Promise.all([
-    supabase
-      .from("accounts")
-      .select("*")
-      .eq("organization_id", organizationId),
-    supabase
-      .from("contacts")
-      .select("*")
-      .eq("organization_id", organizationId),
-    supabase
-      .from("opportunities")
-      .select("*")
-      .eq("organization_id", organizationId),
-    supabase
-      .from("opportunity_stakeholders")
-      .select("*")
-      .eq("organization_id", organizationId),
-  ]);
+  const [accountsRes, contactsRes, oppsRes, stakesRes, soldRes] =
+    await Promise.all([
+      supabase
+        .from("accounts")
+        .select("*")
+        .eq("organization_id", organizationId),
+      supabase
+        .from("contacts")
+        .select("*")
+        .eq("organization_id", organizationId),
+      supabase
+        .from("opportunities")
+        .select("*")
+        .eq("organization_id", organizationId),
+      supabase
+        .from("opportunity_stakeholders")
+        .select("*")
+        .eq("organization_id", organizationId),
+      supabase
+        .from("sold_solutions")
+        .select("*")
+        .eq("organization_id", organizationId),
+    ]);
 
-  for (const r of [accountsRes, contactsRes, oppsRes, stakesRes]) {
+  for (const r of [accountsRes, contactsRes, oppsRes, stakesRes, soldRes]) {
     if (r.error) throw new Error(r.error.message);
   }
 
@@ -74,6 +81,9 @@ export async function loadOrgCrm(
       );
       return opportunityFromRow(row as Record<string, unknown>, stakes);
     }),
+    soldSolutions: (soldRes.data ?? []).map((row) =>
+      soldSolutionFromRow(row as Record<string, unknown>),
+    ),
   };
 }
 
@@ -89,4 +99,11 @@ export async function loadOrgOpportunities(
 ): Promise<Opportunity[]> {
   const snap = await loadOrgCrm(organizationId);
   return snap.opportunities;
+}
+
+export async function loadOrgSoldSolutions(
+  organizationId: string,
+): Promise<SoldSolution[]> {
+  const snap = await loadOrgCrm(organizationId);
+  return snap.soldSolutions;
 }

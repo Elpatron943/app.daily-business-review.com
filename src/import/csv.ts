@@ -98,6 +98,15 @@ const HEADER_ALIASES: Record<string, string> = {
   solution: "solution",
   solution_id: "solution",
   solution_code: "solution",
+  modules: "modules",
+  module: "modules",
+  module_ids: "modules",
+  directions: "directions",
+  direction_ids: "directions",
+  billed_amount: "billed_amount",
+  ca_facture: "billed_amount",
+  ca: "billed_amount",
+  montant_facture: "billed_amount",
 };
 
 export function canonicalizeHeaders(headers: string[]): string[] {

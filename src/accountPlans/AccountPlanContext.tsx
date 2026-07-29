@@ -47,6 +47,8 @@ export type PlanAction = {
   title: string;
   dueDate?: string;
   owner?: string;
+  /** Rattachement optionnel à une opportunité (pour séparer l’UI en onglets). */
+  opportunityId?: string | null;
   status: ActionStatus;
 };
 
@@ -60,6 +62,7 @@ export type AccountPlan = {
   opportunityIds: string[];
   /**
    * Entreprise propriétaire du plan (pas un Groupe).
+   * Une seule entreprise = un seul plan actif.
    * Les indicateurs Groupe = somme des entreprises filles.
    */
   accountId: string;
@@ -173,6 +176,7 @@ const defaultPlans: AccountPlan[] = [
         title: "Workshop architecture avec IT DE",
         dueDate: "2026-06-15",
         owner: "AE",
+        opportunityId: "opp-acme-renewal",
         status: "Doing",
       },
       {
@@ -180,6 +184,7 @@ const defaultPlans: AccountPlan[] = [
         title: "Brief budget Q3 avec Finance Groupe",
         dueDate: "2026-07-01",
         owner: "AE",
+        opportunityId: "opp-acme-renewal",
         status: "Todo",
       },
       {
@@ -187,6 +192,7 @@ const defaultPlans: AccountPlan[] = [
         title: "Cartographier Procurement groupe",
         dueDate: "2026-05-01",
         owner: "SE",
+        opportunityId: "opp-acme-renewal",
         status: "Todo",
       },
     ],
@@ -294,6 +300,8 @@ function load(): StoredState {
           ),
           actions: (p.actions ?? []).map((a) => ({
             ...a,
+            opportunityId:
+              (a as Partial<PlanAction>).opportunityId ?? null,
             status: a.status ?? "Todo",
           })),
         };
@@ -600,6 +608,39 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
         });
         return input.id;
       }
+      const planForAccount = state.plans.find(
+        (p) => p.active && p.accountId === accountId,
+      );
+      if (planForAccount) {
+        if (opportunityIds.length === 0) {
+          throw new Error(
+            "Cette entreprise a déjà un account plan actif.",
+          );
+        }
+        commit({
+          plans: state.plans.map((p) =>
+            p.id === planForAccount.id
+              ? {
+                  ...p,
+                  opportunityIds: [
+                    ...new Set([
+                      ...normalizeOpportunityIds(p),
+                      ...opportunityIds,
+                    ]),
+                  ],
+                  startDate: input.startDate || p.startDate,
+                  dueDate: input.dueDate || p.dueDate,
+                  status: input.status ?? p.status,
+                  owner: input.owner ?? p.owner,
+                  vision: input.vision ?? p.vision,
+                  objectives: input.objectives ?? p.objectives,
+                  actions: input.actions ?? p.actions,
+                }
+              : p,
+          ),
+        });
+        return planForAccount.id;
+      }
       const id = uid("plan");
       const plan: AccountPlan = {
         id,
@@ -665,6 +706,28 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
               p.active && normalizeOpportunityIds(p).includes(opportunityId),
           )?.accountId;
         if (!resolvedAccountId) return null;
+        const existingForAccount = withoutOpp.find(
+          (p) => p.active && p.accountId === resolvedAccountId,
+        );
+        if (existingForAccount) {
+          commit({
+            plans: withoutOpp.map((p) =>
+              p.id === existingForAccount.id
+                ? {
+                    ...p,
+                    opportunityIds: [
+                      ...new Set([
+                        ...normalizeOpportunityIds(p),
+                        opportunityId,
+                      ]),
+                    ],
+                    dueDate: opts?.dueDate || p.dueDate,
+                  }
+                : p,
+            ),
+          });
+          return existingForAccount.id;
+        }
         const id = uid("plan");
         const plan: AccountPlan = {
           id,
@@ -809,6 +872,7 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
                     title,
                     dueDate: input.dueDate || undefined,
                     owner: input.owner?.trim() || undefined,
+                    opportunityId: input.opportunityId ?? null,
                     status: input.status ?? "Todo",
                   },
                 ],

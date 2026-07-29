@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { useOrgConfig } from "../config/ConfigContext";
 import type {
   BoFieldDef,
   OppMappingCardEntry,
@@ -18,6 +19,8 @@ import type {
 import { defaultConfig } from "../config/defaults";
 import type { Status } from "../data";
 import { ENGAGEMENT_STATUSES } from "../data";
+import { useSales } from "../sales/SalesContext";
+import { buildSoldLineFromWonOpportunity } from "../sales/syncWonToSold";
 import { supabase } from "../supabase/client";
 import {
   loadOrgOpportunities,
@@ -25,6 +28,7 @@ import {
   upsertOpportunitiesRemote,
   upsertOpportunityRemote,
 } from "../sync";
+import { idFromExternalKey } from "../import/bulkImport";
 import type {
   ProcessAnswer,
   ProcessAnswerStatus,
@@ -596,6 +600,7 @@ type OpportunityContextValue = {
     rows: Array<{
       action: "create" | "update";
       id?: string;
+      externalKey?: string;
       name: string;
       accountId: string;
       amount: number;
@@ -627,12 +632,30 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
     profile,
     loading: authLoading,
   } = useAuth();
+  const { kpiClassifier } = useOrgConfig();
+  const { soldSolutions, upsertSoldSolution } = useSales();
+  const soldSolutionsRef = useRef(soldSolutions);
+  soldSolutionsRef.current = soldSolutions;
   const orgId = profile?.organization_id ?? null;
   const orgIdRef = useRef<string | null>(orgId);
   orgIdRef.current = orgId;
 
   const [state, setState] = useState<StoredState>(() => emptyStoredState());
   const [quotaError, setQuotaError] = useState<string | null>(null);
+
+  const materializeWonSale = useCallback(
+    (prev: Opportunity | undefined, next: Opportunity) => {
+      const wasWon = prev ? kpiClassifier.isWonPhase(prev.phase) : false;
+      const isWon = kpiClassifier.isWonPhase(next.phase);
+      if (!isWon || wasWon) return;
+      const line = buildSoldLineFromWonOpportunity(
+        next,
+        soldSolutionsRef.current,
+      );
+      if (line) upsertSoldSolution(line);
+    },
+    [kpiClassifier, upsertSoldSolution],
+  );
 
   useEffect(() => {
     if (authLoading) return;
@@ -789,6 +812,8 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
 
   const updateOpportunity = useCallback(
     (id: string, patch: Partial<Opportunity>) => {
+      const prev = state.opportunities.find((o) => o.id === id);
+      const next = prev ? { ...prev, ...patch, id: prev.id } : null;
       commit(
         {
           ...state,
@@ -798,8 +823,9 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         },
         [id],
       );
+      if (prev && next) materializeWonSale(prev, next);
     },
-    [commit, state],
+    [commit, state, materializeWonSale],
   );
 
   const removeOpportunity = useCallback(
@@ -821,6 +847,7 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       rows: Array<{
         action: "create" | "update";
         id?: string;
+        externalKey?: string;
         name: string;
         accountId: string;
         amount: number;
@@ -831,11 +858,17 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         mappingChecks?: Opportunity["mappingChecks"];
       }>,
     ) => {
-      const prepared = rows.map((row) => ({
-        ...row,
-        resolvedId:
-          row.action === "update" && row.id ? row.id : uid("opp"),
-      }));
+      const prepared = rows.map((row) => {
+        let resolvedId: string;
+        if (row.action === "update" && row.id) {
+          resolvedId = row.id;
+        } else if (row.externalKey?.trim()) {
+          resolvedId = idFromExternalKey(row.externalKey, "opp");
+        } else {
+          resolvedId = uid("opp");
+        }
+        return { ...row, resolvedId };
+      });
       let created = 0;
       let updated = 0;
       let skippedQuota = 0;
@@ -848,22 +881,22 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         const oppLimit = billing.usage.opportunitiesLimit;
         for (const row of prepared) {
           if (!row.accountId) continue;
-          const existing = opportunities.some((o) => o.id === row.resolvedId);
+          const existing = opportunities.find((o) => o.id === row.resolvedId);
           if (existing) {
+            const nextOpp: Opportunity = {
+              ...existing,
+              name: row.name.trim(),
+              amount: row.amount,
+              closeDate: row.closeDate,
+              primaryAccountId: row.accountId,
+              phase: row.phase,
+              kind: row.kind,
+              solutionId: row.solutionId,
+              active: true,
+            };
+            materializeWonSale(existing, nextOpp);
             opportunities = opportunities.map((o) =>
-              o.id === row.resolvedId
-                ? {
-                    ...o,
-                    name: row.name.trim(),
-                    amount: row.amount,
-                    closeDate: row.closeDate,
-                    primaryAccountId: row.accountId,
-                    phase: row.phase,
-                    kind: row.kind,
-                    solutionId: row.solutionId,
-                    active: true,
-                  }
-                : o,
+              o.id === row.resolvedId ? nextOpp : o,
             );
             updated++;
           } else {
@@ -875,7 +908,7 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
               skippedQuota++;
               continue;
             }
-            opportunities.push({
+            const createdOpp: Opportunity = {
               id: row.resolvedId,
               name: row.name.trim(),
               amount: row.amount,
@@ -895,7 +928,9 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
               stakeholders: [],
               aiRecommendations: null,
               active: true,
-            });
+            };
+            materializeWonSale(undefined, createdOpp);
+            opportunities.push(createdOpp);
             created++;
             activeCount++;
           }
@@ -926,7 +961,7 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       }
       return { created, updated };
     },
-    [billing.canWrite, billing.usage.opportunitiesLimit],
+    [billing.canWrite, billing.usage.opportunitiesLimit, materializeWonSale],
   );
 
   const setBusinessOutcomeValue = useCallback(

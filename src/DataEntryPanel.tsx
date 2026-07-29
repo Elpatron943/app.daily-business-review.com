@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   getContactParentId,
   accountTypeLabel,
+  formatEur,
 } from "./data";
 import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
 import { useSales } from "./sales/SalesContext";
+import { useOpportunities } from "./opportunities/OpportunityContext";
+import { useAccountPlans } from "./accountPlans/AccountPlanContext";
 import AccountOnboardingWizard from "./AccountOnboardingWizard";
 import AccountDetailPage from "./AccountDetailPage";
 import ContactDetailPage from "./ContactDetailPage";
@@ -16,7 +19,6 @@ import {
   resolveAccountSector,
 } from "./SameSectorPanel";
 import type { AppPage } from "./navigation";
-import { useConfirm } from "./ui/ConfirmDialog";
 
 export type DataSection =
   | "entreprises"
@@ -78,7 +80,6 @@ function DataEntryPanelInner({
     removeContact,
     restoreContact,
     setContactParent,
-    resetDomain,
   } = useDomain();
   const {
     activeDirections,
@@ -88,8 +89,9 @@ function DataEntryPanelInner({
     activeCommercialStatuses,
     activeAccountSizes,
   } = useOrgConfig();
-  const { resetSales } = useSales();
-  const askConfirm = useConfirm();
+  const { soldSolutions } = useSales();
+  const { activeOpportunities } = useOpportunities();
+  const { getPlanForAccount } = useAccountPlans();
 
   const entreprises = activeAccounts.filter((a) => a.type === "Entreprise");
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -394,65 +396,100 @@ function DataEntryPanelInner({
                 },
               ]}
             />
-            <ul className="entry-list">
-              {filteredAccounts.length === 0 && (
-                <li className="muted">Aucun résultat.</li>
-              )}
-              {filteredAccounts.map((a) => (
-                  <li key={a.id} className={!a.active ? "inactive" : ""}>
-                    <button
-                      type="button"
-                      className="entry-list-main"
-                      onClick={() => setDetailId(a.id)}
-                    >
-                      <strong>{a.name}</strong>
-                      <span className="meta">
-                        {accountTypeLabel[a.type]} ·{" "}
-                        {statusLabel(a.commercialStatus)}
-                        {a.holdingId
-                          ? ` · ${accounts.find((h) => h.id === a.holdingId)?.name}`
-                          : ""}
-                        {(() => {
-                          const size = resolveAccountEffectif(a, accounts);
-                          const sector = resolveAccountSector(a, accounts);
-                          return (
-                            <>
-                              {size ? ` · ${sizeLabel(size)}` : ""}
-                              {sector ? ` · ${sector}` : ""}
-                            </>
-                          );
-                        })()}
-                      </span>
-                    </button>
-                    <div className="entry-actions">
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={() => setDetailId(a.id)}
-                      >
-                        Ouvrir
-                      </button>
-                      {a.active ? (
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={() => removeAccount(a.id)}
-                        >
-                          Désactiver
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={() => restoreAccount(a.id)}
-                        >
-                          Réactiver
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                ))}
-            </ul>
+            {filteredAccounts.length === 0 ? (
+              <p className="muted">Aucun résultat.</p>
+            ) : (
+              <div className="ecosystem-table-wrap account-plan-table-wrap">
+                <table className="ecosystem-table account-plan-table">
+                  <thead>
+                    <tr>
+                      <th>Entreprise</th>
+                      <th>Type</th>
+                      <th>Statut</th>
+                      <th>Account plan</th>
+                      <th>Montant opportunités</th>
+                      <th>CA actuel</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAccounts.map((a) => {
+                      const plan = getPlanForAccount(a.id);
+                      const oppAmount = activeOpportunities
+                        .filter((o) => o.primaryAccountId === a.id)
+                        .reduce((sum, o) => sum + (o.amount || 0), 0);
+                      const currentRevenue = soldSolutions
+                        .filter((s) => s.accountId === a.id)
+                        .reduce((sum, s) => sum + (s.billedAmount || 0), 0);
+                      return (
+                        <tr key={a.id} className={!a.active ? "inactive" : ""}>
+                          <td>
+                            <strong>{a.name}</strong>
+                            {(() => {
+                              const size = resolveAccountEffectif(a, accounts);
+                              const sector = resolveAccountSector(a, accounts);
+                              const holding = a.holdingId
+                                ? accounts.find((h) => h.id === a.holdingId)?.name
+                                : "";
+                              const meta = [holding, size ? sizeLabel(size) : "", sector]
+                                .filter(Boolean)
+                                .join(" · ");
+                              return meta ? <span className="meta">{meta}</span> : null;
+                            })()}
+                          </td>
+                          <td>{accountTypeLabel[a.type]}</td>
+                          <td>{statusLabel(a.commercialStatus)}</td>
+                          <td>
+                            {plan ? (
+                              <span className="meta">
+                                {plan.status}
+                                {plan.dueDate ? ` · ${plan.dueDate}` : ""}
+                              </span>
+                            ) : (
+                              <span className="muted">Aucun</span>
+                            )}
+                          </td>
+                          <td className="num">
+                            {oppAmount > 0 ? formatEur(oppAmount) : "—"}
+                          </td>
+                          <td className="num">
+                            {currentRevenue > 0 ? formatEur(currentRevenue) : "—"}
+                          </td>
+                          <td>
+                            <div className="entry-actions">
+                              <button
+                                type="button"
+                                className="ghost"
+                                onClick={() => setDetailId(a.id)}
+                              >
+                                Ouvrir
+                              </button>
+                              {a.active ? (
+                                <button
+                                  type="button"
+                                  className="ghost"
+                                  onClick={() => removeAccount(a.id)}
+                                >
+                                  Désactiver
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="ghost"
+                                  onClick={() => restoreAccount(a.id)}
+                                >
+                                  Réactiver
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {creating && (
               <AccountOnboardingWizard
@@ -707,30 +744,6 @@ function DataEntryPanelInner({
           </>
         )}
       </div>
-
-      <footer className="data-page-foot">
-        <button
-          type="button"
-          className="danger"
-          onClick={() => {
-            void (async () => {
-              const ok = await askConfirm({
-                title: "Réinitialiser les données",
-                message:
-                  "Réinitialiser toutes les données de saisie (entreprises, contacts, liens, ventes) ?",
-                confirmLabel: "Réinitialiser",
-                cancelLabel: "Annuler",
-                danger: true,
-              });
-              if (!ok) return;
-              resetDomain();
-              resetSales();
-            })();
-          }}
-        >
-          Réinitialiser les données
-        </button>
-      </footer>
     </div>
   );
 }

@@ -21,12 +21,17 @@ export const NAV_MAIN: { id: AppPage; label: string }[] = [
   { id: "map", label: "Cartographie" },
 ];
 
-export const NAV_DATA: { id: AppPage; label: string }[] = [
-  ...DATA_SECTIONS.map((s) => ({
+/** Saisie : construction du compte / deals. */
+export const NAV_DATA: { id: AppPage; label: string }[] = DATA_SECTIONS.map(
+  (s) => ({
     id: s.id as AppPage,
     label: s.label,
-  })),
-  { id: "account-plans", label: "Account plans" },
+  }),
+);
+
+/** Pilotage : plan de compte (les actions opérationnelles restent dans l’opportunité). */
+export const NAV_PILOTAGE: { id: AppPage; label: string }[] = [
+  { id: "account-plans", label: "Account plan" },
 ];
 
 export const NAV_OPTIONAL_MODULES: {

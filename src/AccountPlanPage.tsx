@@ -32,13 +32,6 @@ function equipRatePct(billed: number, target: number): number | null {
   if (target <= 0) return null;
   return Math.min(100, Math.round((billed / target) * 100));
 }
-
-function equipTone(pct: number | null): "ok" | "mid" | "risk" | "neutral" {
-  if (pct === null) return "neutral";
-  if (pct >= 70) return "ok";
-  if (pct >= 35) return "mid";
-  return "risk";
-}
 /** Holding du compte à partir du compte principal de l’opportunité. */
 export function holdingIdFromOpportunityAccount(
   primaryAccountId: string,
@@ -76,15 +69,18 @@ export default function AccountPlanPage({
   embedded = false,
   layout = "table",
 }: Props) {
-  const { activePlans, getPlanForOpportunity, upsertPlan } = useAccountPlans();
+  const { activePlans, getPlanForOpportunity, getPlanForAccount, upsertPlan } =
+    useAccountPlans();
   const { activeOpportunities } = useOpportunities();
   const { activeAccounts } = useDomain();
   const { soldSolutions } = useSales();
-  const { solutionLabel, salesTaxonomy } = useOrgConfig();
+  const { solutionLabel, salesTaxonomy, kpiClassifier } = useOrgConfig();
 
   const [detailId, setDetailId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createAccountId, setCreateAccountId] = useState("");
   const [selectedOppIds, setSelectedOppIds] = useState<string[]>([]);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({
     q: "",
     status: "",
@@ -186,6 +182,11 @@ export default function AccountPlanPage({
     [activeAccounts],
   );
 
+  const entreprisesWithoutPlan = useMemo(
+    () => entreprises.filter((a) => !getPlanForAccount(a.id)),
+    [entreprises, getPlanForAccount, activePlans],
+  );
+
   const plansByQuarter = useMemo(() => {
     return groupByPlanQuarters({
       items: planRows,
@@ -201,61 +202,60 @@ export default function AccountPlanPage({
     return acc?.type === "Entreprise";
   });
 
-  /** Opps créables : sans plan, et si déjà une sélection → même entreprise. */
   const creatableOpps = useMemo(() => {
-    if (selectedOppIds.length === 0) return oppsWithoutPlan;
-    const first = activeOpportunities.find((o) => o.id === selectedOppIds[0]);
-    if (!first) return oppsWithoutPlan;
-    return oppsWithoutPlan.filter(
-      (o) =>
-        o.primaryAccountId === first.primaryAccountId ||
-        selectedOppIds.includes(o.id),
-    );
-  }, [oppsWithoutPlan, selectedOppIds, activeOpportunities]);
+    if (!createAccountId) return [];
+    return oppsWithoutPlan.filter((o) => o.primaryAccountId === createAccountId);
+  }, [oppsWithoutPlan, createAccountId]);
 
   function toggleOpp(id: string) {
-    setSelectedOppIds((prev) => {
-      if (prev.includes(id)) return prev.filter((x) => x !== id);
-      if (prev.length === 0) return [id];
-      const first = activeOpportunities.find((o) => o.id === prev[0]);
-      const next = activeOpportunities.find((o) => o.id === id);
-      if (
-        first &&
-        next &&
-        first.primaryAccountId !== next.primaryAccountId
-      ) {
-        return prev;
-      }
-      return [...prev, id];
-    });
+    setSelectedOppIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
   }
 
   function handleCreate(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setCreateError(null);
     const fd = new FormData(e.currentTarget);
     const dueDate = String(fd.get("dueDate") ?? "");
-    if (selectedOppIds.length === 0 || !dueDate) return;
+    const accountId = String(fd.get("accountId") ?? createAccountId ?? "");
+    if (!accountId || !dueDate) return;
+    const entreprise = activeAccounts.find((a) => a.id === accountId);
+    if (!entreprise || entreprise.type !== "Entreprise") return;
+    if (getPlanForAccount(accountId)) {
+      setCreateError(
+        "Cette entreprise a déjà un account plan actif — ouvre-le pour y rattacher des opportunités.",
+      );
+      return;
+    }
     const opps = selectedOppIds
       .map((id) => activeOpportunities.find((o) => o.id === id))
       .filter((o): o is Opportunity => Boolean(o));
-    if (opps.length === 0) return;
-    const primaryAccountId = opps[0].primaryAccountId;
-    if (opps.some((o) => o.primaryAccountId !== primaryAccountId)) return;
-    const entreprise = activeAccounts.find((a) => a.id === primaryAccountId);
-    if (!entreprise || entreprise.type !== "Entreprise") return;
-    const id = upsertPlan({
-      opportunityIds: opps.map((o) => o.id),
-      accountId: primaryAccountId,
-      startDate: new Date().toISOString().slice(0, 10),
-      dueDate,
-      status: "Todo",
-      vision: "",
-      objectives: [],
-      actions: [],
-    });
-    setCreating(false);
-    setSelectedOppIds([]);
-    setDetailId(id);
+    if (opps.some((o) => o.primaryAccountId !== accountId)) return;
+    if (opps.some((o) => getPlanForOpportunity(o.id))) return;
+    try {
+      const id = upsertPlan({
+        opportunityIds: opps.map((o) => o.id),
+        accountId,
+        startDate: new Date().toISOString().slice(0, 10),
+        dueDate,
+        status: "Todo",
+        vision: "",
+        objectives: [],
+        actions: [],
+      });
+      setCreating(false);
+      setCreateAccountId("");
+      setSelectedOppIds([]);
+      setCreateError(null);
+      setDetailId(id);
+    } catch (err) {
+      setCreateError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de créer l’account plan.",
+      );
+    }
   }
 
   if (detailId) {
@@ -279,14 +279,19 @@ export default function AccountPlanPage({
           type="button"
           className="primary-cta"
           onClick={() => {
+            const defaultAccountId = entreprisesWithoutPlan[0]?.id ?? "";
+            setCreateAccountId(defaultAccountId);
             setSelectedOppIds([]);
+            setCreateError(null);
             setCreating(true);
           }}
-          disabled={oppsWithoutPlan.length === 0}
+          disabled={entreprisesWithoutPlan.length === 0}
           title={
-            oppsWithoutPlan.length === 0
-              ? "Toutes les opportunités ont déjà un plan"
-              : undefined
+            entreprises.length === 0
+              ? "Crée d’abord une entreprise"
+              : entreprisesWithoutPlan.length === 0
+                ? "Toutes les entreprises ont déjà un account plan"
+                : undefined
           }
         >
           Créer un account plan
@@ -345,47 +350,44 @@ export default function AccountPlanPage({
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setCreating(false);
+              setCreateAccountId("");
               setSelectedOppIds([]);
+              setCreateError(null);
             }
           }}
         >
           <form className="plan-create-dialog" onSubmit={handleCreate}>
             <h2 id="plan-create-title">Nouveau account plan</h2>
-            {oppsWithoutPlan.length === 0 ? (
-              <p className="muted">Aucune opportunité disponible.</p>
+            {entreprisesWithoutPlan.length === 0 ? (
+              <p className="muted">
+                {entreprises.length === 0
+                  ? "Crée d’abord une entreprise."
+                  : "Toutes les entreprises ont déjà un account plan actif."}
+              </p>
             ) : (
               <>
-                <fieldset className="plan-opp-checklist">
-                  <legend>Opportunités</legend>
-                  {creatableOpps.map((o) => {
-                    const hid = holdingIdFromOpportunityAccount(
-                      o.primaryAccountId,
-                      activeAccounts,
-                    );
-                    const h = activeAccounts.find((a) => a.id === hid);
-                    const entreprise = activeAccounts.find(
-                      (a) => a.id === o.primaryAccountId,
-                    );
-                    return (
-                      <label key={o.id} className="plan-opp-check">
-                        <input
-                          type="checkbox"
-                          checked={selectedOppIds.includes(o.id)}
-                          onChange={() => toggleOpp(o.id)}
-                        />
-                        <span>
-                          <strong>{o.name}</strong>
-                          <span className="meta">
-                            {entreprise?.name ?? o.primaryAccountId}
-                            {h && h.id !== entreprise?.id ? ` · ${h.name}` : ""}
-                            {" · "}
-                            {formatEur(o.amount)}
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </fieldset>
+                <label>
+                  Entreprise
+                  <select
+                    name="accountId"
+                    required
+                    value={createAccountId}
+                    onChange={(e) => {
+                      setCreateAccountId(e.target.value);
+                      setSelectedOppIds([]);
+                      setCreateError(null);
+                    }}
+                  >
+                    <option value="" disabled>
+                      Choisir…
+                    </option>
+                    {entreprisesWithoutPlan.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label>
                   Échéance du plan
                   <input
@@ -395,6 +397,49 @@ export default function AccountPlanPage({
                     defaultValue={new Date().toISOString().slice(0, 10)}
                   />
                 </label>
+                <fieldset className="plan-opp-checklist">
+                  <legend>Opportunités (optionnel)</legend>
+                  {creatableOpps.length === 0 ? (
+                    <p className="muted">
+                      Aucune opportunité libre pour cette entreprise — tu pourras
+                      en rattacher depuis la fiche du plan.
+                    </p>
+                  ) : (
+                    creatableOpps.map((o) => {
+                      const hid = holdingIdFromOpportunityAccount(
+                        o.primaryAccountId,
+                        activeAccounts,
+                      );
+                      const h = activeAccounts.find((a) => a.id === hid);
+                      const entreprise = activeAccounts.find(
+                        (a) => a.id === o.primaryAccountId,
+                      );
+                      return (
+                        <label key={o.id} className="plan-opp-check">
+                          <input
+                            type="checkbox"
+                            checked={selectedOppIds.includes(o.id)}
+                            onChange={() => toggleOpp(o.id)}
+                          />
+                          <span>
+                            <strong>{o.name}</strong>
+                            <span className="meta">
+                              {entreprise?.name ?? o.primaryAccountId}
+                              {h && h.id !== entreprise?.id ? ` · ${h.name}` : ""}
+                              {" · "}
+                              {formatEur(o.amount)}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
+                </fieldset>
+                {createError ? (
+                  <p className="entry-error" role="alert">
+                    {createError}
+                  </p>
+                ) : null}
               </>
             )}
             <div className="plan-create-actions">
@@ -403,17 +448,15 @@ export default function AccountPlanPage({
                 className="ghost"
                 onClick={() => {
                   setCreating(false);
+                  setCreateAccountId("");
                   setSelectedOppIds([]);
+                  setCreateError(null);
                 }}
               >
                 Annuler
               </button>
-              {oppsWithoutPlan.length > 0 && (
-                <button
-                  type="submit"
-                  className="primary-cta"
-                  disabled={selectedOppIds.length === 0}
-                >
+              {entreprisesWithoutPlan.length > 0 && (
+                <button type="submit" className="primary-cta">
                   Créer et ouvrir
                 </button>
               )}
@@ -536,13 +579,8 @@ export default function AccountPlanPage({
                   <th>Groupe</th>
                   <th>Statut</th>
                   <th>Échéance</th>
-                  <th title="CA facturé / cible">Équipement</th>
-                  <th title="Pipeline + whitespace">Potentiel</th>
-                  <th>Montant</th>
+                  <th>Montant opps. en cours</th>
                   <th>Opportunités</th>
-                  <th>Actions</th>
-                  <th>Scores</th>
-                  <th>Owner</th>
                 </tr>
               </thead>
               <tbody>
@@ -552,13 +590,12 @@ export default function AccountPlanPage({
                     opps,
                     holding,
                     groupe,
-                    equipPct,
-                    potential,
                   }) => {
-                  const amount = planOpportunitiesAmount(opps);
-                  const actionsDone = plan.actions.filter(
-                    (a) => a.status === "Done",
-                  ).length;
+                  const amount = planOpportunitiesAmount(
+                    opps.filter((o) =>
+                      kpiClassifier.isPipelineOpportunityPhase(o.phase),
+                    ),
+                  );
                   const statusLabel =
                     PLAN_STATUSES.find((s) => s.id === plan.status)?.label ??
                     plan.status;
@@ -600,17 +637,6 @@ export default function AccountPlanPage({
                           {plan.dueDate || "—"}
                         </time>
                       </td>
-                      <td>
-                        <span
-                          className={`opp-score-pill tone-${equipTone(equipPct)}`}
-                          title="Taux d’équipement = CA / cible"
-                        >
-                          {equipPct === null ? "—" : `${equipPct}%`}
-                        </span>
-                      </td>
-                      <td className="num">
-                        {potential > 0 ? formatEur(potential) : "—"}
-                      </td>
                       <td className="num">
                         {amount > 0 ? formatEur(amount) : "—"}
                       </td>
@@ -631,27 +657,6 @@ export default function AccountPlanPage({
                           </>
                         )}
                       </td>
-                      <td>
-                        {plan.actions.length > 0
-                          ? `${actionsDone}/${plan.actions.length}`
-                          : "—"}
-                      </td>
-                      <td>
-                        {opps.length === 0 ? (
-                          <span className="muted">—</span>
-                        ) : (
-                          <div className="plan-list-scores">
-                            {opps.map((o) => (
-                              <OppScorePills
-                                key={o.id}
-                                opportunity={o}
-                                compact
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td>{plan.owner || "—"}</td>
                     </tr>
                   );
                 })}

@@ -22,6 +22,7 @@ export async function pushHubSpotOrg(input: {
     companies: 0,
     contacts: 0,
     deals: 0,
+    soldSolutions: 0,
     errors: [],
   };
   const limit = input.limit ?? 100;

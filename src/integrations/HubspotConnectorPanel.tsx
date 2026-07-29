@@ -140,6 +140,7 @@ export default function HubspotConnectorPanel() {
         companies: number;
         contacts: number;
         deals: number;
+        soldSolutions?: number;
         errors: string[];
       };
     }>("/sync/pull", { method: "POST", body: "{}" });
@@ -152,7 +153,9 @@ export default function HubspotConnectorPanel() {
     const c = data?.counts;
     setInfo(
       c
-        ? `Pull : ${c.companies} sociétés, ${c.contacts} contacts, ${c.deals} deals.`
+        ? `Pull : ${c.companies} sociétés, ${c.contacts} contacts, ${c.deals} deals${
+            c.soldSolutions ? `, ${c.soldSolutions} solutions vendues` : ""
+          }.`
         : "Pull terminé.",
     );
     if (c?.errors?.length) {

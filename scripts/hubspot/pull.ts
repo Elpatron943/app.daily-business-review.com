@@ -41,6 +41,7 @@ export async function pullHubSpotOrg(input: {
     companies: 0,
     contacts: 0,
     deals: 0,
+    soldSolutions: 0,
     errors: [],
   };
   const hs = await withOrgHubSpotClient(input.db, input.organizationId, {
@@ -49,6 +50,54 @@ export async function pullHubSpotOrg(input: {
     tokenSecret: input.tokenSecret,
   });
   const mapping = await loadHubSpotMapping(input.db, input.organizationId);
+
+  const { data: orgConfigRow } = await input.db
+    .from("org_configs")
+    .select("config")
+    .eq("organization_id", input.organizationId)
+    .maybeSingle();
+  const orgConfig =
+    orgConfigRow?.config && typeof orgConfigRow.config === "object"
+      ? (orgConfigRow.config as {
+          solutions?: Array<{
+            id: string;
+            name?: string;
+            code?: string;
+            active?: boolean;
+            modules?: Array<{ id: string; label?: string; active?: boolean }>;
+          }>;
+        })
+      : {};
+  const catalogue = (orgConfig.solutions ?? []).filter((s) => s.active !== false);
+
+  function resolveSolutionId(raw: string): string {
+    const t = raw.trim().toLowerCase();
+    if (!t) return "";
+    const hit = catalogue.find(
+      (s) =>
+        s.id.toLowerCase() === t ||
+        (s.code && s.code.toLowerCase() === t) ||
+        (s.name && s.name.toLowerCase() === t),
+    );
+    return hit?.id ?? "";
+  }
+
+  function resolveModuleIds(solutionId: string, raw: string): string[] {
+    const sol = catalogue.find((s) => s.id === solutionId);
+    const mods = (sol?.modules ?? []).filter((m) => m.active !== false);
+    return raw
+      .split(/[;|,]/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .map((token) => {
+        const t = token.toLowerCase();
+        const hit = mods.find(
+          (m) => m.id.toLowerCase() === t || (m.label && m.label.toLowerCase() === t),
+        );
+        return hit?.id ?? "";
+      })
+      .filter(Boolean);
+  }
 
   const maxPages = input.maxPages ?? 20;
   const companyIdByHubspot = new Map<string, string>();
@@ -97,6 +146,44 @@ export async function pullHubSpotOrg(input: {
         if (error) throw new Error(error.message);
         companyIdByHubspot.set(patch.hubspotCompanyId, id);
         counts.companies += 1;
+
+        // CA installé optionnel via propriétés company mappées
+        if (mapping.company.soldSolutionProp) {
+          const solRaw = String(
+            obj.properties[mapping.company.soldSolutionProp] ?? "",
+          ).trim();
+          const solutionId = resolveSolutionId(solRaw);
+          if (solutionId) {
+            const modulesRaw = mapping.company.soldModulesProp
+              ? String(obj.properties[mapping.company.soldModulesProp] ?? "")
+              : "";
+            const amountRaw = mapping.company.soldAmountProp
+              ? String(obj.properties[mapping.company.soldAmountProp] ?? "")
+              : "";
+            const billed = Number(amountRaw.replace(/\s/g, "").replace(",", ".")) || 0;
+            const soldId = `hs-sold-${patch.hubspotCompanyId}-${solutionId}`.slice(
+              0,
+              80,
+            );
+            const { error: soldErr } = await input.db
+              .from("sold_solutions")
+              .upsert(
+                {
+                  id: soldId,
+                  organization_id: input.organizationId,
+                  solution_id: solutionId,
+                  account_id: id,
+                  direction_ids: [],
+                  module_ids: resolveModuleIds(solutionId, modulesRaw),
+                  currency: "EUR",
+                  billed_amount: billed,
+                },
+                { onConflict: "organization_id,id" },
+              );
+            if (soldErr) throw new Error(soldErr.message);
+            counts.soldSolutions += 1;
+          }
+        }
       } catch (e) {
         counts.errors.push(
           `company ${obj.id}: ${e instanceof Error ? e.message : String(e)}`,

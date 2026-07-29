@@ -627,8 +627,8 @@ export const defaultConfig: OrgConfig = {
   commercialStatuses: [
     { id: "Client", label: "Client", active: true, order: 1 },
     { id: "Prospect", label: "Prospect", active: true, order: 2 },
-    { id: "Partner", label: "Partenaire", active: true, order: 3 },
-    { id: "Other", label: "Autre", active: true, order: 4 },
+    { id: "Concurrent", label: "Concurrent", active: true, order: 3 },
+    { id: "Partner", label: "Partenaire", active: true, order: 4 },
   ],
   accountSizes: [
     { id: "1-1000", label: "Jusqu’à 1 000", active: true, order: 1 },

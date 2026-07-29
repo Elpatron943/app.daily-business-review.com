@@ -15,6 +15,7 @@ import { summarizeCatalogue } from "./catalogue/formatCatalogue";
 import OppScorePills from "./OppScorePills";
 import { ensureRequiredMappingChecks } from "./opportunities/mappingScore";
 import { useAuth } from "./auth/AuthContext";
+import { useAccountPlans } from "./accountPlans/AccountPlanContext";
 
 function showsDealVariables(kind: OpportunityKind) {
   return kind === "up";
@@ -33,6 +34,7 @@ export default function OpportunityPage() {
     clearQuotaError,
   } = useOpportunities();
   const { billing } = useAuth();
+  const { getPlanForOpportunity } = useAccountPlans();
   const { activeAccounts } = useDomain();
   const {
     activeSolutions,
@@ -286,74 +288,97 @@ export default function OpportunityPage() {
         ]}
       />
 
-      <ul className="entry-list">
-        {filteredOpportunities.length === 0 && (
-          <li className="muted">Aucun résultat.</li>
+      <section className="entry-subsection" aria-label="Liste des opportunités">
+        {filteredOpportunities.length === 0 ? (
+          <p className="muted">Aucun résultat.</p>
+        ) : (
+          <div className="ecosystem-table-wrap account-plan-table-wrap">
+            <table className="ecosystem-table account-plan-table">
+              <thead>
+                <tr>
+                  <th>Opportunité</th>
+                  <th>Type</th>
+                  <th>Phase</th>
+                  <th>Entreprise</th>
+                  <th>Account plan</th>
+                  <th>Solution</th>
+                  <th>Montant</th>
+                  <th>Score</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOpportunities.map((o) => {
+                  const results = computeBusinessOutcomes(
+                    o.businessOutcomes,
+                    config.boFields,
+                  );
+                  const account = activeAccounts.find(
+                    (a) => a.id === o.primaryAccountId,
+                  );
+                  const cat = summarizeCatalogue(o, activeSolutions);
+                  const plan = getPlanForOpportunity(o.id);
+                  return (
+                    <tr key={o.id}>
+                      <td>
+                        <strong>
+                          {o.name}
+                          {kpiClassifier.isWhitespacePhase(o.phase) ? (
+                            <span className="opp-stage-badge whitespace">
+                              Whitespace
+                            </span>
+                          ) : kpiClassifier.isPipelineOpportunityPhase(o.phase) ? (
+                            <span className="opp-stage-badge engaged">Engagée</span>
+                          ) : null}
+                        </strong>
+                      </td>
+                      <td>{kindLabel(o.kind)}</td>
+                      <td>{phaseLabel(o.phase)}</td>
+                      <td>{account?.name ?? "—"}</td>
+                      <td>
+                        {plan ? (
+                          <span className="meta">
+                            {plan.status}
+                            {plan.dueDate ? ` · ${plan.dueDate}` : ""}
+                          </span>
+                        ) : (
+                          <span className="muted">Aucun</span>
+                        )}
+                      </td>
+                      <td>{cat.short !== "—" ? cat.short : "—"}</td>
+                      <td>
+                        {formatEur(o.amount)}
+                        <span className="meta">
+                          {` · net ${formatEur(results.netValue)}`}
+                        </span>
+                      </td>
+                      <td>
+                        {!kpiClassifier.isWhitespacePhase(o.phase) ? (
+                          <OppScorePills opportunity={o} compact />
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            setActiveOpportunityId(o.id);
+                            setDetailId(o.id);
+                          }}
+                        >
+                          Ouvrir
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-        {filteredOpportunities.map((o) => {
-            const results = computeBusinessOutcomes(
-              o.businessOutcomes,
-              config.boFields,
-            );
-            const account = activeAccounts.find(
-              (a) => a.id === o.primaryAccountId,
-            );
-            const cat = summarizeCatalogue(o, activeSolutions);
-            const ceN = (o.compellingEventIds ?? []).length;
-            return (
-              <li key={o.id}>
-                <button
-                  type="button"
-                  className="entry-list-main"
-                  onClick={() => {
-                    setActiveOpportunityId(o.id);
-                    setDetailId(o.id);
-                  }}
-                >
-                  <strong>
-                    {o.name}
-                    {kpiClassifier.isWhitespacePhase(o.phase) ? (
-                      <span className="opp-stage-badge whitespace">
-                        Whitespace
-                      </span>
-                    ) : kpiClassifier.isPipelineOpportunityPhase(o.phase) ? (
-                      <span className="opp-stage-badge engaged">Engagée</span>
-                    ) : null}
-                  </strong>
-                  <span className="meta">
-                    {kindLabel(o.kind)}
-                    {` · ${phaseLabel(o.phase)}`}
-                    {account ? ` · ${account.name}` : ""}
-                    {cat.short !== "—" ? ` · ${cat.short}` : ""}
-                    {ceN > 0
-                      ? ` · ${ceN} CE`
-                      : ""}
-                    {` · ${formatEur(o.amount)} · net ${formatEur(results.netValue)}`}
-                  </span>
-                  {!kpiClassifier.isWhitespacePhase(o.phase) ? (
-                    <OppScorePills opportunity={o} compact />
-                  ) : (
-                    <span className="muted opp-whitespace-hint">
-                      Potentiel up/cross — pas encore engagée
-                    </span>
-                  )}
-                </button>
-                <div className="entry-actions">
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => {
-                      setActiveOpportunityId(o.id);
-                      setDetailId(o.id);
-                    }}
-                  >
-                    Ouvrir
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-      </ul>
+      </section>
 
       {creating && (
         <div

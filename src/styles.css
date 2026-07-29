@@ -3782,7 +3782,7 @@ h4 {
 }
 
 .plan-create-dialog {
-  width: min(420px, 100%);
+  width: min(680px, 100%);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -4600,6 +4600,23 @@ h4 {
 .direction-node .badge.status-prospect {
   background: color-mix(in srgb, #f59e0b 28%, var(--bg-deep));
   color: #fde68a;
+}
+
+.badge.status-concurrent,
+.account-node.status-concurrent,
+.direction-node.status-concurrent {
+  box-shadow: inset 3px 0 0 #b91c1c;
+}
+
+.badge.status-concurrent {
+  background: color-mix(in srgb, #b91c1c 28%, var(--panel));
+  color: #fecaca;
+}
+
+.account-node .badge.status-concurrent,
+.direction-node .badge.status-concurrent {
+  background: color-mix(in srgb, #ef4444 26%, var(--bg-deep));
+  color: #fecaca;
 }
 
 .badge.status-partner {
@@ -9407,4 +9424,292 @@ a {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
+}
+
+.import-mode {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  display: grid;
+  gap: 0.85rem;
+}
+
+.import-mode-options {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.import-mode-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 0.65rem;
+  row-gap: 0.2rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.import-mode-card input {
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.import-mode-card strong {
+  font-size: 0.92rem;
+}
+
+.import-mode-card span {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.import-mode-card.is-selected {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
+.import-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+}
+
+.import-step {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.import-step.is-current {
+  color: var(--on-accent);
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.import-step.is-done:not(.is-current) {
+  color: var(--ink);
+  border-color: color-mix(in srgb, #22c55e 50%, var(--line));
+}
+
+.import-mapping-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.import-mapping-footer p {
+  margin: 0;
+  max-width: 28rem;
+}
+
+.import-mapping {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.import-mapping-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.import-mapping-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.import-mapping-head p {
+  margin: 0.2rem 0 0;
+}
+
+.import-sheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.import-sheet-tabs button {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: grid;
+  gap: 0.1rem;
+  text-align: left;
+}
+
+.import-sheet-tabs button em {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.import-sheet-tabs button.active {
+  border-color: var(--gold);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+}
+
+.import-sheet-label {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.import-mapping-grid-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 0.15rem;
+}
+
+.import-mapping-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.import-mapping-list li {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-elevated, var(--panel));
+}
+
+.import-mapping-source {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.import-mapping-source strong {
+  font-size: 0.88rem;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.import-mapping-source em {
+  font-style: normal;
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-mapping-list select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.toast-stack {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 12000;
+  display: grid;
+  gap: 0.55rem;
+  width: min(380px, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.85rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  color: var(--ink);
+}
+
+.toast-ok {
+  border-color: color-mix(in srgb, #22c55e 55%, var(--line));
+}
+
+.toast-error {
+  border-color: color-mix(in srgb, #ef4444 55%, var(--line));
+}
+
+.toast-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.toast-body strong {
+  font-size: 0.88rem;
+}
+
+.toast-body p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.toast-dismiss {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.15rem;
+}
+
+.toast-dismiss:hover {
+  color: var(--ink);
 }

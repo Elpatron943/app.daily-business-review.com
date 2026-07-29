@@ -1,5 +1,5 @@
-import type { Account, Contact, Status } from "../data";
-import { ENGAGEMENT_STATUSES } from "../data";
+import type { Account, Contact, SoldSolution, Status } from "../data";
+import { ENGAGEMENT_STATUSES, normalizeSoldSolution } from "../data";
 import type {
   Opportunity,
   OpportunityStakeholder,
@@ -41,7 +41,12 @@ export function accountFromRow(row: Record<string, unknown>): Account {
     id: String(row.id),
     name: String(row.name ?? ""),
     type,
-    commercialStatus: String(row.commercial_status ?? "Prospect"),
+    commercialStatus: (() => {
+      const s = String(row.commercial_status ?? "Prospect");
+      if (s === "Other" || s === "SameSector") return "Prospect";
+      if (s === "Competitor") return "Concurrent";
+      return s;
+    })(),
     holdingId:
       row.holding_id == null || row.holding_id === ""
         ? null
@@ -262,4 +267,41 @@ export function stakeholderFromRow(
         ? undefined
         : String(row.notes),
   };
+}
+
+export function soldSolutionToRow(organizationId: string, s: SoldSolution) {
+  const directionIds =
+    Array.isArray(s.directionIds) && s.directionIds.length > 0
+      ? s.directionIds
+      : s.directionId
+        ? [s.directionId]
+        : [];
+  return {
+    id: s.id,
+    organization_id: organizationId,
+    solution_id: s.solutionId,
+    account_id: s.accountId,
+    direction_ids: directionIds,
+    module_ids: Array.isArray(s.moduleIds) ? s.moduleIds : [],
+    currency: s.currency || "EUR",
+    billed_amount: Math.max(0, Number(s.billedAmount) || 0),
+  };
+}
+
+export function soldSolutionFromRow(row: Record<string, unknown>): SoldSolution {
+  const directionIds = Array.isArray(row.direction_ids)
+    ? (row.direction_ids as unknown[]).map(String).filter(Boolean)
+    : [];
+  return normalizeSoldSolution({
+    id: String(row.id),
+    solutionId: String(row.solution_id ?? ""),
+    accountId: String(row.account_id ?? ""),
+    directionId: directionIds[0] ?? null,
+    directionIds,
+    moduleIds: Array.isArray(row.module_ids)
+      ? (row.module_ids as unknown[]).map(String).filter(Boolean)
+      : [],
+    currency: "EUR",
+    billedAmount: Number(row.billed_amount) || 0,
+  });
 }

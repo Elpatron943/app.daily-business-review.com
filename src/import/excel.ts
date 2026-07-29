@@ -1,17 +1,29 @@
 import * as XLSX from "xlsx";
 import { parseCsv, type CsvTable } from "./csv";
-import { normalizeHeader, canonicalizeHeaders } from "./csv";
+import { normalizeHeader } from "./csv";
+import type { ImportEntityKind } from "./mappingFields";
 
 export type ExcelImportTables = {
   accounts?: CsvTable;
   contacts?: CsvTable;
   opportunities?: CsvTable;
+  sold_solutions?: CsvTable;
+};
+
+/** Feuille brute : en-têtes d’origine pour le mapping UI. */
+export type RawImportSheet = {
+  kind: ImportEntityKind;
+  sheetName: string;
+  headers: string[];
+  rows: Record<string, string>[];
+  samples: Record<string, string>;
 };
 
 export type ExcelTemplateRefs = {
   directions: string[];
   sectors: string[];
   solutions: string[];
+  modules: string[];
   sizes: string[];
   statuses: string[];
   types: string[];
@@ -23,21 +35,35 @@ export type ExcelExportData = {
   accounts: (string | number)[][];
   contacts: (string | number)[][];
   opportunities: (string | number)[][];
+  soldSolutions: (string | number)[][];
   refs?: ExcelTemplateRefs;
 };
 
 const SHEET_ACCOUNTS = ["entreprises", "comptes", "accounts", "groupes"];
 const SHEET_CONTACTS = ["contacts"];
+const SHEET_SOLD = [
+  "solutions_vendues",
+  "sold_solutions",
+  "sold",
+  "ca_installe",
+  "ventes",
+];
 
-function sheetKind(name: string): keyof ExcelImportTables | null {
+function sheetKind(name: string): ImportEntityKind | null {
   const n = normalizeHeader(name);
   if (SHEET_ACCOUNTS.includes(n)) return "accounts";
   if (SHEET_CONTACTS.includes(n)) return "contacts";
   if (n.includes("opportun") || n === "deals") return "opportunities";
+  if (SHEET_SOLD.includes(n) || n.includes("vendu") || n.includes("installe"))
+    return "sold_solutions";
   return null;
 }
 
-function sheetToTable(sheet: XLSX.WorkSheet): CsvTable {
+function sheetToRawTable(
+  sheet: XLSX.WorkSheet,
+  kind: ImportEntityKind,
+  sheetName: string,
+): RawImportSheet {
   const raw = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(
     sheet,
     {
@@ -47,59 +73,111 @@ function sheetToTable(sheet: XLSX.WorkSheet): CsvTable {
     },
   ) as unknown as (string | number | boolean | null)[][];
 
-  if (!raw.length) return { headers: [], rows: [] };
+  if (!raw.length) {
+    return { kind, sheetName, headers: [], rows: [], samples: {} };
+  }
 
-  const headerCells = (raw[0] ?? []).map((c) => String(c ?? "").trim());
-  const headers = canonicalizeHeaders(headerCells);
+  const headerCells = (raw[0] ?? []).map((c, idx) => {
+    const t = String(c ?? "").trim();
+    return t || `Colonne ${idx + 1}`;
+  });
+
   const rows: Record<string, string>[] = [];
-
   for (let i = 1; i < raw.length; i++) {
     const line = raw[i] ?? [];
     const cells = headerCells.map((_, idx) => String(line[idx] ?? "").trim());
     if (cells.every((c) => !c)) continue;
     const row: Record<string, string> = {};
-    headers.forEach((h, idx) => {
+    headerCells.forEach((h, idx) => {
       row[h] = cells[idx] ?? "";
     });
     rows.push(row);
   }
-  return { headers, rows };
+
+  const samples: Record<string, string> = {};
+  const first = rows[0];
+  if (first) {
+    for (const h of headerCells) samples[h] = first[h] ?? "";
+  }
+
+  return {
+    kind,
+    sheetName,
+    headers: headerCells,
+    rows,
+    samples,
+  };
 }
 
-/** Lit un fichier Excel (.xlsx) ou CSV. */
-export async function parseImportWorkbook(
+/** Lit un fichier Excel en conservant les en-têtes d’origine. */
+export async function parseImportWorkbookRaw(
   file: File,
-): Promise<ExcelImportTables> {
+): Promise<RawImportSheet[]> {
   const name = file.name.toLowerCase();
   if (name.endsWith(".csv") || name.endsWith(".txt")) {
     const text = await file.text();
     const table = parseCsv(text);
-    const cols = new Set(table.headers);
-    if (cols.has("phase") || cols.has("amount") || cols.has("kind")) {
-      return { opportunities: table };
+    // parseCsv already canonicalizes — rebuild as single sheet with those headers
+    const kind: ImportEntityKind =
+      table.headers.includes("billed_amount") ||
+      (table.headers.includes("modules") &&
+        table.headers.includes("solution") &&
+        !table.headers.includes("phase"))
+        ? "sold_solutions"
+        : table.headers.includes("phase") ||
+            table.headers.includes("amount") ||
+            table.headers.includes("kind")
+          ? "opportunities"
+          : table.headers.includes("title") ||
+              table.headers.includes("direction")
+            ? "contacts"
+            : "accounts";
+    const samples: Record<string, string> = {};
+    const first = table.rows[0];
+    if (first) {
+      for (const h of table.headers) samples[h] = first[h] ?? "";
     }
-    if (cols.has("title") || cols.has("direction")) {
-      return { contacts: table };
-    }
-    return { accounts: table };
+    return [
+      {
+        kind,
+        sheetName: file.name,
+        headers: table.headers,
+        rows: table.rows,
+        samples,
+      },
+    ];
   }
 
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: "array", cellDates: true });
-  const out: ExcelImportTables = {};
+  const sheets: RawImportSheet[] = [];
 
   for (const sheetName of wb.SheetNames) {
     const kind = sheetKind(sheetName);
     if (!kind) continue;
-    const table = sheetToTable(wb.Sheets[sheetName]);
+    const table = sheetToRawTable(wb.Sheets[sheetName], kind, sheetName);
     if (table.rows.length === 0 && table.headers.length === 0) continue;
-    out[kind] = table;
+    sheets.push(table);
   }
 
-  if (!out.accounts && !out.contacts && !out.opportunities && wb.SheetNames[0]) {
-    out.accounts = sheetToTable(wb.Sheets[wb.SheetNames[0]]);
+  if (sheets.length === 0 && wb.SheetNames[0]) {
+    sheets.push(
+      sheetToRawTable(wb.Sheets[wb.SheetNames[0]], "accounts", wb.SheetNames[0]),
+    );
   }
 
+  return sheets;
+}
+
+/** @deprecated préférer parseImportWorkbookRaw + mapping. */
+export async function parseImportWorkbook(
+  file: File,
+): Promise<ExcelImportTables> {
+  const sheets = await parseImportWorkbookRaw(file);
+  const out: ExcelImportTables = {};
+  for (const s of sheets) {
+    out[s.kind] = { headers: s.headers, rows: s.rows };
+  }
   return out;
 }
 
@@ -131,20 +209,23 @@ function appendGuide(wb: XLSX.WorkBook) {
     ["Powermap / DBR — Template d’import"],
     [""],
     ["Comment utiliser"],
-    ["1. Remplir les onglets Entreprises, Contacts et Opportunites."],
+    ["1. Remplir les onglets Entreprises, Contacts, Opportunites, Solutions_vendues."],
     ["2. Ne pas renommer les onglets ni la ligne d’en-têtes."],
-    ["3. Relier les lignes avec la colonne Cle."],
+    ["3. Relier les lignes avec la colonne Cle (ou le Nom d’entreprise)."],
     ["4. Enregistrer en .xlsx puis importer dans Settings → Import."],
+    ["5. Dans l’UI, vérifier / ajuster le mapping colonnes (proposition IA possible)."],
     [""],
     ["Correspondances de clés"],
-    ["Entreprises.Cle → Contacts.Compte et Opportunites.Compte"],
+    ["Entreprises.Cle → Contacts.Compte, Opportunites.Compte, Solutions_vendues.Compte"],
     ["Entreprises.Cle_groupe → Cle d’un groupe (Type = Holding ou Groupe)"],
+    ["Solutions_vendues.Modules → libellés du catalogue, séparés par ;"],
+    ["Solutions_vendues.Directions → libellés, séparés par ; (vide = niveau entreprise)"],
     [""],
     ["Type (Entreprises)"],
     ["Holding ou Groupe | Entreprise"],
     [""],
     ["Statut"],
-    ["Client | Prospect | Partner / Partenaire | Other / Autre"],
+    ["Client | Prospect | Concurrent | Partner / Partenaire"],
     [""],
     ["Phase"],
     [
@@ -172,6 +253,7 @@ function appendReferentiel(wb: XLSX.WorkBook, refs?: ExcelTemplateRefs) {
   for (const v of refs.directions) refRows.push(["Direction", v]);
   for (const v of refs.sectors) refRows.push(["Secteur", v]);
   for (const v of refs.solutions) refRows.push(["Solution", v]);
+  for (const v of refs.modules) refRows.push(["Module", v]);
   const sheet = XLSX.utils.aoa_to_sheet(refRows);
   sheet["!cols"] = [{ wch: 14 }, { wch: 40 }];
   XLSX.utils.book_append_sheet(wb, sheet, "Referentiel");
@@ -196,6 +278,14 @@ const OPP_HEADERS_FR = [
   "Phase",
   "Nature",
   "Solution",
+];
+const SOLD_HEADERS_FR = [
+  "Cle",
+  "Compte",
+  "Solution",
+  "Modules",
+  "Directions",
+  "CA_facture",
 ];
 
 /** Template Excel multi-onglets prêt à remplir (exemples inclus). */
@@ -238,6 +328,23 @@ export function downloadExcelTemplate(refs?: ExcelTemplateRefs) {
     ],
   ]);
 
+  const sampleModules = (refs?.modules ?? [])
+    .filter((m) => m.includes(" > "))
+    .slice(0, 2)
+    .map((m) => m.split(" > ").slice(1).join(" > "))
+    .join("; ");
+
+  appendDataSheet(wb, "Solutions_vendues", SOLD_HEADERS_FR, [
+    [
+      "S1",
+      "E2",
+      refs?.solutions[0] ?? "",
+      sampleModules,
+      "",
+      120000,
+    ],
+  ]);
+
   appendReferentiel(wb, refs);
 
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -254,9 +361,20 @@ export function downloadExcelExport(
   appendDataSheet(wb, "Entreprises", ACCOUNT_HEADERS_FR, data.accounts);
   appendDataSheet(wb, "Contacts", CONTACT_HEADERS_FR, data.contacts);
   appendDataSheet(wb, "Opportunites", OPP_HEADERS_FR, data.opportunities);
+  appendDataSheet(
+    wb,
+    "Solutions_vendues",
+    SOLD_HEADERS_FR,
+    data.soldSolutions,
+  );
   appendReferentiel(wb, data.refs);
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   downloadBlob(filename, out);
 }
 
-export { ACCOUNT_HEADERS_FR, CONTACT_HEADERS_FR, OPP_HEADERS_FR };
+export {
+  ACCOUNT_HEADERS_FR,
+  CONTACT_HEADERS_FR,
+  OPP_HEADERS_FR,
+  SOLD_HEADERS_FR,
+};

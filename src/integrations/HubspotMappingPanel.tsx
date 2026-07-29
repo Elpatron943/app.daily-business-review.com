@@ -6,6 +6,9 @@ export type HubSpotMappingConfig = {
     domainProp: string;
     sectorProp: string;
     ownerProp: string;
+    soldSolutionProp: string;
+    soldModulesProp: string;
+    soldAmountProp: string;
   };
   contact: {
     firstnameProp: string;
@@ -316,6 +319,39 @@ export default function HubspotMappingPanel({
             setMapping({
               ...mapping,
               company: { ...mapping.company, ownerProp: v },
+            })
+          }
+        />
+        <PropSelect
+          label="Solution vendue (CA installé)"
+          value={mapping.company.soldSolutionProp || ""}
+          options={[{ name: "", label: "— non mappé —" }, ...coOpts]}
+          onChange={(v) =>
+            setMapping({
+              ...mapping,
+              company: { ...mapping.company, soldSolutionProp: v },
+            })
+          }
+        />
+        <PropSelect
+          label="Modules installés (; séparés)"
+          value={mapping.company.soldModulesProp || ""}
+          options={[{ name: "", label: "— non mappé —" }, ...coOpts]}
+          onChange={(v) =>
+            setMapping({
+              ...mapping,
+              company: { ...mapping.company, soldModulesProp: v },
+            })
+          }
+        />
+        <PropSelect
+          label="CA facturé (€)"
+          value={mapping.company.soldAmountProp || ""}
+          options={[{ name: "", label: "— non mappé —" }, ...coOpts]}
+          onChange={(v) =>
+            setMapping({
+              ...mapping,
+              company: { ...mapping.company, soldAmountProp: v },
             })
           }
         />

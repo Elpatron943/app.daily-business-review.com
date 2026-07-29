@@ -283,7 +283,7 @@ export const defaultAccounts: Account[] = [
     id: "hold-nova",
     name: "Nova Group",
     type: "Holding",
-    commercialStatus: "Other",
+    commercialStatus: "Concurrent",
     holdingId: null,
     sector: "Tech / SaaS",
     size: "2501-5000",
@@ -295,7 +295,7 @@ export const defaultAccounts: Account[] = [
     id: "nova-fr",
     name: "Nova France",
     type: "Entreprise",
-    commercialStatus: "Other",
+    commercialStatus: "Concurrent",
     holdingId: "hold-nova",
     size: "1001-2500",
     x: 980,
@@ -403,7 +403,7 @@ export const defaultDirections: Direction[] = [
     id: "dir-nova-sales",
     accountId: "hold-nova",
     name: "Sales",
-    commercialStatus: "Other",
+    commercialStatus: "Concurrent",
     x: 1020,
     y: 280,
     active: true,
@@ -552,15 +552,15 @@ export const holdingEdges = buildHoldingEdges(defaultAccounts);
 export const commercialLabel: Record<string, string> = {
   Client: "Client",
   Prospect: "Prospect",
+  Concurrent: "Concurrent",
   Partner: "Partenaire",
-  Other: "Autre",
 };
 
 export const COMMERCIAL_STATUSES: CommercialStatus[] = [
   "Client",
   "Prospect",
+  "Concurrent",
   "Partner",
-  "Other",
 ];
 
 export const companyRelationLabel: Record<CompanyRelationType, string> = {
@@ -867,8 +867,8 @@ export type ScopeKpis = {
 
 /**
  * KPIs d’un périmètre :
- * - CA installé = solutions vendues (facturé) + Closed Won (selon règles)
- * - Pipeline / Whitespace / Renouvellement selon phases & types config
+ * - CA installé = lignes de vente facturées (Won → crée/maj une ligne)
+ * - Pipeline / Whitespace / Renouvellement en cours selon phases & types
  * - Cible = somme des buckets activés dans kpiRules
  */
 export function aggregateKpis(

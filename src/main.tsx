@@ -4,6 +4,7 @@ import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import { LocaleProvider } from "./i18n/LocaleContext";
 import { ConfirmProvider } from "./ui/ConfirmDialog";
+import { ToastProvider } from "./ui/Toast";
 import { ConfigProvider } from "./config/ConfigContext";
 import { DomainProvider } from "./domain/DomainContext";
 import { AccountPlanProvider } from "./accountPlans/AccountPlanContext";
@@ -18,6 +19,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <LocaleProvider>
       <ConfirmProvider>
+        <ToastProvider>
         <AuthProvider>
           <ConfigProvider>
             <DomainProvider>
@@ -31,6 +33,7 @@ createRoot(document.getElementById("root")!).render(
             </DomainProvider>
           </ConfigProvider>
         </AuthProvider>
+        </ToastProvider>
       </ConfirmProvider>
     </LocaleProvider>
   </StrictMode>,

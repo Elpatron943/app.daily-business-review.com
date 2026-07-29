@@ -144,6 +144,7 @@ export default function GenerateActionPlanPanel({
         title: row.title.trim(),
         dueDate: row.dueDate,
         owner: row.owner,
+        opportunityId: opportunity?.id ?? null,
         status: "Todo",
       });
     }

@@ -4,6 +4,7 @@ import type { Locale } from "./types";
 export type MessageKey =
   | "nav.group.view"
   | "nav.group.data"
+  | "nav.group.pilotage"
   | "nav.dashboard"
   | "nav.map"
   | "nav.entreprises"
@@ -47,13 +48,14 @@ export type MessageKey =
 
 const fr: Record<MessageKey, string> = {
   "nav.group.view": "Vue",
-  "nav.group.data": "Données en entrée",
+  "nav.group.data": "Saisie",
+  "nav.group.pilotage": "Pilotage",
   "nav.dashboard": "Dashboard",
   "nav.map": "Cartographie",
   "nav.entreprises": "Entreprises",
   "nav.contacts": "Contacts",
   "nav.opportunites": "Opportunités",
-  "nav.accountPlans": "Account plans",
+  "nav.accountPlans": "Account plan",
   "nav.group.modules": "Modules optionnels",
   "nav.ai_phone_script": "Script téléphonique IA",
   "nav.ai_email_script": "Script E-mailing IA",
@@ -96,13 +98,14 @@ const fr: Record<MessageKey, string> = {
 
 const en: Record<MessageKey, string> = {
   "nav.group.view": "View",
-  "nav.group.data": "Input data",
+  "nav.group.data": "Input",
+  "nav.group.pilotage": "Execution",
   "nav.dashboard": "Dashboard",
   "nav.map": "Map",
   "nav.entreprises": "Companies",
   "nav.contacts": "Contacts",
   "nav.opportunites": "Opportunities",
-  "nav.accountPlans": "Account plans",
+  "nav.accountPlans": "Account plan",
   "nav.group.modules": "Optional modules",
   "nav.ai_phone_script": "AI phone script",
   "nav.ai_email_script": "AI email script",

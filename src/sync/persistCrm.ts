@@ -1,5 +1,5 @@
 import { supabase } from "../supabase/client";
-import type { Account, Contact } from "../data";
+import type { Account, Contact, SoldSolution } from "../data";
 import type {
   Opportunity,
   OpportunityStakeholder,
@@ -8,6 +8,7 @@ import {
   accountToRow,
   contactToRow,
   opportunityToRow,
+  soldSolutionToRow,
   stakeholderToRow,
 } from "./mappers";
 
@@ -135,6 +136,19 @@ export async function replaceOpportunityStakeholdersRemote(
     stakeholderToRow(organizationId, opportunityId, s),
   );
   const { error } = await sb.from("opportunity_stakeholders").insert(rows);
+  if (error) throw new Error(error.message);
+}
+
+export async function upsertSoldSolutionsRemote(
+  organizationId: string,
+  lines: SoldSolution[],
+): Promise<void> {
+  if (lines.length === 0) return;
+  const sb = requireClient();
+  const rows = lines.map((s) => soldSolutionToRow(organizationId, s));
+  const { error } = await sb.from("sold_solutions").upsert(rows, {
+    onConflict: "organization_id,id",
+  });
   if (error) throw new Error(error.message);
 }
 

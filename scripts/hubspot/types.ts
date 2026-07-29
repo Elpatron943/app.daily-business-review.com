@@ -43,5 +43,6 @@ export type SyncCounts = {
   companies: number;
   contacts: number;
   deals: number;
+  soldSolutions: number;
   errors: string[];
 };

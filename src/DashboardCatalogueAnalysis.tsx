@@ -538,7 +538,7 @@ export default function DashboardCatalogueAnalysis({
           <strong>{formatEur(totals.amount)}</strong>
         </article>
         <article>
-          <span>Renouvellement</span>
+          <span>Renouvellements en cours</span>
           <strong>{formatEur(totals.renewal)}</strong>
         </article>
         <article>
@@ -604,7 +604,7 @@ export default function DashboardCatalogueAnalysis({
                 <th>Cible</th>
                 <th>Whitespace</th>
                 <th>Pipeline</th>
-                <th>Renouvellement</th>
+                <th>Renouv. en cours</th>
                 <th title="Comptes avec CA > 0 / comptes adressables">
                   Présence
                 </th>

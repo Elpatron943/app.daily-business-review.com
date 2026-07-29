@@ -54,6 +54,9 @@ export function companyPullProperties(
     mapping.company.domainProp,
     mapping.company.sectorProp,
     mapping.company.ownerProp,
+    mapping.company.soldSolutionProp,
+    mapping.company.soldModulesProp,
+    mapping.company.soldAmountProp,
     "hs_lastmodifieddate",
   ].filter(Boolean);
 }
