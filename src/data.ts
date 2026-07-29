@@ -157,8 +157,14 @@ export type Account = {
   x: number;
   y: number;
   active: boolean;
-  /** Brief recherche cible (Perplexity). */
+  /** Brief recherche cible (moteur IA). */
   researchBrief?: AccountResearchBrief | null;
+  /** Gestionnaire DBR (profiles.id). */
+  ownerProfileId?: string | null;
+  /** Id Company HubSpot (sync CRM). */
+  hubspotCompanyId?: string | null;
+  hubspotSyncedAt?: string | null;
+  hubspotDirty?: boolean;
 };
 
 export type AccountResearchBrief = {
@@ -207,10 +213,21 @@ export type Contact = {
   accountId: string;
   directionId: string;
   name: string;
+  /** Prénom (sync CRM). */
+  firstName?: string | null;
+  /** Nom de famille (sync CRM). */
+  lastName?: string | null;
   title: string;
+  email?: string | null;
+  phone?: string | null;
   x: number;
   y: number;
   active: boolean;
+  /** Gestionnaire DBR (profiles.id). */
+  ownerProfileId?: string | null;
+  hubspotContactId?: string | null;
+  hubspotSyncedAt?: string | null;
+  hubspotDirty?: boolean;
 };
 
 export type CompanyRelation = {

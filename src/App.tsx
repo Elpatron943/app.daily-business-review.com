@@ -23,6 +23,7 @@ import SettingsPanel from "./SettingsPanel";
 import DataEntryPanel, { type DataSection } from "./DataEntryPanel";
 import DashboardPage from "./DashboardPage";
 import AccountPlanPage from "./AccountPlanPage";
+import OptionalModulePage from "./OptionalModulePage";
 import SoldSolutionEditor from "./SoldSolutionEditor";
 import AccountSearchSelect from "./AccountSearchSelect";
 import SameSectorPanel, {
@@ -37,10 +38,13 @@ import {
 } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
 import { useSales } from "./sales/SalesContext";
+import { isModuleEnabled } from "./billing/optionalModules";
 import {
   isDataSection,
+  isOptionalModulePage,
   NAV_DATA,
   NAV_MAIN,
+  NAV_OPTIONAL_MODULES,
   type AppPage,
 } from "./navigation";
 import {
@@ -468,7 +472,11 @@ export default function App() {
     const key =
       id === "account-plans"
         ? "nav.accountPlans"
-        : (`nav.${id}` as MessageKey);
+        : id === "ai_phone_script"
+          ? "nav.ai_phone_script"
+          : id === "ai_email_script"
+            ? "nav.ai_email_script"
+            : (`nav.${id}` as MessageKey);
     return t(key);
   }
 
@@ -574,6 +582,15 @@ export default function App() {
     }
     setPage(next);
   }, []);
+
+  useEffect(() => {
+    if (
+      isOptionalModulePage(page) &&
+      !isModuleEnabled(billing.organization?.optional_modules, page)
+    ) {
+      setPage("dashboard");
+    }
+  }, [page, billing.organization?.optional_modules]);
 
   const [showDirections, setShowDirections] = useState(true);
   const [showContacts, setShowContacts] = useState(true);
@@ -1652,6 +1669,26 @@ export default function App() {
               {navLabel(item.id)}
             </button>
           ))}
+
+          {NAV_OPTIONAL_MODULES.some((m) =>
+            isModuleEnabled(billing.organization?.optional_modules, m.id),
+          ) ? (
+            <>
+              <p className="sidebar-group">{t("nav.group.modules")}</p>
+              {NAV_OPTIONAL_MODULES.filter((m) =>
+                isModuleEnabled(billing.organization?.optional_modules, m.id),
+              ).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={page === item.id ? "active" : ""}
+                  onClick={() => navigate(item.id)}
+                >
+                  {navLabel(item.id)}
+                </button>
+              ))}
+            </>
+          ) : null}
         </nav>
 
         <div className="sidebar-foot">
@@ -1712,6 +1749,10 @@ export default function App() {
             section={page as DataSection}
             onNavigate={navigate}
           />
+        )}
+
+        {isOptionalModulePage(page) && (
+          <OptionalModulePage moduleId={page} />
         )}
 
         {page === "map" && (

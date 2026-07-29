@@ -600,6 +600,22 @@ export function DomainProvider({ children }: { children: ReactNode }) {
                   ...c,
                   name: input.name.trim(),
                   title: input.title.trim(),
+                  email:
+                    input.email !== undefined
+                      ? input.email?.trim() || null
+                      : c.email,
+                  phone:
+                    input.phone !== undefined
+                      ? input.phone?.trim() || null
+                      : c.phone,
+                  firstName:
+                    input.firstName !== undefined
+                      ? input.firstName
+                      : c.firstName,
+                  lastName:
+                    input.lastName !== undefined
+                      ? input.lastName
+                      : c.lastName,
                   accountId: input.accountId,
                   directionId: input.directionId,
                   active: input.active ?? c.active,
@@ -623,6 +639,10 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           id: uid("c"),
           name: input.name.trim(),
           title: input.title.trim(),
+          email: input.email?.trim() || null,
+          phone: input.phone?.trim() || null,
+          firstName: input.firstName ?? null,
+          lastName: input.lastName ?? null,
           accountId: input.accountId,
           directionId: input.directionId,
           x: input.x ?? pos.x,

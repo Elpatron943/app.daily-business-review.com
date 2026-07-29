@@ -1,9 +1,19 @@
 import { DATA_SECTIONS, type DataSection } from "./DataEntryPanel";
+import type { OptionalModuleId } from "./billing/optionalModules";
 
-export type AppPage = "dashboard" | "map" | "account-plans" | DataSection;
+export type AppPage =
+  | "dashboard"
+  | "map"
+  | "account-plans"
+  | DataSection
+  | OptionalModuleId;
 
 export function isDataSection(page: AppPage): page is DataSection {
   return DATA_SECTIONS.some((s) => s.id === page);
+}
+
+export function isOptionalModulePage(page: AppPage): page is OptionalModuleId {
+  return page === "ai_phone_script" || page === "ai_email_script";
 }
 
 export const NAV_MAIN: { id: AppPage; label: string }[] = [
@@ -17,4 +27,12 @@ export const NAV_DATA: { id: AppPage; label: string }[] = [
     label: s.label,
   })),
   { id: "account-plans", label: "Account plans" },
+];
+
+export const NAV_OPTIONAL_MODULES: {
+  id: OptionalModuleId;
+  label: string;
+}[] = [
+  { id: "ai_phone_script", label: "Script téléphonique IA" },
+  { id: "ai_email_script", label: "Script E-mailing IA" },
 ];

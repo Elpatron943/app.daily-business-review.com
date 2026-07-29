@@ -363,9 +363,15 @@ export type Opportunity = {
   mappingChecks: OppMappingChecks;
   /** Contacts mappés sur le deal (engagement). */
   stakeholders: OpportunityStakeholder[];
-  /** Dernières recommandations ChatGPT. */
+  /** Dernieres recommandations IA. */
   aiRecommendations?: OpportunityAiRecommendations | null;
   active: boolean;
+  /** Gestionnaire DBR (profiles.id). */
+  ownerProfileId?: string | null;
+  /** Id Deal HubSpot (sync CRM). */
+  hubspotDealId?: string | null;
+  hubspotSyncedAt?: string | null;
+  hubspotDirty?: boolean;
 };
 
 export const OPPORTUNITIES_STORAGE_KEY = "powermap.opportunities.v1";

@@ -505,6 +505,81 @@ body {
   }
 }
 
+.hubspot-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.hubspot-map-field {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.hubspot-map-field select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+}
+
+.hubspot-mapping .ecosystem-table select {
+  max-width: 100%;
+  font: inherit;
+}
+
+.crm-connector-badges {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.crm-connector-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 88%, var(--ink) 4%);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.crm-connector-badge-soon {
+  opacity: 0.72;
+}
+
+.crm-connector-badge-state {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 0.15rem;
+}
+
+.crm-connector-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.crm-connector-head h3 {
+  margin: 0 0 0.25rem;
+}
+
+.crm-connector-card {
+  opacity: 0.9;
+}
+
 .app-main {
   min-width: 0;
   min-height: 0;
@@ -7800,7 +7875,7 @@ button.ghost.linkish {
   margin-top: 0.35rem;
 }
 
-/* ?? Recherche cible Perplexity ?? */
+/* Recherche cible IA */
 .target-research {
   margin: 0 0 1.5rem;
 }
@@ -8573,6 +8648,106 @@ button.ghost.linkish {
   border-radius: 12px;
   padding: 1rem 1.1rem;
   background: var(--panel);
+}
+
+.opp-ai-script {
+  margin-bottom: 1.5rem;
+}
+
+.opp-ai-script-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.85rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.opp-ai-script-field select,
+.opp-ai-script-field input,
+.opp-ai-script-field textarea {
+  font: inherit;
+  font-weight: 400;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: var(--panel);
+}
+
+.opp-ai-script-field textarea {
+  resize: vertical;
+  min-height: 5rem;
+  line-height: 1.45;
+}
+
+.opp-ai-script-facts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.65rem;
+}
+
+.opp-ai-script-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.opp-ai-script-group h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.opp-ai-script-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.opp-ai-script-group li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.opp-ai-script-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.opp-ai-script-fact strong {
+  font-size: 0.85rem;
+}
+
+.opp-ai-script-fact .meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.opp-ai-script-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.6rem;
 }
 
 .warn-hint {

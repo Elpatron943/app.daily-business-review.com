@@ -65,7 +65,7 @@ export default function OpportunityRecommendPanel({ opportunity }: Props) {
       });
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Échec de l’analyse ChatGPT",
+        err instanceof Error ? err.message : "Echec de l'analyse IA",
       );
     } finally {
       setLoading(false);
@@ -86,7 +86,7 @@ export default function OpportunityRecommendPanel({ opportunity }: Props) {
           disabled={!canRun}
           onClick={handleRun}
         >
-          {loading ? "Analyse…" : "Analyser avec ChatGPT"}
+          {loading ? "Analyse..." : "Analyser"}
         </button>
       </div>
 

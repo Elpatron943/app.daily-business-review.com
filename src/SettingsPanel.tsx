@@ -8,6 +8,7 @@ import SectorsManager from "./SectorsManager";
 import OppMappingLibraryManager from "./OppMappingLibraryManager";
 import ImportManager from "./ImportManager";
 import SalesTaxonomyManager from "./SalesTaxonomyManager";
+import CrmIntegrationsPanel from "./integrations/CrmIntegrationsPanel";
 import {
   BO_FIELD_KINDS,
   OPP_VARIABLE_KINDS,
@@ -26,6 +27,7 @@ type Tab =
   | "catalogue"
   | "mapping"
   | "import"
+  | "crm"
   | "contacts"
   | "directions"
   | "sectors"
@@ -183,6 +185,13 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           </button>
           <button
             type="button"
+            className={tab === "crm" ? "active" : ""}
+            onClick={() => setTab("crm")}
+          >
+            CRM
+          </button>
+          <button
+            type="button"
             className={tab === "variables" ? "active" : ""}
             onClick={() => setTab("variables")}
           >
@@ -254,6 +263,8 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           )}
 
           {tab === "import" && <ImportManager />}
+
+          {tab === "crm" && <CrmIntegrationsPanel />}
 
           {tab === "variables" && (
             <>

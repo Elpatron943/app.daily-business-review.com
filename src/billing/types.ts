@@ -1,3 +1,5 @@
+import type { OptionalModulesState } from "./optionalModules";
+
 export type SubscriptionStatus =
   | "none"
   | "trialing"
@@ -27,6 +29,7 @@ export type OrganizationBilling = {
   seat_quantity: number | null;
   subscription_status: SubscriptionStatus;
   trial_ends_at: string | null;
+  optional_modules: OptionalModulesState;
   plan: CommercialPlan | null;
 };
 

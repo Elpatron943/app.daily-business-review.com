@@ -8,6 +8,7 @@
 | `migrations/20260727220000_dbr_domain.sql` | Tables métier + `organizations` + RLS |
 | `migrations/20260727223000_commercial_plans.sql` | Formules commerciales + liaison orgs |
 | `EMAIL_RESEND.md` | SMTP Resend pour les e-mails Auth |
+| `HUBSPOT.md` | Intégrations CRM multi-tenant (HubSpot OAuth plateforme + connexions par org) |
 
 ## E-mails Auth (Resend)
 
@@ -41,9 +42,16 @@ supabase db push
 - `sold_solutions`
 - `account_plans`, `account_plan_opportunities`
 - `plan_objectives`, `plan_actions`
+- `hubspot_sync_cursors`, `hubspot_webhook_events`
+- `crm_connections` — connexion CRM par org (`hubspot` | `salesforce`)
 
 Les ids métier restent en `text` (compatibles localStorage : `hold-*`, `opp-*`, …).  
 Le partage des données se fait via `organization_id` (RLS).
+
+## HubSpot / CRM
+
+Settings → **CRM** : chaque org connecte son portail.  
+Secrets OAuth plateforme + migrations — voir **[HUBSPOT.md](./HUBSPOT.md)**.
 
 ## Création d’utilisateurs (console admin)
 

@@ -109,6 +109,8 @@ function DataEntryPanelInner({
   // Contact create form
   const [cName, setCName] = useState("");
   const [cTitle, setCTitle] = useState("");
+  const [cEmail, setCEmail] = useState("");
+  const [cPhone, setCPhone] = useState("");
   const [cAccount, setCAccount] = useState(entreprises[0]?.id ?? "");
   const [cDir, setCDir] = useState(activeDirections[0]?.id ?? "");
   const [cParent, setCParent] = useState("");
@@ -207,7 +209,15 @@ function DataEntryPanelInner({
         const account = accounts.find((a) => a.id === c.accountId);
         const dirLabel =
           activeDirections.find((d) => d.id === c.directionId)?.name ?? "";
-        return matchesQuery(q, c.name, c.title, account?.name, dirLabel);
+        return matchesQuery(
+          q,
+          c.name,
+          c.title,
+          c.email,
+          c.phone,
+          account?.name,
+          dirLabel,
+        );
       })
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name, "fr"));
@@ -229,6 +239,8 @@ function DataEntryPanelInner({
   function resetContactForm() {
     setCName("");
     setCTitle("");
+    setCEmail("");
+    setCPhone("");
     setCParent("");
     setCAccount(entreprises[0]?.id ?? "");
     setCDir(activeDirections[0]?.id ?? "");
@@ -242,6 +254,8 @@ function DataEntryPanelInner({
     const id = upsertContact({
       name: cName,
       title: cTitle,
+      email: cEmail,
+      phone: cPhone,
       directionId: cDir,
       accountId: cAccount,
     });
@@ -529,6 +543,8 @@ function DataEntryPanelInner({
                         <strong>{c.name}</strong>
                         <span className="meta">
                           {c.title ? `${c.title} · ` : ""}
+                          {c.email ? `${c.email} · ` : ""}
+                          {c.phone ? `${c.phone} · ` : ""}
                           {dirLabel}
                           {account ? ` · ${account.name}` : ""}
                           {parent ? ` · parent : ${parent.name}` : ""}
@@ -598,6 +614,24 @@ function DataEntryPanelInner({
                       <input
                         value={cTitle}
                         onChange={(e) => setCTitle(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      E-mail
+                      <input
+                        type="email"
+                        value={cEmail}
+                        onChange={(e) => setCEmail(e.target.value)}
+                        autoComplete="email"
+                      />
+                    </label>
+                    <label>
+                      Téléphone
+                      <input
+                        type="tel"
+                        value={cPhone}
+                        onChange={(e) => setCPhone(e.target.value)}
+                        autoComplete="tel"
                       />
                     </label>
                     <label>

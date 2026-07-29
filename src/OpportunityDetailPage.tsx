@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatEur } from "./data";
 import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
@@ -8,6 +8,9 @@ import OpportunityStakeholdersPanel from "./OpportunityStakeholdersPanel";
 import OpportunityRecommendPanel from "./OpportunityRecommendPanel";
 import GenerateActionPlanPanel from "./GenerateActionPlanPanel";
 import TargetResearchPanel from "./research/TargetResearchPanel";
+import OpportunityAiScriptPanel from "./research/OpportunityAiScriptPanel";
+import { useAuth } from "./auth/AuthContext";
+import { isModuleEnabled } from "./billing/optionalModules";
 import {
   computeBusinessOutcomes,
   defaultOpportunityVariables,
@@ -24,6 +27,7 @@ import {
   type AccountPlan,
 } from "./accountPlans/AccountPlanContext";
 import { useConfirm } from "./ui/ConfirmDialog";
+import type { AiScriptKind } from "./research/buildAiScriptContext";
 
 function showsDealVariables(kind: OpportunityKind) {
   return kind === "up";
@@ -36,7 +40,8 @@ type Tab =
   | "outcomes"
   | "recherche"
   | "contacts"
-  | "recos";
+  | "recos"
+  | "scripts";
 
 type Props = {
   opportunityId: string;
@@ -56,7 +61,16 @@ export default function OpportunityDetailPage({
     setActiveOpportunityId,
   } = useOpportunities();
   const askConfirm = useConfirm();
+  const { organization } = useAuth();
   const { activeAccounts } = useDomain();
+  const showPhoneScript = isModuleEnabled(
+    organization?.optional_modules,
+    "ai_phone_script",
+  );
+  const showEmailScript = isModuleEnabled(
+    organization?.optional_modules,
+    "ai_email_script",
+  );
   const {
     activeBoFields,
     activeBoCategories,
@@ -80,13 +94,32 @@ export default function OpportunityDetailPage({
       pending === "outcomes" ||
       pending === "recherche" ||
       pending === "contacts" ||
-      pending === "recos"
+      pending === "recos" ||
+      pending === "scripts"
     ) {
       sessionStorage.removeItem("powermap.openOppTab");
       return pending;
     }
     return "fiche";
   });
+  const [scriptTab, setScriptTab] = useState<AiScriptKind>(
+    showPhoneScript ? "phone" : "email",
+  );
+
+  useEffect(() => {
+    if (tab === "scripts" && !showPhoneScript && !showEmailScript) {
+      setTab("fiche");
+    }
+  }, [tab, showPhoneScript, showEmailScript]);
+
+  useEffect(() => {
+    if (scriptTab === "phone" && !showPhoneScript && showEmailScript) {
+      setScriptTab("email");
+    }
+    if (scriptTab === "email" && !showEmailScript && showPhoneScript) {
+      setScriptTab("phone");
+    }
+  }, [scriptTab, showPhoneScript, showEmailScript]);
 
   const entreprises = activeAccounts.filter((a) => a.type === "Entreprise");
   const holdings = activeAccounts.filter((a) => a.type === "Holding");
@@ -398,6 +431,15 @@ export default function OpportunityDetailPage({
         >
           Recos IA
         </button>
+        {(showPhoneScript || showEmailScript) && (
+          <button
+            type="button"
+            className={tab === "scripts" ? "active" : ""}
+            onClick={() => setTab("scripts")}
+          >
+            Scripts IA
+          </button>
+        )}
       </nav>
 
       {tab === "fiche" && (
@@ -462,6 +504,33 @@ export default function OpportunityDetailPage({
           <OpportunityRecommendPanel opportunity={opportunity} />
           <OpportunityActionPlanGen opportunity={opportunity} />
         </>
+      )}
+
+      {tab === "scripts" && (showPhoneScript || showEmailScript) && (
+        <section className="entry-subsection">
+          <h2>Scripts IA</h2>
+          <nav className="plan-tabs" aria-label="Type de script">
+            {showPhoneScript && (
+              <button
+                type="button"
+                className={scriptTab === "phone" ? "active" : ""}
+                onClick={() => setScriptTab("phone")}
+              >
+                Téléphone
+              </button>
+            )}
+            {showEmailScript && (
+              <button
+                type="button"
+                className={scriptTab === "email" ? "active" : ""}
+                onClick={() => setScriptTab("email")}
+              >
+                E-mail
+              </button>
+            )}
+          </nav>
+          <OpportunityAiScriptPanel opportunity={opportunity} kind={scriptTab} />
+        </section>
       )}
     </div>
   );

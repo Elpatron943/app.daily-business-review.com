@@ -10,6 +10,9 @@ export type MessageKey =
   | "nav.contacts"
   | "nav.opportunites"
   | "nav.accountPlans"
+  | "nav.group.modules"
+  | "nav.ai_phone_script"
+  | "nav.ai_email_script"
   | "nav.aria"
   | "sidebar.signOut"
   | "sidebar.team"
@@ -51,6 +54,9 @@ const fr: Record<MessageKey, string> = {
   "nav.contacts": "Contacts",
   "nav.opportunites": "Opportunités",
   "nav.accountPlans": "Account plans",
+  "nav.group.modules": "Modules optionnels",
+  "nav.ai_phone_script": "Script téléphonique IA",
+  "nav.ai_email_script": "Script E-mailing IA",
   "nav.aria": "Navigation principale",
   "sidebar.signOut": "Déconnexion",
   "sidebar.team": "Équipe",
@@ -97,6 +103,9 @@ const en: Record<MessageKey, string> = {
   "nav.contacts": "Contacts",
   "nav.opportunites": "Opportunities",
   "nav.accountPlans": "Account plans",
+  "nav.group.modules": "Optional modules",
+  "nav.ai_phone_script": "AI phone script",
+  "nav.ai_email_script": "AI email script",
   "nav.aria": "Main navigation",
   "sidebar.signOut": "Sign out",
   "sidebar.team": "Team",

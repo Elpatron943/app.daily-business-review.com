@@ -36,13 +36,35 @@ function formatError(err: unknown): string {
 }
 
 function isTlsError(err: unknown): boolean {
-  const anyErr = err as { code?: string; cause?: { code?: string }; message?: string };
+  const anyErr = err as {
+    code?: string;
+    cause?: { code?: string };
+    message?: string;
+  };
   const code = anyErr.cause?.code || anyErr.code || "";
+  const msg = anyErr.message || "";
   return (
     code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" ||
     code === "CERT_HAS_EXPIRED" ||
     code === "DEPTH_ZERO_SELF_SIGNED_CERT" ||
-    /certificate|SSL|TLS/i.test(anyErr.message || "")
+    code === "ERR_TLS_CERT_ALTNAME_INVALID" ||
+    /certificate|SSL|TLS|UNABLE_TO_VERIFY/i.test(msg)
+  );
+}
+
+function isNetworkError(err: unknown): boolean {
+  const anyErr = err as {
+    code?: string;
+    cause?: { code?: string };
+    message?: string;
+  };
+  const code = anyErr.cause?.code || anyErr.code || "";
+  return (
+    code === "ENOTFOUND" ||
+    code === "ECONNREFUSED" ||
+    code === "ETIMEDOUT" ||
+    code === "ECONNRESET" ||
+    /ENOTFOUND|ECONNREFUSED|ETIMEDOUT/i.test(anyErr.message || "")
   );
 }
 
@@ -230,7 +252,19 @@ export function perplexityResearchProxy(): Plugin {
               sendJson(res, 200, { content, citations });
             } catch (err) {
               server.config.logger.error(`[perplexity] ${formatError(err)}`);
-              sendJson(res, 500, { error: formatError(err) });
+              if (isTlsError(err)) {
+                sendJson(res, 500, {
+                  error:
+                    "Connexion Perplexity bloquée (certificat TLS). Ajoute PERPLEXITY_INSECURE_TLS=1 dans .env.local puis relance npm run dev.",
+                });
+              } else if (isNetworkError(err)) {
+                sendJson(res, 500, {
+                  error:
+                    "Impossible de joindre api.perplexity.ai (réseau / DNS / firewall). Vérifie VPN, antivirus, ou change de réseau.",
+                });
+              } else {
+                sendJson(res, 500, { error: formatError(err) });
+              }
             }
             return;
           }

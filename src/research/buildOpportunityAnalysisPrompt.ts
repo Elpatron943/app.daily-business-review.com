@@ -58,7 +58,7 @@ function processGaps(config: OrgConfig, opportunity: Opportunity) {
 }
 
 /**
- * Prompt structuré pour ChatGPT — analyse deal + recos actionnables.
+ * Prompt structure pour l'IA — analyse deal + recos actionnables.
  */
 export function buildOpportunityAnalysisPrompt(
   input: OpportunityAnalysisInput,

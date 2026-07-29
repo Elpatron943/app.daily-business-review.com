@@ -93,6 +93,8 @@ export default function ContactDetailPage({
     next: Partial<{
       name: string;
       title: string;
+      email: string;
+      phone: string;
       accountId: string;
       directionId: string;
     }>,
@@ -101,6 +103,8 @@ export default function ContactDetailPage({
       id: contact!.id,
       name: next.name ?? contact!.name,
       title: next.title !== undefined ? next.title : contact!.title,
+      email: next.email !== undefined ? next.email : contact!.email,
+      phone: next.phone !== undefined ? next.phone : contact!.phone,
       accountId: next.accountId ?? contact!.accountId,
       directionId: next.directionId ?? contact!.directionId,
     });
@@ -148,6 +152,8 @@ export default function ContactDetailPage({
           <h1>{contact.name}</h1>
           <p>
             {contact.title || "Sans titre"}
+            {contact.email ? ` · ${contact.email}` : ""}
+            {contact.phone ? ` · ${contact.phone}` : ""}
             {accountFull ? ` · ${accountFull.name}` : ""}
             {directionLabel ? ` · ${directionLabel}` : ""}
             {!contact.active ? " · désactivé" : ""}
@@ -200,6 +206,24 @@ export default function ContactDetailPage({
             <input
               value={contact.title}
               onChange={(e) => patch({ title: e.target.value })}
+            />
+          </label>
+          <label>
+            E-mail
+            <input
+              type="email"
+              value={contact.email ?? ""}
+              onChange={(e) => patch({ email: e.target.value })}
+              autoComplete="email"
+            />
+          </label>
+          <label>
+            Téléphone
+            <input
+              type="tel"
+              value={contact.phone ?? ""}
+              onChange={(e) => patch({ phone: e.target.value })}
+              autoComplete="tel"
             />
           </label>
           <label>

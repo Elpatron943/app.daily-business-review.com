@@ -16,6 +16,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/hubspot/*"
+  to = "/.netlify/functions/hubspot/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/hubspot"
+  to = "/.netlify/functions/hubspot"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

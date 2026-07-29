@@ -357,7 +357,7 @@ export type RiskMatrixQuadrantDef = {
 /** Seuil d’impact : médiane du portefeuille ou montant fixe (€). */
 export type RiskImpactMode = "median" | "fixed";
 
-/** Critère de recherche cible (Perplexity) — configurable admin. */
+/** Critere de recherche cible (IA) — configurable admin. */
 export type ResearchCriterionDef = {
   id: string;
   label: string;
@@ -425,7 +425,7 @@ export type OrgConfig = {
   riskMatrix: RiskMatrixConfig;
   /** Catalogue concurrents + features (contexte IA). */
   competitors: CompetitorDef[];
-  /** Critères de recherche Perplexity sur la cible. */
+  /** Criteres de recherche IA sur la cible. */
   researchCriteria: ResearchCriterionDef[];
   /** Compelling Events paramétrables (référentiel admin). */
   compellingEvents: CompellingEventDef[];

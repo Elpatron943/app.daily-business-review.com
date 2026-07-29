@@ -4,6 +4,7 @@ import type {
   OrganizationBilling,
   SubscriptionStatus,
 } from "./types";
+import { normalizeOptionalModules } from "./optionalModules";
 
 function asFeatures(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -54,7 +55,7 @@ export async function loadOrganizationBilling(
     .from("organizations")
     .select(
       `
-      id, name, commercial_plan_id, seat_quantity, subscription_status, trial_ends_at,
+      id, name, commercial_plan_id, seat_quantity, subscription_status, trial_ends_at, optional_modules,
       commercial_plans (
         id, code, name, description, tagline, price_cents_month, currency,
         max_seats, max_active_opportunities, max_exports_month, features, is_active
@@ -81,6 +82,7 @@ export async function loadOrganizationBilling(
     seat_quantity: row.seat_quantity == null ? null : Number(row.seat_quantity),
     subscription_status: mapStatus(row.subscription_status),
     trial_ends_at: row.trial_ends_at == null ? null : String(row.trial_ends_at),
+    optional_modules: normalizeOptionalModules(row.optional_modules),
     plan,
   };
 }

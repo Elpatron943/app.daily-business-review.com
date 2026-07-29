@@ -26,6 +26,11 @@ export function accountToRow(organizationId: string, a: Account) {
     y: a.y,
     active: a.active !== false,
     research_brief: a.researchBrief ?? null,
+    owner_profile_id: a.ownerProfileId ?? null,
+    hubspot_company_id: a.hubspotCompanyId ?? null,
+    hubspot_synced_at: a.hubspotSyncedAt ?? null,
+    // Édition locale → à pousser vers HubSpot (HubSpot wins au prochain pull).
+    hubspot_dirty: a.hubspotDirty ?? true,
   };
 }
 
@@ -54,6 +59,19 @@ export function accountFromRow(row: Record<string, unknown>): Account {
       row.research_brief && typeof row.research_brief === "object"
         ? (row.research_brief as Account["researchBrief"])
         : null,
+    ownerProfileId:
+      row.owner_profile_id == null || row.owner_profile_id === ""
+        ? null
+        : String(row.owner_profile_id),
+    hubspotCompanyId:
+      row.hubspot_company_id == null || row.hubspot_company_id === ""
+        ? null
+        : String(row.hubspot_company_id),
+    hubspotSyncedAt:
+      row.hubspot_synced_at == null || row.hubspot_synced_at === ""
+        ? null
+        : String(row.hubspot_synced_at),
+    hubspotDirty: row.hubspot_dirty === true,
   };
 }
 
@@ -64,10 +82,18 @@ export function contactToRow(organizationId: string, c: Contact) {
     account_id: c.accountId,
     direction_id: c.directionId || "",
     name: c.name,
+    first_name: c.firstName ?? null,
+    last_name: c.lastName ?? null,
     title: c.title || "",
+    email: c.email ?? null,
+    phone: c.phone ?? null,
     x: c.x,
     y: c.y,
     active: c.active !== false,
+    owner_profile_id: c.ownerProfileId ?? null,
+    hubspot_contact_id: c.hubspotContactId ?? null,
+    hubspot_synced_at: c.hubspotSyncedAt ?? null,
+    hubspot_dirty: c.hubspotDirty ?? true,
   };
 }
 
@@ -77,10 +103,35 @@ export function contactFromRow(row: Record<string, unknown>): Contact {
     accountId: String(row.account_id ?? ""),
     directionId: String(row.direction_id ?? ""),
     name: String(row.name ?? ""),
+    firstName:
+      row.first_name == null || row.first_name === ""
+        ? null
+        : String(row.first_name),
+    lastName:
+      row.last_name == null || row.last_name === ""
+        ? null
+        : String(row.last_name),
     title: String(row.title ?? ""),
+    email:
+      row.email == null || row.email === "" ? null : String(row.email),
+    phone:
+      row.phone == null || row.phone === "" ? null : String(row.phone),
     x: Number(row.x) || 0,
     y: Number(row.y) || 0,
     active: row.active !== false,
+    ownerProfileId:
+      row.owner_profile_id == null || row.owner_profile_id === ""
+        ? null
+        : String(row.owner_profile_id),
+    hubspotContactId:
+      row.hubspot_contact_id == null || row.hubspot_contact_id === ""
+        ? null
+        : String(row.hubspot_contact_id),
+    hubspotSyncedAt:
+      row.hubspot_synced_at == null || row.hubspot_synced_at === ""
+        ? null
+        : String(row.hubspot_synced_at),
+    hubspotDirty: row.hubspot_dirty === true,
   };
 }
 
@@ -109,6 +160,10 @@ export function opportunityToRow(organizationId: string, o: Opportunity) {
     mapping_checks: o.mappingChecks ?? {},
     ai_recommendations: o.aiRecommendations ?? null,
     active: o.active !== false,
+    owner_profile_id: o.ownerProfileId ?? null,
+    hubspot_deal_id: o.hubspotDealId ?? null,
+    hubspot_synced_at: o.hubspotSyncedAt ?? null,
+    hubspot_dirty: o.hubspotDirty ?? true,
   };
 }
 
@@ -162,6 +217,19 @@ export function opportunityFromRow(
         ? (row.ai_recommendations as Opportunity["aiRecommendations"])
         : null,
     active: row.active !== false,
+    ownerProfileId:
+      row.owner_profile_id == null || row.owner_profile_id === ""
+        ? null
+        : String(row.owner_profile_id),
+    hubspotDealId:
+      row.hubspot_deal_id == null || row.hubspot_deal_id === ""
+        ? null
+        : String(row.hubspot_deal_id),
+    hubspotSyncedAt:
+      row.hubspot_synced_at == null || row.hubspot_synced_at === ""
+        ? null
+        : String(row.hubspot_synced_at),
+    hubspotDirty: row.hubspot_dirty === true,
   };
 }
 

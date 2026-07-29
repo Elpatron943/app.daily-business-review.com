@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -26,6 +27,7 @@ import {
   type BillingState,
   type OrganizationBilling,
 } from "../billing/types";
+import { normalizeOptionalModules } from "../billing/optionalModules";
 
 type AuthContextValue = {
   configured: boolean;
@@ -168,6 +170,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const [seatsUsed, setSeatsUsed] = useState(0);
   const [activeOpportunityCount, setActiveOpportunityCount] = useState(0);
+  /** Évite de remonter l’écran « Chargement… » sur TOKEN_REFRESHED (ex. Settings CRM). */
+  const bootstrappedRef = useRef(false);
+  const profileUserIdRef = useRef<string | null>(null);
 
   const refreshBilling = useCallback(async (orgId?: string | null) => {
     const id = orgId ?? null;
@@ -193,19 +198,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfileError(null);
         setOrganization(null);
         setSeatsUsed(0);
+        profileUserIdRef.current = null;
+        bootstrappedRef.current = true;
         setLoading(false);
         return;
       }
-      setLoading(true);
-      const { profile: p, error } = await fetchProfile(next.user.id);
-      setProfile(p);
-      setProfileError(error);
-      if (p?.role === "admin") {
-        setTeam(await fetchTeam(true, p.organization_id));
-      } else {
-        setTeam([]);
+      const sameUser = profileUserIdRef.current === next.user.id;
+      // Premier chargement seulement : un refresh de session ne doit pas démonter l’UI.
+      if (!bootstrappedRef.current || !sameUser) {
+        setLoading(true);
       }
-      await refreshBilling(p?.organization_id ?? null);
+      const { profile: p, error } = await fetchProfile(next.user.id);
+      if (p) {
+        setProfile(p);
+        setProfileError(error);
+        profileUserIdRef.current = p.id;
+        if (p.role === "admin") {
+          setTeam(await fetchTeam(true, p.organization_id));
+        } else {
+          setTeam([]);
+        }
+        await refreshBilling(p.organization_id ?? null);
+      } else if (!bootstrappedRef.current || !sameUser) {
+        setProfile(null);
+        setProfileError(error);
+        profileUserIdRef.current = null;
+        setTeam([]);
+        await refreshBilling(null);
+      } else if (error) {
+        // Refresh token : garder le profil déjà affiché si le fetch échoue brièvement.
+        setProfileError(error);
+      }
+      bootstrappedRef.current = true;
       setLoading(false);
     },
     [refreshBilling],
@@ -247,6 +271,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, [hydrate]);
+
+  /** Activation modules optionnels : push realtime depuis la console plateforme. */
+  useEffect(() => {
+    const client = supabase;
+    const orgId = profile?.organization_id;
+    if (!client || !orgId) return;
+
+    const channel = client
+      .channel(`org-modules-${orgId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "organizations",
+          filter: `id=eq.${orgId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          setOrganization((prev) => {
+            if (!prev || prev.id !== orgId) return prev;
+            return {
+              ...prev,
+              name:
+                typeof row.name === "string" && row.name.trim()
+                  ? row.name
+                  : prev.name,
+              optional_modules: normalizeOptionalModules(row.optional_modules),
+              seat_quantity:
+                row.seat_quantity == null
+                  ? null
+                  : Number(row.seat_quantity),
+              subscription_status:
+                row.subscription_status === "none" ||
+                row.subscription_status === "trialing" ||
+                row.subscription_status === "active" ||
+                row.subscription_status === "past_due" ||
+                row.subscription_status === "canceled"
+                  ? row.subscription_status
+                  : prev.subscription_status,
+              trial_ends_at:
+                row.trial_ends_at == null
+                  ? null
+                  : String(row.trial_ends_at),
+            };
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [profile?.organization_id]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return "Service indisponible. Réessaie plus tard.";
