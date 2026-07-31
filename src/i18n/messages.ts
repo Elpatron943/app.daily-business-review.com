@@ -19,7 +19,9 @@ export type MessageKey =
   | "sidebar.team"
   | "sidebar.settings"
   | "role.admin"
+  | "role.manager"
   | "role.user"
+  | "role.viewer"
   | "auth.loginTitle"
   | "auth.email"
   | "auth.password"
@@ -64,7 +66,9 @@ const fr: Record<MessageKey, string> = {
   "sidebar.team": "Équipe",
   "sidebar.settings": "Settings",
   "role.admin": "Admin",
+  "role.manager": "Manager",
   "role.user": "Commercial",
+  "role.viewer": "Lecture seule",
   "auth.loginTitle": "Connexion",
   "auth.email": "E-mail",
   "auth.password": "Mot de passe",
@@ -114,7 +118,9 @@ const en: Record<MessageKey, string> = {
   "sidebar.team": "Team",
   "sidebar.settings": "Settings",
   "role.admin": "Admin",
+  "role.manager": "Manager",
   "role.user": "Sales",
+  "role.viewer": "Read only",
   "auth.loginTitle": "Sign in",
   "auth.email": "Email",
   "auth.password": "Password",

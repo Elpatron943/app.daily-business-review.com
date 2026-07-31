@@ -6,6 +6,7 @@ import {
   METIER_CONTACT_RELATIONS,
   type ContactRelationType,
 } from "./data";
+import { useAuth } from "./auth/AuthContext";
 import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
 
@@ -34,7 +35,9 @@ export default function ContactDetailPage({
     removeContactRelation,
     setContactParent,
   } = useDomain();
-  const { activeDirections } = useOrgConfig();
+  const { activePersonae, personaLabel } = useOrgConfig();
+  const { team, canAssignOwner, canWriteDomain, billing } = useAuth();
+  const readOnly = !canWriteDomain || !billing.canWrite;
 
   const contact = contacts.find((c) => c.id === contactId) ?? null;
   const [relError, setRelError] = useState("");
@@ -44,10 +47,8 @@ export default function ContactDetailPage({
     ? (activeAccounts.find((a) => a.id === contact.accountId) ?? null)
     : null;
 
-  const directionLabel =
-    activeDirections.find((d) => d.id === contact?.directionId)?.name ??
-    contact?.directionId ??
-    "";
+  const contactPersonaLabel =
+    personaLabel(contact?.personaId ?? "") || contact?.personaId || "";
 
   const parentId = contact
     ? getContactParentId(contact.id, contactRelations)
@@ -96,7 +97,8 @@ export default function ContactDetailPage({
       email: string;
       phone: string;
       accountId: string;
-      directionId: string;
+      personaId: string;
+      ownerProfileId: string | null;
     }>,
   ) {
     upsertContact({
@@ -106,7 +108,11 @@ export default function ContactDetailPage({
       email: next.email !== undefined ? next.email : contact!.email,
       phone: next.phone !== undefined ? next.phone : contact!.phone,
       accountId: next.accountId ?? contact!.accountId,
-      directionId: next.directionId ?? contact!.directionId,
+      personaId: next.personaId ?? contact!.personaId,
+      ownerProfileId:
+        next.ownerProfileId !== undefined
+          ? next.ownerProfileId
+          : contact!.ownerProfileId,
     });
   }
 
@@ -155,7 +161,7 @@ export default function ContactDetailPage({
             {contact.email ? ` · ${contact.email}` : ""}
             {contact.phone ? ` · ${contact.phone}` : ""}
             {accountFull ? ` · ${accountFull.name}` : ""}
-            {directionLabel ? ` · ${directionLabel}` : ""}
+            {contactPersonaLabel ? ` · ${contactPersonaLabel}` : ""}
             {!contact.active ? " · désactivé" : ""}
           </p>
         </div>
@@ -182,8 +188,8 @@ export default function ContactDetailPage({
 
       <section className="account-detail-kpis" aria-label="Indicateurs">
         <article>
-          <span>Direction</span>
-          <strong>{directionLabel || "—"}</strong>
+          <span>Persona</span>
+          <strong>{contactPersonaLabel || "—"}</strong>
         </article>
         <article>
           <span>Liens</span>
@@ -232,8 +238,9 @@ export default function ContactDetailPage({
               value={contact.accountId}
               onChange={(e) => {
                 const accountId = e.target.value;
-                const firstDir = activeDirections[0]?.id ?? contact.directionId;
-                patch({ accountId, directionId: firstDir });
+                const firstPersona =
+                  activePersonae[0]?.id ?? contact.personaId;
+                patch({ accountId, personaId: firstPersona });
               }}
             >
               {entreprises.map((a) => (
@@ -244,16 +251,40 @@ export default function ContactDetailPage({
             </select>
           </label>
           <label>
-            Direction
+            Persona
             <select
-              value={contact.directionId}
-              onChange={(e) => patch({ directionId: e.target.value })}
+              value={contact.personaId}
+              onChange={(e) => patch({ personaId: e.target.value })}
+              disabled={readOnly}
             >
-              {activeDirections.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
+              {activePersonae.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            Owner
+            <select
+              value={contact.ownerProfileId ?? ""}
+              disabled={readOnly || !canAssignOwner}
+              onChange={(e) =>
+                patch({ ownerProfileId: e.target.value || null })
+              }
+            >
+              <option value="">— Non rattaché —</option>
+              {team.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.full_name ? `${m.full_name} (${m.email})` : m.email}
+                </option>
+              ))}
+              {contact.ownerProfileId &&
+                !team.some((m) => m.id === contact.ownerProfileId) && (
+                  <option value={contact.ownerProfileId}>
+                    User inconnu / hors équipe
+                  </option>
+                )}
             </select>
           </label>
         </div>

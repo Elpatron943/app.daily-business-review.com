@@ -1,28 +1,23 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useOrgConfig } from "./config/ConfigContext";
-import type { DirectionDef } from "./config/types";
+import type { PersonaDef } from "./config/types";
 
-export default function DirectionsManager({
+export default function PersonaeManager({
   showInactive,
 }: {
   showInactive: boolean;
 }) {
-  const {
-    config,
-    addDirection,
-    updateDirection,
-    removeDirection,
-  } = useOrgConfig();
+  const { config, addPersona, updatePersona, removePersona } = useOrgConfig();
 
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const list = useMemo(
     () =>
-      [...config.directions]
+      [...(config.personae ?? [])]
         .filter((d) => showInactive || d.active)
         .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)),
-    [config.directions, showInactive],
+    [config.personae, showInactive],
   );
 
   const resetForm = () => {
@@ -30,7 +25,7 @@ export default function DirectionsManager({
     setName("");
   };
 
-  const startEdit = (d: DirectionDef) => {
+  const startEdit = (d: PersonaDef) => {
     setEditingId(d.id);
     setName(d.name);
   };
@@ -39,20 +34,20 @@ export default function DirectionsManager({
     e.preventDefault();
     if (!name.trim()) return;
     if (editingId) {
-      updateDirection(editingId, { name: name.trim() });
+      updatePersona(editingId, { name: name.trim() });
     } else {
-      addDirection(name);
+      addPersona(name);
     }
     resetForm();
   };
 
   return (
-    <div className="directions-manager">
+    <div className="personae-manager">
       <form className="settings-add" onSubmit={submit}>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Nom de la direction (ex. Finance)"
+          placeholder="Nom du persona (ex. CFO / Finance Buyer)"
           required
         />
         <button type="submit">{editingId ? "Enregistrer" : "Ajouter"}</button>
@@ -77,7 +72,7 @@ export default function DirectionsManager({
               <button
                 type="button"
                 className="ghost"
-                onClick={() => removeDirection(d.id)}
+                onClick={() => removePersona(d.id)}
               >
                 Désactiver
               </button>
@@ -85,17 +80,17 @@ export default function DirectionsManager({
               <button
                 type="button"
                 className="ghost"
-                onClick={() => updateDirection(d.id, { active: true })}
+                onClick={() => updatePersona(d.id, { active: true })}
               >
                 Réactiver
               </button>
             )}
           </li>
         ))}
-        {list.length === 0 && (
-          <li className="muted">Aucune direction dans le catalogue.</li>
-        )}
       </ul>
+      {list.length === 0 && (
+        <p className="muted">Aucun persona — ajoutez vos profils acheteurs cibles.</p>
+      )}
     </div>
   );
 }

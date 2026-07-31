@@ -16,16 +16,26 @@ import OppScorePills from "./OppScorePills";
 import { ensureRequiredMappingChecks } from "./opportunities/mappingScore";
 import { useAuth } from "./auth/AuthContext";
 import { useAccountPlans } from "./accountPlans/AccountPlanContext";
+import {
+  consumeOpenOpportunityDetail,
+  consumeOppDetailBackTarget,
+  oppDetailBackLabel,
+  requestOpenAccount,
+  type OppDetailBackTarget,
+} from "./opportunities/oppNavigation";
+import type { AppPage } from "./navigation";
 
 function showsDealVariables(kind: OpportunityKind) {
   return kind === "up";
 }
 
-const OPEN_OPP_DETAIL_KEY = "powermap.openOppDetail";
-
 type StageFilter = "" | "whitespace" | "engaged";
 
-export default function OpportunityPage() {
+export default function OpportunityPage({
+  onNavigate,
+}: {
+  onNavigate?: (page: AppPage) => void;
+} = {}) {
   const {
     activeOpportunities,
     setActiveOpportunityId,
@@ -38,7 +48,7 @@ export default function OpportunityPage() {
   const { activeAccounts } = useDomain();
   const {
     activeSolutions,
-    activeDirections,
+    activePersonae,
     catalogFeatures,
     config,
     activeOppKinds,
@@ -49,12 +59,15 @@ export default function OpportunityPage() {
   } = useOrgConfig();
 
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [backTarget, setBackTarget] = useState<OppDetailBackTarget>({
+    type: "list",
+  });
   const [creating, setCreating] = useState(false);
   const [stageFilter, setStageFilter] = useState<StageFilter>("");
   const [createKind, setCreateKind] = useState<OpportunityKind>("prospect");
   const [createSolutionId, setCreateSolutionId] = useState("");
   const [createModuleIds, setCreateModuleIds] = useState<string[]>([]);
-  const [createDirectionIds, setCreateDirectionIds] = useState<string[]>([]);
+  const [createPersonaIds, setCreatePersonaIds] = useState<string[]>([]);
   const [filters, setFilters] = useState<Record<string, string>>({
     q: "",
     kind: "",
@@ -109,12 +122,28 @@ export default function OpportunityPage() {
   ]);
 
   useEffect(() => {
-    const pending = sessionStorage.getItem(OPEN_OPP_DETAIL_KEY);
+    const pending = consumeOpenOpportunityDetail();
     if (!pending) return;
-    sessionStorage.removeItem(OPEN_OPP_DETAIL_KEY);
+    setBackTarget(consumeOppDetailBackTarget());
     setActiveOpportunityId(pending);
     setDetailId(pending);
   }, [setActiveOpportunityId]);
+
+  const handleBackFromDetail = () => {
+    setDetailId(null);
+    if (backTarget.type === "account") {
+      requestOpenAccount(backTarget.accountId);
+      onNavigate?.("entreprises");
+    } else if (backTarget.type === "dashboard") {
+      onNavigate?.("dashboard");
+    }
+    setBackTarget({ type: "list" });
+  };
+
+  const backAccountName =
+    backTarget.type === "account"
+      ? activeAccounts.find((a) => a.id === backTarget.accountId)?.name
+      : null;
 
   const entreprises = activeAccounts.filter((a) => a.type === "Entreprise");
   const holdings = activeAccounts.filter((a) => a.type === "Holding");
@@ -145,7 +174,7 @@ export default function OpportunityPage() {
       kind: resolvedKind,
       solutionId,
       moduleIds: catalogFeatures.modules ? createModuleIds : [],
-      directionIds: catalogFeatures.directions ? createDirectionIds : [],
+      personaIds: catalogFeatures.personae ? createPersonaIds : [],
       variables: showsDealVariables(resolvedKind)
         ? defaultOpportunityVariables(config.oppVariables)
         : {},
@@ -160,8 +189,9 @@ export default function OpportunityPage() {
     setCreateKind("prospect");
     setCreateSolutionId("");
     setCreateModuleIds([]);
-    setCreateDirectionIds([]);
+    setCreatePersonaIds([]);
     setActiveOpportunityId(id);
+    setBackTarget({ type: "list" });
     setDetailId(id);
   }
 
@@ -169,7 +199,8 @@ export default function OpportunityPage() {
     return (
       <OpportunityDetailPage
         opportunityId={detailId}
-        onBack={() => setDetailId(null)}
+        onBack={handleBackFromDetail}
+        backLabel={oppDetailBackLabel(backTarget, backAccountName)}
       />
     );
   }
@@ -365,6 +396,7 @@ export default function OpportunityPage() {
                           className="ghost"
                           onClick={() => {
                             setActiveOpportunityId(o.id);
+                            setBackTarget({ type: "list" });
                             setDetailId(o.id);
                           }}
                         >
@@ -501,20 +533,20 @@ export default function OpportunityPage() {
                 );
               })()}
 
-            {catalogFeatures.directions && activeDirections.length > 0 && (
+            {catalogFeatures.personae && activePersonae.length > 0 && (
               <fieldset className="opp-create-multi">
-                <legend>Direction(s) adressée(s)</legend>
+                <legend>Personae adressées</legend>
                 <p className="muted sold-multi-hint">
                   Aucune case = niveau entreprise.
                 </p>
                 <div className="sold-check-grid">
-                  {activeDirections.map((d) => (
+                  {activePersonae.map((d) => (
                     <label key={d.id} className="sold-check">
                       <input
                         type="checkbox"
-                        checked={createDirectionIds.includes(d.id)}
+                        checked={createPersonaIds.includes(d.id)}
                         onChange={() => {
-                          setCreateDirectionIds((prev) =>
+                          setCreatePersonaIds((prev) =>
                             prev.includes(d.id)
                               ? prev.filter((id) => id !== d.id)
                               : [...prev, d.id],
@@ -536,7 +568,7 @@ export default function OpportunityPage() {
                   setCreating(false);
                   setCreateSolutionId("");
                   setCreateModuleIds([]);
-                  setCreateDirectionIds([]);
+                  setCreatePersonaIds([]);
                 }}
               >
                 Annuler

@@ -88,13 +88,16 @@ export type OppVariableDef = {
   defaultValue?: string | number | boolean;
 };
 
-/** Direction = catalogue global org (pas par compte client). */
-export type DirectionDef = {
+/** Persona = profil acheteur cible (catalogue org — Qui vous êtes). */
+export type PersonaDef = {
   id: string;
   name: string;
   active: boolean;
   order: number;
 };
+
+/** @deprecated alias migration — utiliser PersonaDef */
+export type DirectionDef = PersonaDef;
 
 /** Secteur d’activité (catalogue org — saisie via liste déroulante). */
 export type SectorDef = {
@@ -184,7 +187,7 @@ export type ProcessQuestionDef = {
   order: number;
 };
 
-/** Domaine Process (Target Selected, Requirements…). */
+/** Domaine Process — checklist alignée sur une étape de pipeline. */
 export type ProcessDomainDef = {
   id: string;
   label: string;
@@ -357,17 +360,7 @@ export type RiskMatrixQuadrantDef = {
 /** Seuil d’impact : médiane du portefeuille ou montant fixe (€). */
 export type RiskImpactMode = "median" | "fixed";
 
-/** Critere de recherche cible (IA) — configurable admin. */
-export type ResearchCriterionDef = {
-  id: string;
-  label: string;
-  /** Consigne injectée dans le prompt. */
-  hint: string;
-  active: boolean;
-  order: number;
-};
-
-/** Catalogue admin de Compelling Events (référentiel pour la recherche). */
+/** Catalogue admin de Compelling Events. */
 export type CompellingEventDef = {
   id: string;
   label: string;
@@ -382,14 +375,14 @@ export type CatalogFeatures = {
   solutions: boolean;
   /** Décomposer les solutions en modules / features. */
   modules: boolean;
-  /** Rattacher les ventes / l’équipement aux directions. */
-  directions: boolean;
+  /** Rattacher les ventes / l’équipement aux personae. */
+  personae: boolean;
 };
 
 export const DEFAULT_CATALOG_FEATURES: CatalogFeatures = {
   solutions: true,
   modules: true,
-  directions: true,
+  personae: true,
 };
 
 export function normalizeCatalogFeatures(
@@ -397,8 +390,13 @@ export function normalizeCatalogFeatures(
 ): CatalogFeatures {
   const solutions = raw?.solutions !== false;
   const modules = solutions && raw?.modules !== false;
-  const directions = raw?.directions !== false;
-  return { solutions, modules, directions };
+  // Legacy : catalogFeatures.directions
+  const legacy = raw as (Partial<CatalogFeatures> & { directions?: boolean }) | null | undefined;
+  const personae =
+    legacy && "personae" in legacy
+      ? legacy.personae !== false
+      : legacy?.directions !== false;
+  return { solutions, modules, personae };
 }
 
 export type OrgConfig = {
@@ -406,11 +404,12 @@ export type OrgConfig = {
   /** Notre entreprise : description + USP globaux. */
   orgProfile: OrgProfile;
   contactTypes: ContactTypeDef[];
-  /** Quelles dimensions d’offre sont actives (solutions / modules / directions). */
+  /** Quelles dimensions d’offre sont actives (solutions / modules / personae). */
   catalogFeatures: CatalogFeatures;
   /** Catalogue produits global : solutions + modules rattachés. */
   solutions: SolutionDef[];
-  directions: DirectionDef[];
+  /** Personae cibles (Qui vous êtes) — ventes, contacts, opportunités. */
+  personae: PersonaDef[];
   sectors: SectorDef[];
   boCategories: BoCategoryDef[];
   boFields: BoFieldDef[];
@@ -425,8 +424,6 @@ export type OrgConfig = {
   riskMatrix: RiskMatrixConfig;
   /** Catalogue concurrents + features (contexte IA). */
   competitors: CompetitorDef[];
-  /** Criteres de recherche IA sur la cible. */
-  researchCriteria: ResearchCriterionDef[];
   /** Compelling Events paramétrables (référentiel admin). */
   compellingEvents: CompellingEventDef[];
   /** Phases d’opportunité (funnel). */
@@ -442,7 +439,7 @@ export type OrgConfig = {
 };
 
 /** Rôle d’une phase dans les KPI / filtres. */
-export type OppPhaseKpiRole = "whitespace" | "pipeline" | "won" | "lost";
+export type OppPhaseKpiRole = "whitespace" | "active" | "won" | "lost";
 
 export type OppPhaseDef = {
   id: string;
@@ -453,7 +450,44 @@ export type OppPhaseDef = {
 };
 
 /**
- * by_phase = suit la phase (WS / pipeline)
+ * Ancres KPI du funnel — toujours présentes.
+ * Les étapes pipeline (Discovery, Proposal…) sont dans buildDefaultOppPhases().
+ */
+export const DEFAULT_OPP_PHASES: OppPhaseDef[] = [
+  {
+    id: "Whitespace",
+    label: "Whitespace",
+    kpiRole: "whitespace",
+    active: true,
+    order: 1,
+  },
+  {
+    id: "Closed Won",
+    label: "Won",
+    kpiRole: "won",
+    active: true,
+    order: 1000,
+  },
+  {
+    id: "Closed Lost",
+    label: "Lost",
+    kpiRole: "lost",
+    active: true,
+    order: 1001,
+  },
+];
+
+/** Phases verrouillées (KPI) — pas les étapes Process du milieu. */
+const BUILTIN_OPP_PHASE_IDS = new Set(
+  DEFAULT_OPP_PHASES.map((p) => p.id),
+);
+
+export function isBuiltInOppPhaseId(id: string): boolean {
+  return BUILTIN_OPP_PHASE_IDS.has(id);
+}
+
+/**
+ * by_phase = suit la phase (WS / étapes en cours)
  * renewal = bucket renouvellement si ouverte
  * none = hors cible
  */
@@ -466,6 +500,38 @@ export type OppKindDef = {
   active: boolean;
   order: number;
 };
+
+/** Natures de deal d’usine (préparamétrées). */
+export const DEFAULT_OPP_KINDS: OppKindDef[] = [
+  {
+    id: "up",
+    label: "Upsell",
+    targetMode: "by_phase",
+    active: true,
+    order: 1,
+  },
+  {
+    id: "cross",
+    label: "Cross-sell",
+    targetMode: "by_phase",
+    active: true,
+    order: 2,
+  },
+  {
+    id: "new_logo",
+    label: "New logo",
+    targetMode: "by_phase",
+    active: true,
+    order: 3,
+  },
+  {
+    id: "renewal",
+    label: "Renouvellement",
+    targetMode: "renewal",
+    active: true,
+    order: 4,
+  },
+];
 
 export type CommercialStatusDef = {
   id: string;
@@ -490,6 +556,7 @@ export type KpiRulesConfig = {
   wonCalendarYearOnly: boolean;
   /** Cible = somme des buckets cochés. */
   includeWhitespaceInTarget: boolean;
+  /** Inclure les étapes en cours (hors WS / Won / Lost) dans la cible. */
   includePipelineInTarget: boolean;
   includeRenewalInTarget: boolean;
 };

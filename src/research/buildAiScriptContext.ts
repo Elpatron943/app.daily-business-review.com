@@ -21,14 +21,14 @@ export type AiScriptFact = {
 };
 
 type ContactTypeLite = { id: string; label: string };
-type DirectionLite = { id: string; name: string };
+type PersonaLite = { id: string; name: string };
 
 function roleLabel(types: ContactTypeLite[], role: string) {
   return types.find((t) => t.id === role)?.label ?? role;
 }
 
-function dirLabel(dirs: DirectionLite[], id: string) {
-  return dirs.find((d) => d.id === id)?.name ?? id;
+function personaLabel(personae: PersonaLite[], id: string) {
+  return personae.find((d) => d.id === id)?.name ?? id;
 }
 
 /**
@@ -42,7 +42,7 @@ export function buildAiScriptFacts(input: {
   holdingName: string | null;
   contacts: Contact[];
   contactTypes: ContactTypeLite[];
-  directions: DirectionLite[];
+  personae: PersonaLite[];
   targetContactId: string | null;
   kindLabel: (kind: string) => string;
   phaseLabel: (phase: string) => string;
@@ -54,7 +54,7 @@ export function buildAiScriptFacts(input: {
     holdingName,
     contacts,
     contactTypes,
-    directions,
+    personae,
     targetContactId,
     kindLabel,
     phaseLabel,
@@ -114,10 +114,10 @@ export function buildAiScriptFacts(input: {
     push("target.email", "Interlocuteur", "E-mail", target.email);
     push("target.phone", "Interlocuteur", "Téléphone", target.phone);
     push(
-      "target.direction",
+      "target.persona",
       "Interlocuteur",
-      "Direction",
-      dirLabel(directions, target.directionId),
+      "Persona",
+      personaLabel(personae, target.personaId),
     );
   }
 
@@ -154,11 +154,11 @@ export function buildAiScriptFacts(input: {
     );
   }
 
-  const dirNames = (opportunity.directionIds ?? [])
-    .map((id) => dirLabel(directions, id))
+  const personaNames = (opportunity.personaIds ?? [])
+    .map((id) => personaLabel(personae, id))
     .filter(Boolean);
-  if (dirNames.length) {
-    push("deal.dirs", "Opportunité", "Directions ciblées", dirNames.join(", "));
+  if (personaNames.length) {
+    push("deal.personae", "Opportunité", "Personae ciblées", personaNames.join(", "));
   }
 
   const proc = computeProcessProgress(
@@ -217,25 +217,6 @@ export function buildAiScriptFacts(input: {
       "Notre offre — USP",
       u.label,
       u.description || u.label,
-    );
-  }
-
-  const brief = account?.researchBrief;
-  if (brief?.content?.trim()) {
-    const excerpt = brief.content.trim().slice(0, 1200);
-    push(
-      "research.brief",
-      "Recherche cible",
-      "Brief compte (extrait)",
-      excerpt + (brief.content.length > 1200 ? "…" : ""),
-    );
-  }
-  if (brief?.relevanceScore != null) {
-    push(
-      "research.score",
-      "Recherche cible",
-      "Score pertinence",
-      String(brief.relevanceScore),
     );
   }
 

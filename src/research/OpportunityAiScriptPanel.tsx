@@ -37,7 +37,7 @@ export default function OpportunityAiScriptPanel({ opportunity, kind }: Props) {
   const {
     config,
     activeContactTypes,
-    activeDirections,
+    activePersonae,
     kindLabel,
     phaseLabel,
   } = useOrgConfig();
@@ -93,7 +93,7 @@ export default function OpportunityAiScriptPanel({ opportunity, kind }: Props) {
         holdingName,
         contacts: activeContacts,
         contactTypes: activeContactTypes,
-        directions: activeDirections,
+        personae: activePersonae,
         targetContactId: targetContactId || null,
         kindLabel,
         phaseLabel,
@@ -105,7 +105,7 @@ export default function OpportunityAiScriptPanel({ opportunity, kind }: Props) {
       holdingName,
       activeContacts,
       activeContactTypes,
-      activeDirections,
+      activePersonae,
       targetContactId,
       kindLabel,
       phaseLabel,

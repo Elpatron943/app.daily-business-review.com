@@ -111,7 +111,7 @@ export function buildKpiClassifier(
 
   const isPipelineOpportunityPhase = (phase: string) => {
     const r = roleOf(phase);
-    if (r) return r === "pipeline";
+    if (r) return r === "active";
     return (
       !isWhitespacePhase(phase) && !isWonPhase(phase) && !isLostPhase(phase)
     );

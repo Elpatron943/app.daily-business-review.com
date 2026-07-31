@@ -2,15 +2,27 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { useAuth } from "../auth/AuthContext";
+import { supabase } from "../supabase/client";
+import {
+  isRemoteOrgConfigEmpty,
+  loadOrgConfigRemote,
+  logSyncError,
+  pushOrgConfigRemote,
+  upsertOrgConfigRemote,
+} from "../sync";
 import { defaultConfig } from "./defaults";
 import {
   normalizeOppMappingSubtypes,
   normalizeOppMappingThemes,
 } from "./oppMappingLibrary";
+import { ensureProcessDomainsForPhases } from "../opportunities/salesProcess";
 import {
   CONFIG_STORAGE_KEY,
   normalizeCatalogFeatures,
@@ -21,7 +33,7 @@ import {
   type CompetitorDef,
   type CompetitorFeatureDef,
   type ContactTypeDef,
-  type DirectionDef,
+  type PersonaDef,
   type OppMappingCategory,
   type OppMappingSubtypeDef,
   type OppMappingThemeDef,
@@ -29,7 +41,6 @@ import {
   type OppVariableKind,
   type OrgConfig,
   type OrgProfile,
-  type ResearchCriterionDef,
   type CompellingEventDef,
   type RiskMatrixConfig,
   type SectorDef,
@@ -46,6 +57,9 @@ import {
   type AccountSizeDef,
   type KpiRulesConfig,
   DEFAULT_KPI_RULES,
+  DEFAULT_OPP_PHASES,
+  DEFAULT_OPP_KINDS,
+  isBuiltInOppPhaseId,
 } from "./types";
 import {
   salesTaxonomyFromConfig,
@@ -228,43 +242,6 @@ function normalizeCompetitors(
   return raw.map((c, i) => normalizeCompetitor(c, i));
 }
 
-function normalizeResearchCriteria(
-  raw: ResearchCriterionDef[] | undefined,
-): ResearchCriterionDef[] {
-  if (!Array.isArray(raw) || raw.length === 0) {
-    return structuredClone(defaultConfig.researchCriteria);
-  }
-  const list = raw.map((c, i) => ({
-    id: c.id || `rc-${i + 1}`,
-    label: c.label ?? "",
-    hint: c.hint ?? "",
-    active: c.active !== false,
-    order: c.order ?? i + 1,
-  }));
-  // Migrate legacy "12 mois" news label → 6 mois
-  return list.map((c) => {
-    if (c.id === "rc-news" && /12\s*mois/i.test(c.label)) {
-      return {
-        ...c,
-        label: "Actualités 6 mois",
-        hint:
-          c.hint && !/6\s*mois/i.test(c.hint)
-            ? "Actualité globale de l’entreprise sur les 6 derniers mois : faits marquants, presse positive et négative."
-            : c.hint,
-      };
-    }
-    if (c.id === "rc-buyers" && /^décideurs/i.test(c.label)) {
-      return {
-        ...c,
-        label: "Personas & décideurs",
-        hint:
-          "Identifier des personas / décideurs documentés publiquement (site, presse, LinkedIn public) — noms, titres, rôle probable — pour créer des contacts.",
-      };
-    }
-    return c;
-  });
-}
-
 function normalizeCompellingEvents(
   raw: CompellingEventDef[] | undefined,
 ): CompellingEventDef[] {
@@ -280,38 +257,81 @@ function normalizeCompellingEvents(
   }));
 }
 
-const PHASE_ROLES: OppPhaseKpiRole[] = [
-  "whitespace",
-  "pipeline",
-  "won",
-  "lost",
-];
 const KIND_MODES: OppKindTargetMode[] = ["by_phase", "renewal", "none"];
 
 function normalizeOppPhases(raw: OppPhaseDef[] | undefined): OppPhaseDef[] {
-  if (!Array.isArray(raw) || raw.length === 0) {
-    return structuredClone(defaultConfig.oppPhases);
+  const defaults = structuredClone(DEFAULT_OPP_PHASES);
+  const byId = new Map<string, OppPhaseDef>();
+  for (const def of defaults) byId.set(def.id, { ...def });
+
+  const customs: OppPhaseDef[] = [];
+  // Catalogue vide → funnel aligné sur les domaines Process d’usine.
+  const source =
+    Array.isArray(raw) && raw.length > 0
+      ? raw
+      : defaultConfig.oppPhases;
+  for (let i = 0; i < source.length; i++) {
+    const p = source[i];
+    const id = p.id || `phase-${i + 1}`;
+    if (id === "Whitespace" || id === "Closed Won" || id === "Closed Lost") {
+      const base = byId.get(id)!;
+      byId.set(id, {
+        ...base,
+        label: p.label?.trim() || base.label,
+        active: p.active !== false,
+      });
+      continue;
+    }
+    customs.push({
+      id,
+      label: p.label || id,
+      kpiRole: "active",
+      active: p.active !== false,
+      order: p.order ?? i + 2,
+    });
   }
-  return raw.map((p, i) => ({
-    id: p.id || `phase-${i + 1}`,
-    label: p.label || p.id || `Phase ${i + 1}`,
-    kpiRole: PHASE_ROLES.includes(p.kpiRole) ? p.kpiRole : "pipeline",
-    active: p.active !== false,
-    order: p.order ?? i + 1,
-  }));
+
+  customs.sort(
+    (a, b) => a.order - b.order || a.label.localeCompare(b.label, "fr"),
+  );
+
+  return [
+    { ...byId.get("Whitespace")!, order: 1 },
+    ...customs.map((p, i) => ({ ...p, kpiRole: "active" as const, order: i + 2 })),
+    { ...byId.get("Closed Won")!, order: 1000 },
+    { ...byId.get("Closed Lost")!, order: 1001 },
+  ];
 }
 
 function normalizeOppKinds(raw: OppKindDef[] | undefined): OppKindDef[] {
+  const defaults = structuredClone(DEFAULT_OPP_KINDS);
   if (!Array.isArray(raw) || raw.length === 0) {
-    return structuredClone(defaultConfig.oppKinds);
+    return defaults;
   }
-  return raw.map((k, i) => ({
+  const normalized = raw.map((k, i) => ({
     id: k.id || `kind-${i + 1}`,
     label: k.label || k.id || `Type ${i + 1}`,
     targetMode: KIND_MODES.includes(k.targetMode) ? k.targetMode : "by_phase",
     active: k.active !== false,
     order: k.order ?? i + 1,
   }));
+  // Garantit les natures d’usine manquantes (org déjà configurée).
+  for (const def of defaults) {
+    if (!normalized.some((k) => k.id === def.id)) {
+      // Alias legacy → ne pas doubler
+      if (def.id === "new_logo" && normalized.some((k) => k.id === "new_in_group")) {
+        continue;
+      }
+      if (def.id === "up" && normalized.some((k) => k.id === "upsell")) {
+        continue;
+      }
+      normalized.push({ ...def, order: normalized.length + 1 });
+    }
+  }
+  // Renouvellement : mode cible dédié
+  return normalized.map((k) =>
+    k.id === "renewal" ? { ...k, targetMode: "renewal" as const } : k,
+  );
 }
 
 function normalizeCommercialStatuses(
@@ -361,7 +381,7 @@ function normalizeKpiRules(
   };
 }
 
-function migrateDirectionsFromLegacy(): DirectionDef[] | null {
+function migratePersonaeFromLegacy(): PersonaDef[] | null {
   try {
     for (const key of ["powermap.directions.v2", "powermap.directions.v1"]) {
       const raw = localStorage.getItem(key);
@@ -373,7 +393,7 @@ function migrateDirectionsFromLegacy(): DirectionDef[] | null {
       }[];
       if (!Array.isArray(parsed) || parsed.length === 0) continue;
       const seen = new Set<string>();
-      const list: DirectionDef[] = [];
+      const list: PersonaDef[] = [];
       for (const d of parsed) {
         if (!d?.id || !d?.name || seen.has(d.id)) continue;
         seen.add(d.id);
@@ -396,27 +416,39 @@ function loadConfig(): OrgConfig {
   try {
     const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
     if (!raw) {
-      const legacy = migrateDirectionsFromLegacy();
+      const legacy = migratePersonaeFromLegacy();
       const base = structuredClone(defaultConfig);
-      if (legacy?.length) base.directions = legacy;
+      if (legacy?.length) base.personae = legacy;
       return base;
     }
-    const parsed = JSON.parse(raw) as OrgConfig;
-    if (parsed?.version !== 1) return structuredClone(defaultConfig);
-    const directions =
-      parsed.directions?.length
-        ? parsed.directions.map((d, i) => ({
+    return hydrateOrgConfig(JSON.parse(raw) as OrgConfig);
+  } catch {
+    return structuredClone(defaultConfig);
+  }
+}
+
+/** Normalise un blob OrgConfig (localStorage ou Supabase org_configs). */
+export function hydrateOrgConfig(parsed: OrgConfig | null | undefined): OrgConfig {
+  try {
+    if (!parsed || parsed.version !== 1) return structuredClone(defaultConfig);
+    const legacyDirections = (
+      parsed as OrgConfig & { directions?: PersonaDef[] }
+    ).directions;
+    const personae =
+      parsed.personae?.length
+        ? parsed.personae.map((d, i) => ({
             ...d,
             active: d.active !== false,
             order: d.order ?? i + 1,
           }))
-        : migrateDirectionsFromLegacy() ??
-          structuredClone(defaultConfig.directions);
-    const needsOutcomeCatalog =
-      !parsed.boCategories?.length ||
-      !(parsed.boFields ?? []).some((f) =>
-        String(f.categoryId ?? "").startsWith("bocat-"),
-      );
+        : legacyDirections?.length
+          ? legacyDirections.map((d, i) => ({
+              ...d,
+              active: d.active !== false,
+              order: d.order ?? i + 1,
+            }))
+          : migratePersonaeFromLegacy() ??
+            structuredClone(defaultConfig.personae);
 
     return {
       version: 1,
@@ -436,7 +468,7 @@ function loadConfig(): OrgConfig {
             return normalizeSolution(s, i, seed?.modules);
           })
         : structuredClone(defaultConfig.solutions),
-      directions,
+      personae,
       sectors: parsed.sectors?.length
         ? parsed.sectors.map((s, i) => ({
             ...s,
@@ -444,22 +476,22 @@ function loadConfig(): OrgConfig {
             order: s.order ?? i + 1,
           }))
         : structuredClone(defaultConfig.sectors),
-      boCategories: needsOutcomeCatalog
-        ? structuredClone(defaultConfig.boCategories)
-        : parsed.boCategories.map((c, i) => ({
+      boCategories: Array.isArray(parsed.boCategories)
+        ? parsed.boCategories.map((c, i) => ({
             ...c,
             active: c.active !== false,
             order: c.order ?? i + 1,
-          })),
-      boFields: needsOutcomeCatalog
-        ? structuredClone(defaultConfig.boFields)
-        : parsed.boFields.map((f, i) => ({
+          }))
+        : structuredClone(defaultConfig.boCategories),
+      boFields: Array.isArray(parsed.boFields)
+        ? parsed.boFields.map((f, i) => ({
             ...f,
             active: f.active !== false,
             order: f.order ?? i + 1,
             kind: f.kind ?? "annual_benefit",
             categoryId: f.categoryId ?? null,
-          })),
+          }))
+        : structuredClone(defaultConfig.boFields),
       processDomains: (() => {
         const domains = parsed.processDomains?.length
           ? parsed.processDomains.map((d, i) => ({
@@ -475,7 +507,7 @@ function loadConfig(): OrgConfig {
           : structuredClone(defaultConfig.processDomains);
         return ensureCompellingEventInProcess(domains);
       })(),
-      oppVariables: parsed.oppVariables?.length
+      oppVariables: Array.isArray(parsed.oppVariables)
         ? parsed.oppVariables.map((v, i) => ({
             ...v,
             active: v.active !== false,
@@ -495,10 +527,6 @@ function loadConfig(): OrgConfig {
       ),
       competitors: normalizeCompetitors(
         (parsed as OrgConfig & { competitors?: CompetitorDef[] }).competitors,
-      ),
-      researchCriteria: normalizeResearchCriteria(
-        (parsed as OrgConfig & { researchCriteria?: ResearchCriterionDef[] })
-          .researchCriteria,
       ),
       compellingEvents: normalizeCompellingEvents(
         (parsed as OrgConfig & { compellingEvents?: CompellingEventDef[] })
@@ -539,19 +567,34 @@ function loadConfig(): OrgConfig {
   }
 }
 
-/** Injecte la question Compelling Event dans Target Qualified si absente. */
+/** Injecte la question Compelling Event dans Qualification si absente. */
 function ensureCompellingEventInProcess(
   domains: ProcessDomainDef[],
 ): ProcessDomainDef[] {
   return domains.map((d) => {
-    if (d.id !== "dom-target-qualified") return d;
+    if (d.id !== "dom-qualification" && d.id !== "dom-target-qualified") {
+      return d;
+    }
     const hasCe = d.questions.some(
       (q) =>
+        q.id === "q-qual-ce" ||
         q.id === "q-tq-ce" ||
         /compelling event/i.test(q.label) ||
         /événement.?d.?achat|pourquoi.*maintenant/i.test(q.label),
     );
-    if (hasCe) return d;
+    if (hasCe) {
+      return {
+        ...d,
+        questions: d.questions.map((q) =>
+          q.id === "q-qual-ce" || q.id === "q-tq-ce"
+            ? {
+                ...q,
+                label: "Identification d’un compelling event",
+              }
+            : q,
+        ),
+      };
+    }
     return {
       ...d,
       questions: [
@@ -559,9 +602,8 @@ function ensureCompellingEventInProcess(
           q.order >= 2 ? { ...q, order: q.order + 1 } : q,
         ),
         {
-          id: "q-tq-ce",
-          label:
-            "Le Compelling Event est-il identifié (pourquoi le client doit agir maintenant) ?",
+          id: "q-qual-ce",
+          label: "Identification d’un compelling event",
           active: true,
           order: 2,
         },
@@ -585,12 +627,12 @@ type ConfigContextValue = {
   updateCatalogFeatures: (patch: Partial<CatalogFeatures>) => void;
   activeSolutions: SolutionDef[];
   activeContactTypes: ContactTypeDef[];
-  activeDirections: DirectionDef[];
+  activePersonae: PersonaDef[];
   activeSectors: SectorDef[];
   solutionLabel: (id: string) => string;
   contactTypeLabel: (id: string) => string;
   contactTypeColor: (id: string) => string;
-  directionLabel: (id: string) => string;
+  personaLabel: (id: string) => string;
   addSolution: (name: string, code?: string) => void;
   updateSolution: (id: string, patch: Partial<SolutionDef>) => void;
   removeSolution: (id: string) => void;
@@ -632,9 +674,9 @@ type ConfigContextValue = {
   addContactType: (label: string, color?: string) => void;
   updateContactType: (id: string, patch: Partial<ContactTypeDef>) => void;
   removeContactType: (id: string) => void;
-  addDirection: (name: string) => void;
-  updateDirection: (id: string, patch: Partial<DirectionDef>) => void;
-  removeDirection: (id: string) => void;
+  addPersona: (name: string) => void;
+  updatePersona: (id: string, patch: Partial<PersonaDef>) => void;
+  removePersona: (id: string) => void;
   addSector: (name: string) => void;
   updateSector: (id: string, patch: Partial<SectorDef>) => void;
   removeSector: (id: string) => void;
@@ -695,13 +737,6 @@ type ConfigContextValue = {
     moduleId: string,
     uspId: string,
   ) => void;
-  activeResearchCriteria: ResearchCriterionDef[];
-  addResearchCriterion: (label: string, hint?: string) => void;
-  updateResearchCriterion: (
-    id: string,
-    patch: Partial<ResearchCriterionDef>,
-  ) => void;
-  removeResearchCriterion: (id: string) => void;
   activeCompellingEvents: CompellingEventDef[];
   addCompellingEvent: (label: string, description?: string) => void;
   updateCompellingEvent: (
@@ -722,6 +757,7 @@ type ConfigContextValue = {
   addOppPhase: (label: string, kpiRole?: OppPhaseKpiRole) => void;
   updateOppPhase: (id: string, patch: Partial<OppPhaseDef>) => void;
   removeOppPhase: (id: string) => void;
+  moveOppPhase: (id: string, direction: -1 | 1) => void;
   addOppKind: (label: string, targetMode?: OppKindTargetMode) => void;
   updateOppKind: (id: string, patch: Partial<OppKindDef>) => void;
   removeOppKind: (id: string) => void;
@@ -741,11 +777,58 @@ type ConfigContextValue = {
 const ConfigContext = createContext<ConfigContextValue | null>(null);
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
+  const { profile, loading: authLoading } = useAuth();
+  const orgId = profile?.organization_id ?? null;
+  const isAdmin = profile?.role === "admin";
+  const profileIdRef = useRef(profile?.id ?? null);
+  profileIdRef.current = profile?.id ?? null;
+  const orgIdRef = useRef(orgId);
+  orgIdRef.current = orgId;
+  const canWriteRemoteRef = useRef(isAdmin);
+  canWriteRemoteRef.current = isAdmin;
+
   const [config, setConfig] = useState<OrgConfig>(() => loadConfig());
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!orgId || !supabase) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remote = await loadOrgConfigRemote(orgId);
+        if (cancelled) return;
+        if (!isRemoteOrgConfigEmpty(remote)) {
+          const hydrated = hydrateOrgConfig(remote as OrgConfig);
+          setConfig(hydrated);
+          persist(hydrated);
+          return;
+        }
+        // Première synchro : pousser le catalogue local (défaut / Settings) vers Supabase.
+        if (canWriteRemoteRef.current) {
+          const local = loadConfig();
+          await upsertOrgConfigRemote(orgId, local, profileIdRef.current);
+        }
+      } catch (err) {
+        logSyncError("loadOrgConfig", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, orgId]);
 
   const commit = useCallback((next: OrgConfig) => {
     setConfig(next);
     persist(next);
+    const id = orgIdRef.current;
+    if (!id || !supabase || !canWriteRemoteRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      pushOrgConfigRemote(id, next, profileIdRef.current);
+    }, 400);
   }, []);
 
   const activeSolutions = useMemo(
@@ -794,12 +877,12 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     [config.contactTypes],
   );
 
-  const activeDirections = useMemo(
+  const activePersonae = useMemo(
     () =>
-      [...config.directions]
+      [...config.personae]
         .filter((d) => d.active)
         .sort((a, b) => a.order - b.order),
-    [config.directions],
+    [config.personae],
   );
 
   const activeSectors = useMemo(
@@ -857,21 +940,38 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     [config.contactTypes],
   );
 
-  const directionLabel = useCallback(
-    (id: string) => config.directions.find((d) => d.id === id)?.name ?? id,
-    [config.directions],
+  const personaLabel = useCallback(
+    (id: string) => config.personae.find((d) => d.id === id)?.name ?? id,
+    [config.personae],
   );
 
   const addSolution = useCallback(
     (name: string, code?: string) => {
       const trimmed = name.trim();
       if (!trimmed) return;
+      const rawId = trimmed
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9+\-_]/g, "");
+      const id = rawId || uid("sol");
+      if (
+        config.solutions.some(
+          (s) =>
+            s.id === id ||
+            s.name.trim().toLowerCase() === trimmed.toLowerCase() ||
+            (code && s.code?.toLowerCase() === code.trim().toLowerCase()),
+        )
+      ) {
+        return;
+      }
       commit({
         ...config,
         solutions: [
           ...config.solutions,
           {
-            id: uid("sol"),
+            id,
             name: trimmed,
             code: code?.trim() || undefined,
             description: "",
@@ -1228,19 +1328,35 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     [commit, config],
   );
 
-  const addDirection = useCallback(
+  const addPersona = useCallback(
     (name: string) => {
       const trimmed = name.trim();
       if (!trimmed) return;
+      const rawId = trimmed
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9+\-_]/g, "");
+      const id = rawId || uid("persona");
+      if (
+        config.personae.some(
+          (d) =>
+            d.id === id ||
+            d.name.trim().toLowerCase() === trimmed.toLowerCase(),
+        )
+      ) {
+        return;
+      }
       commit({
         ...config,
-        directions: [
-          ...config.directions,
+        personae: [
+          ...config.personae,
           {
-            id: uid("dir"),
+            id,
             name: trimmed,
             active: true,
-            order: config.directions.length + 1,
+            order: config.personae.length + 1,
           },
         ],
       });
@@ -1248,11 +1364,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     [commit, config],
   );
 
-  const updateDirection = useCallback(
-    (id: string, patch: Partial<DirectionDef>) => {
+  const updatePersona = useCallback(
+    (id: string, patch: Partial<PersonaDef>) => {
       commit({
         ...config,
-        directions: config.directions.map((d) =>
+        personae: config.personae.map((d) =>
           d.id === id ? { ...d, ...patch, id: d.id } : d,
         ),
       });
@@ -1260,11 +1376,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     [commit, config],
   );
 
-  const removeDirection = useCallback(
+  const removePersona = useCallback(
     (id: string) => {
       commit({
         ...config,
-        directions: config.directions.map((d) =>
+        personae: config.personae.map((d) =>
           d.id === id ? { ...d, active: false } : d,
         ),
       });
@@ -1277,12 +1393,28 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       const trimmed = name.trim();
       if (!trimmed) return;
       const list = config.sectors ?? [];
+      const rawId = trimmed
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9+\-_]/g, "");
+      const id = rawId || uid("sec");
+      if (
+        list.some(
+          (s) =>
+            s.id === id ||
+            s.name.trim().toLowerCase() === trimmed.toLowerCase(),
+        )
+      ) {
+        return;
+      }
       commit({
         ...config,
         sectors: [
           ...list,
           {
-            id: uid("sec"),
+            id,
             name: trimmed,
             active: true,
             order: list.length + 1,
@@ -1877,60 +2009,6 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     [commit, config],
   );
 
-  const activeResearchCriteria = useMemo(
-    () =>
-      [...(config.researchCriteria ?? [])]
-        .filter((c) => c.active)
-        .sort((a, b) => a.order - b.order),
-    [config.researchCriteria],
-  );
-
-  const addResearchCriterion = useCallback(
-    (label: string, hint?: string) => {
-      const trimmed = label.trim();
-      if (!trimmed) return;
-      const list = config.researchCriteria ?? [];
-      commit({
-        ...config,
-        researchCriteria: [
-          ...list,
-          {
-            id: uid("rc"),
-            label: trimmed,
-            hint: hint?.trim() ?? "",
-            active: true,
-            order: list.length + 1,
-          },
-        ],
-      });
-    },
-    [commit, config],
-  );
-
-  const updateResearchCriterion = useCallback(
-    (id: string, patch: Partial<ResearchCriterionDef>) => {
-      commit({
-        ...config,
-        researchCriteria: (config.researchCriteria ?? []).map((c) =>
-          c.id === id ? { ...c, ...patch, id: c.id } : c,
-        ),
-      });
-    },
-    [commit, config],
-  );
-
-  const removeResearchCriterion = useCallback(
-    (id: string) => {
-      commit({
-        ...config,
-        researchCriteria: (config.researchCriteria ?? []).map((c) =>
-          c.id === id ? { ...c, active: false } : c,
-        ),
-      });
-    },
-    [commit, config],
-  );
-
   const activeCompellingEvents = useMemo(
     () =>
       [...(config.compellingEvents ?? [])]
@@ -2030,22 +2108,50 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   );
 
   const addOppPhase = useCallback(
-    (label: string, kpiRole: OppPhaseKpiRole = "pipeline") => {
+    (label: string, _kpiRole?: OppPhaseKpiRole) => {
       const trimmed = label.trim();
       if (!trimmed) return;
-      const list = config.oppPhases ?? [];
+      const list = [...(config.oppPhases ?? [])];
+      const rawId = trimmed
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9+\-_]/g, "");
+      let id = rawId || uid("phase");
+      if (isBuiltInOppPhaseId(id)) id = uid("phase");
+      if (
+        list.some(
+          (p) =>
+            p.id === id ||
+            p.label.trim().toLowerCase() === trimmed.toLowerCase(),
+        )
+      ) {
+        return;
+      }
+      const customs = list.filter((p) => !isBuiltInOppPhaseId(p.id));
+      const order =
+        customs.length === 0
+          ? 2
+          : Math.max(...customs.map((p) => p.order), 1) + 1;
+      const nextPhases = normalizeOppPhases([
+        ...list,
+        {
+          id,
+          label: trimmed,
+          kpiRole: "active",
+          active: true,
+          order: Math.min(order, 999),
+        },
+      ]);
+      // La phase enrichit le process : domaine checklist du même libellé.
       commit({
         ...config,
-        oppPhases: [
-          ...list,
-          {
-            id: uid("phase"),
-            label: trimmed,
-            kpiRole,
-            active: true,
-            order: list.length + 1,
-          },
-        ],
+        oppPhases: nextPhases,
+        processDomains: ensureProcessDomainsForPhases(
+          config.processDomains ?? [],
+          nextPhases,
+        ),
       });
     },
     [commit, config],
@@ -2053,10 +2159,63 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
   const updateOppPhase = useCallback(
     (id: string, patch: Partial<OppPhaseDef>) => {
+      const prev = (config.oppPhases ?? []).find((p) => p.id === id);
+      if (!prev) return;
+      const nextLabel = patch.label?.trim() || prev.label;
+      const nextActive =
+        patch.active !== undefined ? patch.active : prev.active;
+
+      const syncProcessLabel = (domains: ProcessDomainDef[]) => {
+        if (nextLabel === prev.label && nextActive === prev.active) {
+          return domains;
+        }
+        const key = prev.label.trim().toLowerCase();
+        return domains.map((d) => {
+          if (d.label.trim().toLowerCase() !== key) return d;
+          return {
+            ...d,
+            label: nextLabel,
+            active: nextActive === false ? false : d.active,
+          };
+        });
+      };
+
+      if (isBuiltInOppPhaseId(id)) {
+        commit({
+          ...config,
+          oppPhases: normalizeOppPhases(
+            (config.oppPhases ?? []).map((p) =>
+              p.id === id
+                ? {
+                    ...p,
+                    label: nextLabel,
+                    active: nextActive,
+                  }
+                : p,
+            ),
+          ),
+          processDomains: syncProcessLabel(config.processDomains ?? []),
+        });
+        return;
+      }
+      const nextPhases = normalizeOppPhases(
+        (config.oppPhases ?? []).map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                label: nextLabel,
+                active: nextActive,
+                kpiRole: "active",
+              }
+            : p,
+        ),
+      );
       commit({
         ...config,
-        oppPhases: (config.oppPhases ?? []).map((p) =>
-          p.id === id ? { ...p, ...patch, id: p.id } : p,
+        oppPhases: nextPhases,
+        processDomains: ensureProcessDomainsForPhases(
+          syncProcessLabel(config.processDomains ?? []),
+          nextPhases,
         ),
       });
     },
@@ -2065,10 +2224,46 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
   const removeOppPhase = useCallback(
     (id: string) => {
+      if (id === "Whitespace") return; // toujours présent
+      const prev = (config.oppPhases ?? []).find((p) => p.id === id);
+      const nextPhases = normalizeOppPhases(
+        (config.oppPhases ?? []).map((p) =>
+          p.id === id ? { ...p, active: false } : p,
+        ),
+      );
+      const key = prev?.label.trim().toLowerCase();
       commit({
         ...config,
-        oppPhases: (config.oppPhases ?? []).map((p) =>
-          p.id === id ? { ...p, active: false } : p,
+        oppPhases: nextPhases,
+        processDomains: (config.processDomains ?? []).map((d) =>
+          key && d.label.trim().toLowerCase() === key
+            ? { ...d, active: false }
+            : d,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const moveOppPhase = useCallback(
+    (id: string, direction: -1 | 1) => {
+      if (isBuiltInOppPhaseId(id)) return;
+      const customs = [...(config.oppPhases ?? [])]
+        .filter((p) => !isBuiltInOppPhaseId(p.id))
+        .sort((a, b) => a.order - b.order);
+      const index = customs.findIndex((p) => p.id === id);
+      const swapWith = index + direction;
+      if (index < 0 || swapWith < 0 || swapWith >= customs.length) return;
+      const a = customs[index];
+      const b = customs[swapWith];
+      commit({
+        ...config,
+        oppPhases: normalizeOppPhases(
+          (config.oppPhases ?? []).map((p) => {
+            if (p.id === a.id) return { ...p, order: b.order };
+            if (p.id === b.id) return { ...p, order: a.order };
+            return p;
+          }),
         ),
       });
     },
@@ -2080,12 +2275,28 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       const trimmed = label.trim();
       if (!trimmed) return;
       const list = config.oppKinds ?? [];
+      const rawId = trimmed
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9+\-_]/g, "");
+      const id = rawId || uid("kind");
+      if (
+        list.some(
+          (k) =>
+            k.id === id ||
+            k.label.trim().toLowerCase() === trimmed.toLowerCase(),
+        )
+      ) {
+        return;
+      }
       commit({
         ...config,
         oppKinds: [
           ...list,
           {
-            id: uid("kind"),
+            id,
             label: trimmed,
             targetMode,
             active: true,
@@ -2126,12 +2337,28 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       const trimmed = label.trim();
       if (!trimmed) return;
       const list = config.commercialStatuses ?? [];
+      const rawId = trimmed
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9+\-_]/g, "");
+      const id = rawId || uid("status");
+      if (
+        list.some(
+          (s) =>
+            s.id === id ||
+            s.label.trim().toLowerCase() === trimmed.toLowerCase(),
+        )
+      ) {
+        return;
+      }
       commit({
         ...config,
         commercialStatuses: [
           ...list,
           {
-            id: uid("status"),
+            id,
             label: trimmed,
             active: true,
             order: list.length + 1,
@@ -2173,14 +2400,26 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       const list = config.accountSizes ?? [];
       const rawId = (idHint?.trim() || trimmed)
         .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
         .replace(/\s+/g, "-")
         .replace(/[^a-z0-9+\-_]/g, "");
+      const id = rawId || uid("size");
+      if (
+        list.some(
+          (s) =>
+            s.id === id ||
+            s.label.trim().toLowerCase() === trimmed.toLowerCase(),
+        )
+      ) {
+        return;
+      }
       commit({
         ...config,
         accountSizes: [
           ...list,
           {
-            id: rawId || uid("size"),
+            id,
             label: trimmed,
             active: true,
             order: list.length + 1,
@@ -2256,7 +2495,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       activeOppMappingSubtypes,
       activeOppMappingThemes,
       activeContactTypes,
-      activeDirections,
+      activePersonae,
       activeSectors,
       activeBoFields,
       activeBoCategories,
@@ -2264,7 +2503,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       solutionLabel,
       contactTypeLabel,
       contactTypeColor,
-      directionLabel,
+      personaLabel,
       addSolution,
       updateSolution,
       removeSolution,
@@ -2285,9 +2524,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addContactType,
       updateContactType,
       removeContactType,
-      addDirection,
-      updateDirection,
-      removeDirection,
+      addPersona,
+      updatePersona,
+      removePersona,
       addSector,
       updateSector,
       removeSector,
@@ -2319,10 +2558,6 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addModuleUsp,
       updateModuleUsp,
       removeModuleUsp,
-      activeResearchCriteria,
-      addResearchCriterion,
-      updateResearchCriterion,
-      removeResearchCriterion,
       activeCompellingEvents,
       addCompellingEvent,
       updateCompellingEvent,
@@ -2340,6 +2575,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addOppPhase,
       updateOppPhase,
       removeOppPhase,
+      moveOppPhase,
       addOppKind,
       updateOppKind,
       removeOppKind,
@@ -2361,7 +2597,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       activeOppMappingSubtypes,
       activeOppMappingThemes,
       activeContactTypes,
-      activeDirections,
+      activePersonae,
       activeSectors,
       activeBoFields,
       activeBoCategories,
@@ -2369,7 +2605,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       solutionLabel,
       contactTypeLabel,
       contactTypeColor,
-      directionLabel,
+      personaLabel,
       addSolution,
       updateSolution,
       removeSolution,
@@ -2390,9 +2626,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addContactType,
       updateContactType,
       removeContactType,
-      addDirection,
-      updateDirection,
-      removeDirection,
+      addPersona,
+      updatePersona,
+      removePersona,
       addSector,
       updateSector,
       removeSector,
@@ -2424,10 +2660,6 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addModuleUsp,
       updateModuleUsp,
       removeModuleUsp,
-      activeResearchCriteria,
-      addResearchCriterion,
-      updateResearchCriterion,
-      removeResearchCriterion,
       activeCompellingEvents,
       addCompellingEvent,
       updateCompellingEvent,
@@ -2445,6 +2677,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addOppPhase,
       updateOppPhase,
       removeOppPhase,
+      moveOppPhase,
       addOppKind,
       updateOppKind,
       removeOppKind,
@@ -2472,20 +2705,3 @@ export function useOrgConfig() {
   return ctx;
 }
 
-/** Id de nœud canvas : direction catalogue × holding (évite les collisions). */
-export function directionNodeId(holdingId: string, directionId: string) {
-  return `dnode-${holdingId}--${directionId}`;
-}
-
-export function parseDirectionNodeId(
-  nodeId: string,
-): { holdingId: string; directionId: string } | null {
-  if (!nodeId.startsWith("dnode-")) return null;
-  const rest = nodeId.slice("dnode-".length);
-  const sep = rest.indexOf("--");
-  if (sep < 0) return null;
-  return {
-    holdingId: rest.slice(0, sep),
-    directionId: rest.slice(sep + 2),
-  };
-}

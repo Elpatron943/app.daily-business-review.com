@@ -11,7 +11,7 @@ type Props = {
   onCompellingEventsChange?: (ids: string[]) => void;
 };
 
-/** Saisie catalogue (solution + modules + directions + compelling events) sur une opportunité. */
+/** Saisie catalogue (solution + modules + personae + compelling events) sur une opportunité. */
 export default function OpportunityCatalogueFields({
   opportunity,
   solutions,
@@ -19,7 +19,7 @@ export default function OpportunityCatalogueFields({
   onUpdate,
   onCompellingEventsChange,
 }: Props) {
-  const { catalogFeatures, activeDirections } = useOrgConfig();
+  const { catalogFeatures, activePersonae } = useOrgConfig();
   const activeSolutions = solutions.filter((s) => s.active);
   const selectedSolution =
     activeSolutions.find((s) => s.id === opportunity.solutionId) ??
@@ -30,7 +30,7 @@ export default function OpportunityCatalogueFields({
   );
   const activeEvents = compellingEvents.filter((c) => c.active);
   const selectedCeIds = opportunity.compellingEventIds ?? [];
-  const selectedDirectionIds = opportunity.directionIds ?? [];
+  const selectedPersonaIds = opportunity.personaIds ?? [];
 
   function setCompellingEventIds(next: string[]) {
     onUpdate({ compellingEventIds: next });
@@ -105,32 +105,32 @@ export default function OpportunityCatalogueFields({
         </div>
       )}
 
-      {catalogFeatures.directions && (
+      {catalogFeatures.personae && (
         <div className="opp-modules">
-          <h4>Direction(s) adressée(s)</h4>
+          <h4>Persona(s) adressée(s)</h4>
           <p className="muted sold-multi-hint">
             Aucune case = niveau entreprise.
           </p>
-          {activeDirections.length === 0 ? (
-            <p className="muted">Aucune direction active.</p>
+          {activePersonae.length === 0 ? (
+            <p className="muted">Aucune persona active.</p>
           ) : (
             <ul className="opp-module-checks">
-              {activeDirections.map((d) => {
-                const checked = selectedDirectionIds.includes(d.id);
+              {activePersonae.map((p) => {
+                const checked = selectedPersonaIds.includes(p.id);
                 return (
-                  <li key={d.id}>
+                  <li key={p.id}>
                     <label>
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => {
                           const next = checked
-                            ? selectedDirectionIds.filter((id) => id !== d.id)
-                            : [...selectedDirectionIds, d.id];
-                          onUpdate({ directionIds: next });
+                            ? selectedPersonaIds.filter((id) => id !== p.id)
+                            : [...selectedPersonaIds, p.id];
+                          onUpdate({ personaIds: next });
                         }}
                       />
-                      {d.name}
+                      {p.name}
                     </label>
                   </li>
                 );

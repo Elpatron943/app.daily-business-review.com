@@ -15,14 +15,14 @@ export type GeneratedPlanActionDraft = {
 };
 
 type ContactTypeLite = { id: string; label: string };
-type DirectionLite = { id: string; name: string };
+type PersonaLite = { id: string; name: string };
 
 function roleLabel(types: ContactTypeLite[], role: string) {
   return types.find((t) => t.id === role)?.label ?? role;
 }
 
-function dirLabel(dirs: DirectionLite[], id: string) {
-  return dirs.find((d) => d.id === id)?.name ?? id;
+function personaLabel(personae: PersonaLite[], id: string) {
+  return personae.find((d) => d.id === id)?.name ?? id;
 }
 
 function processGaps(config: OrgConfig, opportunity: Opportunity) {
@@ -108,7 +108,7 @@ function buildOppContext(
   holdingName: string | null,
   contacts: Contact[],
   contactTypes: ContactTypeLite[],
-  directions: DirectionLite[],
+  personae: PersonaLite[],
 ) {
   const { overallPct, gaps } = processGaps(config, opportunity);
   const stakeholders = (opportunity.stakeholders ?? []).map((s) => {
@@ -117,7 +117,7 @@ function buildOppContext(
       name: c?.name ?? s.contactId,
       title: c?.title ?? "",
       contactType: s.role ? roleLabel(contactTypes, s.role) : "?",
-      direction: c ? dirLabel(directions, c.directionId) : "?",
+      persona: c ? personaLabel(personae, c.personaId) : "?",
       engagement: engagementLabel[s.status as Status] ?? s.status,
       notes: s.notes ?? "",
     };
@@ -166,7 +166,7 @@ export function buildActionPlanPrompt(
     input.holdingName,
     input.contacts,
     input.contactTypes,
-    input.directions,
+    input.personae,
   );
 
   const today = new Date().toISOString().slice(0, 10);

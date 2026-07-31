@@ -6,7 +6,7 @@ import {
 } from "./config/salesTaxonomy";
 import { DEFAULT_KPI_RULES, type KpiRulesConfig } from "./config/types";
 
-/** Statut commercial — entreprise et direction (ids catalogue OrgConfig). */
+/** Statut commercial — entreprise et persona (ids catalogue OrgConfig). */
 export type CommercialStatus = string;
 
 /** Holding = groupe (libellé UI « Groupe ») ; Entreprise = entité légale. */
@@ -62,17 +62,23 @@ export type CompanyRelationType =
   | "CustomerOf"
   | "InvestorIn";
 
+type SoldSolutionLegacyFields = {
+  /** @deprecated lire via soldLinePersonaIds — ancien champ direction */
+  directionId?: string | null;
+  directionIds?: string[];
+};
+
 export type SoldSolution = {
   id: string;
   solutionId: string;
   accountId: string;
   /**
-   * Legacy — une seule direction.
-   * Préférer `directionIds` ; synchronisé à la migration / upsert.
+   * Legacy — une seule persona.
+   * Préférer `personaIds` ; synchronisé à la migration / upsert.
    */
-  directionId: string | null;
-  /** Directions rattachées (vide = niveau entreprise). */
-  directionIds?: string[];
+  personaId: string | null;
+  /** Personas rattachées (vide = niveau entreprise). */
+  personaIds?: string[];
   /** Modules installés / ciblés pour cette solution. */
   moduleIds?: string[];
   currency: "EUR";
@@ -80,8 +86,14 @@ export type SoldSolution = {
   billedAmount: number;
 };
 
-/** Directions effectives d’une ligne (multi + legacy). */
-export function soldLineDirectionIds(s: SoldSolution): string[] {
+/** Personas effectives d’une ligne (multi + legacy direction). */
+export function soldLinePersonaIds(
+  s: SoldSolution & SoldSolutionLegacyFields,
+): string[] {
+  if (Array.isArray(s.personaIds) && s.personaIds.length > 0) {
+    return [...new Set(s.personaIds.filter(Boolean))];
+  }
+  if (s.personaId) return [s.personaId];
   if (Array.isArray(s.directionIds) && s.directionIds.length > 0) {
     return [...new Set(s.directionIds.filter(Boolean))];
   }
@@ -89,26 +101,42 @@ export function soldLineDirectionIds(s: SoldSolution): string[] {
   return [];
 }
 
+/** @deprecated utiliser soldLinePersonaIds */
+export const soldLineDirectionIds = soldLinePersonaIds;
+
 export function isCompanyLevelSoldLine(s: SoldSolution): boolean {
-  return soldLineDirectionIds(s).length === 0;
+  return soldLinePersonaIds(s).length === 0;
 }
 
+export function soldLineMatchesPersona(
+  s: SoldSolution,
+  personaId: string,
+): boolean {
+  return soldLinePersonaIds(s).includes(personaId);
+}
+
+/** @deprecated utiliser soldLineMatchesPersona */
 export function soldLineMatchesDirection(
   s: SoldSolution,
   directionId: string,
 ): boolean {
-  return soldLineDirectionIds(s).includes(directionId);
+  return soldLineMatchesPersona(s, directionId);
 }
 
 export function normalizeSoldSolution(
-  raw: SoldSolution & { targetAmount?: number },
+  raw: SoldSolution & SoldSolutionLegacyFields & { targetAmount?: number },
 ): SoldSolution {
-  const directionIds = soldLineDirectionIds(raw);
-  const { targetAmount: _removed, ...rest } = raw;
+  const personaIds = soldLinePersonaIds(raw);
+  const {
+    targetAmount: _removed,
+    directionId: _legacyDir,
+    directionIds: _legacyDirs,
+    ...rest
+  } = raw;
   return {
     ...rest,
-    directionIds,
-    directionId: directionIds[0] ?? null,
+    personaIds,
+    personaId: personaIds[0] ?? null,
     moduleIds: Array.isArray(raw.moduleIds)
       ? [...new Set(raw.moduleIds.filter(Boolean))]
       : [],
@@ -157,8 +185,6 @@ export type Account = {
   x: number;
   y: number;
   active: boolean;
-  /** Brief recherche cible (moteur IA). */
-  researchBrief?: AccountResearchBrief | null;
   /** Gestionnaire DBR (profiles.id). */
   ownerProfileId?: string | null;
   /** Id Company HubSpot (sync CRM). */
@@ -167,51 +193,10 @@ export type Account = {
   hubspotDirty?: boolean;
 };
 
-export type AccountResearchBrief = {
-  updatedAt: string;
-  querySummary: string;
-  content: string;
-  citations: { url: string; title?: string }[];
-  criteriaIds: string[];
-  /** Score global de pertinence sales du brief (0–100). */
-  relevanceScore: number | null;
-  positivePress: ResearchPressItem[];
-  negativePress: ResearchPressItem[];
-  /** CE du catalogue admin détectés / rapprochés. */
-  matchedCompellingEventIds: string[];
-  /** Personas / décideurs suggérés (sources web publiques). */
-  suggestedPersonas: ResearchSuggestedPersona[];
-};
-
-/** Persona proposée par la recherche cible (pas une connexion LinkedIn). */
-export type ResearchSuggestedPersona = {
-  name: string;
-  title: string;
-  /** Id type de contact catalogue si déductible (EconomicBuyer…). */
-  suggestedRoleId?: string;
-  suggestedRoleLabel?: string;
-  /** Direction / métier hint (Finance, IT…). */
-  directionHint?: string;
-  whyRelevant?: string;
-  /** Ex. LinkedIn public, communiqué, article. */
-  sourceHint?: string;
-  confidence?: number;
-};
-
-export type ResearchPressItem = {
-  title: string;
-  summary: string;
-  sentiment: "positive" | "negative";
-  /** Pertinence pour le deal / account plan (0–100). */
-  relevance: number;
-  url?: string;
-  date?: string;
-};
-
 export type Contact = {
   id: string;
   accountId: string;
-  directionId: string;
+  personaId: string;
   name: string;
   /** Prénom (sync CRM). */
   firstName?: string | null;
@@ -342,82 +327,11 @@ export const defaultAccounts: Account[] = [
 /** Seed — préférer useDomain().accounts */
 export const accounts = defaultAccounts;
 
-export type Direction = {
-  id: string;
-  accountId: string;
-  name: string;
-  commercialStatus: CommercialStatus;
-  x: number;
-  y: number;
-  active: boolean;
-};
-
-/** Directions rattachées au Holding (compte client), pas à l’entreprise. */
-export const defaultDirections: Direction[] = [
-  {
-    id: "dir-fr-fin",
-    accountId: "hold-acme",
-    name: "Finance",
-    commercialStatus: "Client",
-    x: 20,
-    y: 280,
-    active: true,
-  },
-  {
-    id: "dir-fr-ops",
-    accountId: "hold-acme",
-    name: "Sales Ops",
-    commercialStatus: "Client",
-    x: 220,
-    y: 280,
-    active: true,
-  },
-  {
-    id: "dir-fr-it",
-    accountId: "hold-acme",
-    name: "IT",
-    commercialStatus: "Prospect",
-    x: 420,
-    y: 280,
-    active: true,
-  },
-  {
-    id: "dir-de-tech",
-    accountId: "hold-acme",
-    name: "Technology",
-    commercialStatus: "Prospect",
-    x: 620,
-    y: 280,
-    active: true,
-  },
-  {
-    id: "dir-de-proc",
-    accountId: "hold-acme",
-    name: "Procurement",
-    commercialStatus: "Prospect",
-    x: 820,
-    y: 280,
-    active: true,
-  },
-  {
-    id: "dir-nova-sales",
-    accountId: "hold-nova",
-    name: "Sales",
-    commercialStatus: "Concurrent",
-    x: 1020,
-    y: 280,
-    active: true,
-  },
-];
-
-/** Seed historique — le catalogue actif est useOrgConfig().activeDirections */
-export const directions = defaultDirections;
-
 export const defaultContacts: Contact[] = [
   {
     id: "c1",
     accountId: "fr",
-    directionId: "dir-fr-fin",
+    personaId: "persona-cfo",
     name: "Marie Dupont",
     title: "CFO",
     x: 20,
@@ -427,7 +341,7 @@ export const defaultContacts: Contact[] = [
   {
     id: "c2",
     accountId: "fr",
-    directionId: "dir-fr-ops",
+    personaId: "persona-coo",
     name: "Thomas Bernard",
     title: "VP Sales Ops",
     x: 220,
@@ -437,7 +351,7 @@ export const defaultContacts: Contact[] = [
   {
     id: "c3",
     accountId: "de",
-    directionId: "dir-de-tech",
+    personaId: "persona-cio",
     name: "Hans Mueller",
     title: "CTO",
     x: 620,
@@ -447,7 +361,7 @@ export const defaultContacts: Contact[] = [
   {
     id: "c4",
     accountId: "de",
-    directionId: "dir-de-proc",
+    personaId: "persona-cpo",
     name: "Greta Klein",
     title: "Head of Procurement",
     x: 820,
@@ -457,7 +371,7 @@ export const defaultContacts: Contact[] = [
   {
     id: "c5",
     accountId: "fr",
-    directionId: "dir-fr-it",
+    personaId: "persona-cio",
     name: "Léa Martin",
     title: "IT Manager",
     x: 420,
@@ -467,7 +381,7 @@ export const defaultContacts: Contact[] = [
   {
     id: "c6",
     accountId: "nova-fr",
-    directionId: "dir-nova-sales",
+    personaId: "persona-champion",
     name: "Julie Renard",
     title: "Enterprise AE",
     x: 1020,
@@ -508,19 +422,14 @@ export const defaultCompanyRelations: CompanyRelation[] = [
 
 export const companyRelations = defaultCompanyRelations;
 
-export const directionEdges = directions.map((d) => ({
-  id: `e-${d.accountId}-${d.id}`,
-  source: d.accountId,
-  target: d.id,
-  type: "hasDirection" as const,
-}));
-
-export const membershipEdges = contacts.map((c) => ({
-  id: `e-${c.directionId}-${c.id}`,
-  source: c.directionId,
-  target: c.id,
-  type: "hasMember" as const,
-}));
+export const membershipEdges = contacts
+  .filter((c) => c.personaId)
+  .map((c) => ({
+    id: `e-${c.personaId}-${c.id}`,
+    source: c.personaId,
+    target: c.id,
+    type: "hasMember" as const,
+  }));
 
 export const defaultContactRelations: ContactRelation[] = [
   { id: "i1", source: "c2", target: "c1", relation: "Influences" },
@@ -655,7 +564,7 @@ export const defaultSoldSolutions: SoldSolution[] = [
     id: "ss1",
     solutionId: "sol-platform",
     accountId: "fr",
-    directionId: null,
+    personaId: null,
     currency: "EUR",
     billedAmount: 320_000,
   },
@@ -663,7 +572,7 @@ export const defaultSoldSolutions: SoldSolution[] = [
     id: "ss2",
     solutionId: "sol-support",
     accountId: "fr",
-    directionId: null,
+    personaId: null,
     currency: "EUR",
     billedAmount: 48_000,
   },
@@ -671,7 +580,7 @@ export const defaultSoldSolutions: SoldSolution[] = [
     id: "ss3",
     solutionId: "sol-analytics",
     accountId: "fr",
-    directionId: "dir-fr-fin",
+    personaId: "persona-cfo",
     currency: "EUR",
     billedAmount: 75_000,
   },
@@ -679,7 +588,7 @@ export const defaultSoldSolutions: SoldSolution[] = [
     id: "ss4",
     solutionId: "sol-platform",
     accountId: "de",
-    directionId: "dir-de-tech",
+    personaId: "persona-cio",
     currency: "EUR",
     billedAmount: 40_000,
   },
@@ -687,7 +596,7 @@ export const defaultSoldSolutions: SoldSolution[] = [
     id: "ss5",
     solutionId: "sol-analytics",
     accountId: "de",
-    directionId: null,
+    personaId: null,
     currency: "EUR",
     billedAmount: 0,
   },
@@ -785,15 +694,13 @@ export function opportunitiesForAccountScope(
   return opportunities.filter((o) => o.primaryAccountId === accountId);
 }
 
-export function opportunitiesForDirectionScope(
-  directionId: string,
+export function opportunitiesForPersonaScope(
+  personaId: string,
   opportunities: OppAmountSource[],
-  contacts: { accountId: string; directionId: string }[],
+  contacts: { accountId: string; personaId: string }[],
 ): OppAmountSource[] {
   const accountIds = new Set(
-    contacts
-      .filter((c) => c.directionId === directionId)
-      .map((c) => c.accountId),
+    contacts.filter((c) => c.personaId === personaId).map((c) => c.accountId),
   );
   if (accountIds.size === 0) return [];
   return opportunities.filter((o) => accountIds.has(o.primaryAccountId));
@@ -818,11 +725,11 @@ export function soldSolutionsForAccount(
   );
 }
 
-export function soldSolutionsForDirection(
-  directionId: string,
+export function soldSolutionsForPersona(
+  personaId: string,
   lines: SoldSolution[] = defaultSoldSolutions,
 ) {
-  return lines.filter((s) => soldLineMatchesDirection(s, directionId));
+  return lines.filter((s) => soldLineMatchesPersona(s, personaId));
 }
 
 export function formatEur(n: number) {
@@ -1008,9 +915,9 @@ export function salesForAccountScope(
   return lines.filter((s) => s.accountId === accountId);
 }
 
-export function salesForDirectionScope(
-  directionId: string,
+export function salesForPersonaScope(
+  personaId: string,
   lines: SoldSolution[] = defaultSoldSolutions,
 ): SoldSolution[] {
-  return lines.filter((s) => soldLineMatchesDirection(s, directionId));
+  return lines.filter((s) => soldLineMatchesPersona(s, personaId));
 }

@@ -6,11 +6,18 @@ import type {
   UspDef,
 } from "./config/types";
 
+export type IntelSection = "org" | "deal";
+
 export default function CompetitiveIntelManager({
   showInactive,
+  sections = ["org", "deal"],
 }: {
   showInactive: boolean;
+  /** `org` = profil + USP ; `deal` = CE + concurrents. */
+  sections?: IntelSection[];
 }) {
+  const showOrg = sections.includes("org");
+  const showDeal = sections.includes("deal");
   const {
     config,
     updateOrgProfile,
@@ -23,9 +30,6 @@ export default function CompetitiveIntelManager({
     addCompetitorFeature,
     updateCompetitorFeature,
     removeCompetitorFeature,
-    addResearchCriterion,
-    updateResearchCriterion,
-    removeResearchCriterion,
     addCompellingEvent,
     updateCompellingEvent,
     removeCompellingEvent,
@@ -37,8 +41,6 @@ export default function CompetitiveIntelManager({
   const [newFeatureByComp, setNewFeatureByComp] = useState<
     Record<string, string>
   >({});
-  const [newCriterionLabel, setNewCriterionLabel] = useState("");
-  const [newCriterionHint, setNewCriterionHint] = useState("");
   const [newCeLabel, setNewCeLabel] = useState("");
   const [newCeDesc, setNewCeDesc] = useState("");
 
@@ -56,14 +58,6 @@ export default function CompetitiveIntelManager({
         .filter((c) => showInactive || c.active)
         .sort((a, b) => a.order - b.order),
     [config.competitors, showInactive],
-  );
-
-  const researchCriteria = useMemo(
-    () =>
-      [...(config.researchCriteria ?? [])]
-        .filter((c) => showInactive || c.active)
-        .sort((a, b) => a.order - b.order),
-    [config.researchCriteria, showInactive],
   );
 
   const compellingEvents = useMemo(
@@ -91,6 +85,7 @@ export default function CompetitiveIntelManager({
 
   return (
     <div className="intel-settings">
+      {showOrg && (
       <section className="intel-block" aria-label="Notre entreprise">
         <h3>Notre entreprise</h3>
         <div className="intel-form-grid">
@@ -112,7 +107,13 @@ export default function CompetitiveIntelManager({
           />
         </label>
 
-        <h4>USP entreprise</h4>
+        <h4>USP — Unique Selling Points (entreprise)</h4>
+        <p className="muted settings-hint">
+          Arguments différenciants de votre offre au niveau entreprise. Ils
+          alimentent l’Opportunity Mapping, l’analyse IA et les scripts
+          commerciaux — pour rappeler pourquoi le client doit vous choisir
+          plutôt qu’un concurrent.
+        </p>
         <ul className="settings-list intel-usp-list">
           {orgUsps.map((u) => (
             <UspRow
@@ -120,7 +121,6 @@ export default function CompetitiveIntelManager({
               usp={u}
               onChange={(patch) => updateOrgUsp(u.id, patch)}
               onRemove={() => removeOrgUsp(u.id)}
-              onRestore={() => updateOrgUsp(u.id, { active: true })}
             />
           ))}
         </ul>
@@ -135,13 +135,16 @@ export default function CompetitiveIntelManager({
           <input
             value={newOrgUsp}
             onChange={(e) => setNewOrgUsp(e.target.value)}
-            placeholder="Nouvel USP entreprise"
+            placeholder="Nouvel Unique Selling Point"
             required
           />
           <button type="submit">Ajouter USP</button>
         </form>
       </section>
+      )}
 
+      {showDeal && (
+      <>
       <section className="intel-block" aria-label="Compelling Events">
         <h3>Compelling Events (catalogue)</h3>
         <ul className="settings-list intel-criteria-list">
@@ -215,79 +218,6 @@ export default function CompetitiveIntelManager({
         </form>
       </section>
 
-      <section className="intel-block" aria-label="Critères recherche IA">
-        <h3>Critères de recherche cible</h3>
-        <ul className="settings-list intel-criteria-list">
-          {researchCriteria.map((c) => (
-            <li
-              key={c.id}
-              className={`intel-criterion-row${!c.active ? " inactive" : ""}`}
-            >
-              <input
-                value={c.label}
-                onChange={(e) =>
-                  updateResearchCriterion(c.id, { label: e.target.value })
-                }
-                disabled={!c.active}
-                placeholder="Libellé"
-                aria-label="Libellé critère"
-              />
-              <textarea
-                rows={2}
-                value={c.hint}
-                onChange={(e) =>
-                  updateResearchCriterion(c.id, { hint: e.target.value })
-                }
-                disabled={!c.active}
-                placeholder="Consigne pour la recherche…"
-                aria-label="Consigne critère"
-              />
-              {c.active ? (
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => removeResearchCriterion(c.id)}
-                >
-                  Retirer
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() =>
-                    updateResearchCriterion(c.id, { active: true })
-                  }
-                >
-                  Réactiver
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-        <form
-          className="settings-add intel-criterion-add"
-          onSubmit={(e) => {
-            e.preventDefault();
-            addResearchCriterion(newCriterionLabel, newCriterionHint);
-            setNewCriterionLabel("");
-            setNewCriterionHint("");
-          }}
-        >
-          <input
-            value={newCriterionLabel}
-            onChange={(e) => setNewCriterionLabel(e.target.value)}
-            placeholder="Nouveau critère"
-            required
-          />
-          <input
-            value={newCriterionHint}
-            onChange={(e) => setNewCriterionHint(e.target.value)}
-            placeholder="Consigne (opt.)"
-          />
-          <button type="submit">Ajouter</button>
-        </form>
-      </section>
-
       <section className="intel-block" aria-label="Concurrents">
         <h3>Concurrents</h3>
         <form
@@ -333,6 +263,8 @@ export default function CompetitiveIntelManager({
           ))}
         </ul>
       </section>
+      </>
+      )}
     </div>
   );
 }
@@ -341,12 +273,10 @@ function UspRow({
   usp,
   onChange,
   onRemove,
-  onRestore,
 }: {
   usp: UspDef;
   onChange: (patch: Partial<UspDef>) => void;
   onRemove: () => void;
-  onRestore: () => void;
 }) {
   return (
     <li className={`intel-usp-row${!usp.active ? " inactive" : ""}`}>
@@ -365,15 +295,21 @@ function UspRow({
         placeholder="Description / preuve"
         aria-label="Description USP"
       />
-      {usp.active ? (
-        <button type="button" className="ghost" onClick={onRemove}>
-          Retirer
-        </button>
-      ) : (
-        <button type="button" className="ghost" onClick={onRestore}>
-          Réactiver
-        </button>
-      )}
+      <div className="intel-usp-row-actions">
+        <label className="intel-usp-active">
+          <input
+            type="checkbox"
+            checked={usp.active}
+            onChange={(e) => onChange({ active: e.target.checked })}
+          />
+          Actif
+        </label>
+        {usp.active && (
+          <button type="button" className="ghost" onClick={onRemove}>
+            Retirer
+          </button>
+        )}
+      </div>
     </li>
   );
 }

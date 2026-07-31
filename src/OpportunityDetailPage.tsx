@@ -7,7 +7,6 @@ import OpportunityMappingPanel from "./OpportunityMappingPanel";
 import OpportunityStakeholdersPanel from "./OpportunityStakeholdersPanel";
 import OpportunityRecommendPanel from "./OpportunityRecommendPanel";
 import GenerateActionPlanPanel from "./GenerateActionPlanPanel";
-import TargetResearchPanel from "./research/TargetResearchPanel";
 import OpportunityAiScriptPanel from "./research/OpportunityAiScriptPanel";
 import { useAuth } from "./auth/AuthContext";
 import { isModuleEnabled } from "./billing/optionalModules";
@@ -20,6 +19,7 @@ import {
 } from "./opportunities/OpportunityContext";
 import { computeProcessProgress } from "./opportunities/salesProcess";
 import { computeMappingScorecard, mappingWeightsFromSubtypes } from "./opportunities/mappingScore";
+import { computeDealScore } from "./opportunities/dealScore";
 import OpportunityCatalogueFields from "./catalogue/OpportunityCatalogueFields";
 import { summarizeCatalogue } from "./catalogue/formatCatalogue";
 import {
@@ -38,7 +38,6 @@ type Tab =
   | "mapping"
   | "process"
   | "outcomes"
-  | "recherche"
   | "contacts"
   | "recos"
   | "plans"
@@ -47,11 +46,14 @@ type Tab =
 type Props = {
   opportunityId: string;
   onBack: () => void;
+  /** Libellé du lien retour (ex. entreprise d’origine). */
+  backLabel?: string;
 };
 
 export default function OpportunityDetailPage({
   opportunityId,
   onBack,
+  backLabel = "← Retour aux opportunités",
 }: Props) {
   const {
     opportunities,
@@ -59,7 +61,6 @@ export default function OpportunityDetailPage({
     removeOpportunity,
     setBusinessOutcomeValue,
     setProcessAnswer,
-    setActiveOpportunityId,
   } = useOpportunities();
   const askConfirm = useConfirm();
   const { organization } = useAuth();
@@ -93,7 +94,6 @@ export default function OpportunityDetailPage({
       pending === "mapping" ||
       pending === "process" ||
       pending === "outcomes" ||
-      pending === "recherche" ||
       pending === "contacts" ||
       pending === "recos" ||
       pending === "plans" ||
@@ -151,7 +151,17 @@ export default function OpportunityDetailPage({
     return computeMappingScorecard(opportunity?.mappingChecks, weights);
   }, [opportunity?.mappingChecks, config.oppMappingSubtypes]);
 
+  const mappingAxisPct =
+    mappingScore.masteryPct !== null
+      ? mappingScore.masteryPct
+      : mappingScore.total > 0
+        ? Math.round((mappingScore.covered / mappingScore.total) * 100)
+        : 0;
+  const dealScore = computeDealScore(proc?.overallPct ?? 0, mappingAxisPct);
+
   const stakeCount = opportunity?.stakeholders?.length ?? 0;
+  const ceCount = opportunity?.compellingEventIds?.length ?? 0;
+  const hasAiReview = Boolean(opportunity?.aiRecommendations?.content);
 
   const catalogueSummary = useMemo(
     () =>
@@ -161,13 +171,65 @@ export default function OpportunityDetailPage({
     [opportunity, activeSolutions],
   );
 
+  const readiness = useMemo(() => {
+    const items = [
+      {
+        id: "deal" as const,
+        label: "Score deal",
+        ok: dealScore >= 35,
+        value: `${dealScore}%`,
+        tab: "fiche" as Tab,
+      },
+      {
+        id: "process" as const,
+        label: "Process",
+        ok: (proc?.overallPct ?? 0) >= 35,
+        value: `${proc?.overallPct ?? 0}%`,
+        tab: "process" as Tab,
+      },
+      {
+        id: "mapping" as const,
+        label: "Mapping",
+        ok:
+          mappingScore.total > 0 &&
+          (mappingScore.masteryPct === null
+            ? false
+            : mappingScore.masteryPct >= 30),
+        value:
+          mappingScore.masteryPct === null
+            ? "—"
+            : `${mappingScore.masteryPct}%`,
+        tab: "mapping" as Tab,
+      },
+      {
+        id: "contacts" as const,
+        label: "Contacts",
+        ok: stakeCount > 0,
+        value: String(stakeCount),
+        tab: "contacts" as Tab,
+      },
+      {
+        id: "ce" as const,
+        label: "Compelling Event",
+        ok: ceCount > 0,
+        value: ceCount > 0 ? String(ceCount) : "—",
+        tab: "fiche" as Tab,
+      },
+    ];
+    return {
+      items,
+      readyCount: items.filter((i) => i.ok).length,
+      total: items.length,
+    };
+  }, [proc?.overallPct, mappingScore, stakeCount, ceCount, dealScore]);
+
   if (!opportunity) {
     return (
       <div className="data-page opportunity-detail-page">
         <header className="data-page-head">
           <div>
             <button type="button" className="ghost back-link" onClick={onBack}>
-              ← Retour à la liste
+              {backLabel}
             </button>
             <h1>Opportunité introuvable</h1>
           </div>
@@ -182,26 +244,43 @@ export default function OpportunityDetailPage({
 
   return (
     <div className="data-page opportunity-detail-page">
-      <header className="data-page-head">
+      <header className="data-page-head opp-detail-head">
         <div>
           <button type="button" className="ghost back-link" onClick={onBack}>
-            ← Retour à la liste
+            {backLabel}
           </button>
           <h1>{opportunity.name}</h1>
-          <p>
-            {kindLabel(opportunity.kind)} ·{" "}
-            {formatEur(opportunity.amount)} · {phaseLabel(opportunity.phase)}
+          <div className="opp-detail-meta" aria-label="Métadonnées">
+            <span
+              className="opp-chip accent"
+              title="Score deal (√ Process × Mapping)"
+            >
+              Score {dealScore}%
+            </span>
+            <span className="opp-chip">{kindLabel(opportunity.kind)}</span>
+            <span className="opp-chip accent">
+              {formatEur(opportunity.amount)}
+            </span>
+            <span className="opp-chip">{phaseLabel(opportunity.phase)}</span>
             {kpiClassifier.isWhitespacePhase(opportunity.phase) ? (
-              <span className="opp-stage-badge whitespace">
-                {" "}
-                · à qualifier
-              </span>
+              <span className="opp-chip warn">À qualifier</span>
             ) : null}
-            {account ? ` · ${account.name}` : ""}
-            {!opportunity.active ? " · désactivée" : ""}
-          </p>
+            {account ? (
+              <span className="opp-chip muted-chip">{account.name}</span>
+            ) : null}
+            {!opportunity.active ? (
+              <span className="opp-chip warn">Désactivée</span>
+            ) : null}
+          </div>
         </div>
         <div className="account-detail-actions">
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setTab("recos")}
+          >
+            {hasAiReview ? "Voir l’analyse IA" : "Analyser avec l’IA"}
+          </button>
           <button
             type="button"
             className="ghost danger-text"
@@ -216,7 +295,6 @@ export default function OpportunityDetailPage({
                 });
                 if (!ok) return;
                 removeOpportunity(opportunity.id);
-                setActiveOpportunityId(null);
                 onBack();
               })();
             }}
@@ -226,7 +304,80 @@ export default function OpportunityDetailPage({
         </div>
       </header>
 
-      <section className="opp-global-scores" aria-label="Scores globaux">
+      <section className="opp-readiness" aria-label="Préparation du deal">
+        <div className="opp-readiness-main">
+          <div className="opp-readiness-title">
+            <h2>Préparation du deal</h2>
+            <p className="muted">
+              {readiness.readyCount}/{readiness.total} socles prêts — renseigne
+              process, mapping, contacts et compelling event avant l’avis IA.
+            </p>
+          </div>
+          <ul className="opp-readiness-items">
+            {readiness.items.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className={item.ok ? "is-ready" : "is-gap"}
+                  onClick={() => setTab(item.tab)}
+                >
+                  <span className="opp-readiness-dot" aria-hidden />
+                  <span className="opp-readiness-label">{item.label}</span>
+                  <strong>{item.value}</strong>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="opp-readiness-aside">
+          <article>
+            <span>Valeur nette BO</span>
+            <strong>{formatEur(results?.netValue ?? 0)}</strong>
+          </article>
+          <article>
+            <span>Catalogue</span>
+            <strong title={catalogueSummary?.short}>
+              {catalogueSummary?.solutionName || "—"}
+            </strong>
+          </article>
+          <button
+            type="button"
+            className="primary-cta opp-readiness-cta"
+            onClick={() => setTab("recos")}
+          >
+            {hasAiReview ? "Relancer l’analyse" : "Analyse d’ensemble IA"}
+          </button>
+        </div>
+      </section>
+
+      <section className="opp-global-scores" aria-label="Scores détaillés">
+        <button
+          type="button"
+          className={`opp-global-card deal tone-${
+            dealScore >= 70 ? "ok" : dealScore >= 35 ? "warn" : "risk"
+          }`}
+          onClick={() => setTab("fiche")}
+          title="√ Process × Mapping"
+        >
+          <header>
+            <span>Score deal</span>
+            <strong>{dealScore}%</strong>
+          </header>
+          <div
+            className="opp-global-bar"
+            role="img"
+            aria-label={`Score deal ${dealScore}%`}
+          >
+            <i style={{ width: `${dealScore}%` }} />
+          </div>
+          <p className="muted opp-global-deal-hint">
+            Croisement Process ({proc?.overallPct ?? 0}%) × Mapping (
+            {mappingScore.masteryPct === null
+              ? "—"
+              : `${mappingScore.masteryPct}%`}
+            )
+          </p>
+        </button>
         <button
           type="button"
           className={`opp-global-card process tone-${
@@ -258,7 +409,11 @@ export default function OpportunityDetailPage({
                 return (
                   <li key={d.domainId}>
                     <span>{domain?.label ?? d.domainId}</span>
-                    <em className={d.pct >= 70 ? "ok" : d.pct >= 35 ? "warn" : "risk"}>
+                    <em
+                      className={
+                        d.pct >= 70 ? "ok" : d.pct >= 35 ? "warn" : "risk"
+                      }
+                    >
                       {d.pct}%
                     </em>
                     <div className="opp-global-mini-bar" aria-hidden>
@@ -357,98 +512,83 @@ export default function OpportunityDetailPage({
         </button>
       </section>
 
-      <section className="account-detail-kpis opp-detail-kpis" aria-label="Indicateurs">
-        <article>
-          <span>Montant</span>
-          <strong>{formatEur(opportunity.amount)}</strong>
-        </article>
-        <article>
-          <span>Valeur nette BO</span>
-          <strong>{formatEur(results?.netValue ?? 0)}</strong>
-        </article>
-        <article>
-          <span>Contacts mappés</span>
-          <strong>{stakeCount}</strong>
-        </article>
-        <article>
-          <span>Catalogue</span>
-          <strong title={catalogueSummary?.short}>
-            {catalogueSummary?.solutionName || "—"}
-            {catalogueSummary && catalogueSummary.moduleLabels.length > 0
-              ? ` · ${catalogueSummary.moduleLabels.length} mod.`
-              : ""}
-          </strong>
-        </article>
-      </section>
-
-      <nav className="plan-tabs" aria-label="Sections opportunité">
-        <button
-          type="button"
-          className={tab === "fiche" ? "active" : ""}
-          onClick={() => setTab("fiche")}
-        >
-          Fiche
-        </button>
-        <button
-          type="button"
-          className={tab === "recherche" ? "active" : ""}
-          onClick={() => setTab("recherche")}
-        >
-          Recherche cible
-        </button>
-        <button
-          type="button"
-          className={tab === "contacts" ? "active" : ""}
-          onClick={() => setTab("contacts")}
-        >
-          Contacts
-          {stakeCount > 0 ? ` (${stakeCount})` : ""}
-        </button>
-        <button
-          type="button"
-          className={tab === "mapping" ? "active" : ""}
-          onClick={() => setTab("mapping")}
-        >
-          Opportunity Mapping
-          {mappingScore.total > 0 ? ` (${mappingScore.total})` : ""}
-        </button>
-        <button
-          type="button"
-          className={tab === "process" ? "active" : ""}
-          onClick={() => setTab("process")}
-        >
-          Process
-        </button>
-        <button
-          type="button"
-          className={tab === "outcomes" ? "active" : ""}
-          onClick={() => setTab("outcomes")}
-        >
-          Business Outcomes
-        </button>
-        <button
-          type="button"
-          className={tab === "recos" ? "active" : ""}
-          onClick={() => setTab("recos")}
-        >
-          Recos IA
-        </button>
-        <button
-          type="button"
-          className={tab === "plans" ? "active" : ""}
-          onClick={() => setTab("plans")}
-        >
-          Plan d’actions
-        </button>
-        {(showPhoneScript || showEmailScript) && (
-          <button
-            type="button"
-            className={tab === "scripts" ? "active" : ""}
-            onClick={() => setTab("scripts")}
-          >
-            Scripts IA
-          </button>
-        )}
+      <nav className="opp-nav" aria-label="Sections opportunité">
+        <div className="opp-nav-group" role="group" aria-label="Contexte">
+          <span className="opp-nav-label">Contexte</span>
+          <div className="opp-nav-tabs">
+            <button
+              type="button"
+              className={tab === "fiche" ? "active" : ""}
+              onClick={() => setTab("fiche")}
+            >
+              Fiche
+            </button>
+          </div>
+        </div>
+        <div className="opp-nav-group" role="group" aria-label="Qualification">
+          <span className="opp-nav-label">Qualification</span>
+          <div className="opp-nav-tabs">
+            <button
+              type="button"
+              className={tab === "process" ? "active" : ""}
+              onClick={() => setTab("process")}
+            >
+              Process
+            </button>
+            <button
+              type="button"
+              className={tab === "mapping" ? "active" : ""}
+              onClick={() => setTab("mapping")}
+            >
+              Mapping
+              {mappingScore.total > 0 ? ` · ${mappingScore.total}` : ""}
+            </button>
+            <button
+              type="button"
+              className={tab === "contacts" ? "active" : ""}
+              onClick={() => setTab("contacts")}
+            >
+              Contacts
+              {stakeCount > 0 ? ` · ${stakeCount}` : ""}
+            </button>
+            <button
+              type="button"
+              className={tab === "outcomes" ? "active" : ""}
+              onClick={() => setTab("outcomes")}
+            >
+              Outcomes
+            </button>
+          </div>
+        </div>
+        <div className="opp-nav-group" role="group" aria-label="Pilotage">
+          <span className="opp-nav-label">Pilotage</span>
+          <div className="opp-nav-tabs">
+            <button
+              type="button"
+              className={tab === "recos" ? "active" : ""}
+              onClick={() => setTab("recos")}
+            >
+              Analyse IA
+              {hasAiReview ? " · ✓" : ""}
+            </button>
+            <button
+              type="button"
+              className={tab === "plans" ? "active" : ""}
+              onClick={() => setTab("plans")}
+            >
+              Plan d’actions
+            </button>
+            {(showPhoneScript || showEmailScript) && (
+              <button
+                type="button"
+                className={tab === "scripts" ? "active" : ""}
+                onClick={() => setTab("scripts")}
+              >
+                Scripts
+              </button>
+            )}
+          </div>
+        </div>
       </nav>
 
       {tab === "fiche" && (
@@ -461,17 +601,6 @@ export default function OpportunityDetailPage({
           onUpdate={onUpdate}
         />
       )}
-
-      {tab === "recherche" &&
-        (account ? (
-          <TargetResearchPanel
-            account={account}
-            opportunity={opportunity}
-            compact
-          />
-        ) : (
-          <p className="muted">Aucune entreprise liée.</p>
-        ))}
 
       {tab === "contacts" && (
         <OpportunityStakeholdersPanel
@@ -493,6 +622,7 @@ export default function OpportunityDetailPage({
           onAnswer={(questionId, patch) =>
             setProcessAnswer(opportunity.id, questionId, patch)
           }
+          onUpdate={onUpdate}
         />
       )}
 
@@ -547,48 +677,18 @@ function OpportunityActionPlanGen({
 }: {
   opportunity: Opportunity;
 }) {
-  const { getPlanForOpportunity, assignOpportunityToPlan, activePlans } =
-    useAccountPlans();
-  const linkedPlan = getPlanForOpportunity(opportunity.id);
-
-  if (!linkedPlan) {
-    return (
-      <section className="entry-subsection">
-        <h2>Plan d’actions IA</h2>
-        <p className="muted">
-          Aucun account plan lié. Les actions sont obligatoirement rattachées
-          à un account plan — crée ou rattache un plan sur l’onglet Fiche.
-        </p>
-        <button
-          type="button"
-          className="primary-cta"
-          disabled={!opportunity.primaryAccountId}
-          onClick={() =>
-            assignOpportunityToPlan(opportunity.id, "new", {
-              accountId: opportunity.primaryAccountId,
-              dueDate: opportunity.closeDate || undefined,
-            })
-          }
-        >
-          Créer un plan et rattacher
-        </button>
-        {activePlans.filter((p) => p.accountId === opportunity.primaryAccountId)
-          .length > 0 && (
-          <p className="muted" style={{ marginTop: "0.75rem" }}>
-            Ou choisis un plan existant dans l’onglet Fiche.
-          </p>
-        )}
-      </section>
-    );
-  }
-
   return (
     <section className="entry-subsection">
-      <h2>Plan d’actions IA</h2>
-      <GenerateActionPlanPanel
-        plan={linkedPlan}
-        focusOpportunityId={opportunity.id}
-      />
+      <header className="opp-plan-section-head">
+        <div>
+          <h2>Plan d’actions</h2>
+          <p className="muted">
+            Actions rattachées à cette opportunité — manuelles ou générées par
+            l’IA.
+          </p>
+        </div>
+      </header>
+      <GenerateActionPlanPanel opportunity={opportunity} />
     </section>
   );
 }
@@ -616,6 +716,7 @@ function OpportunityFicheTab({
   const { activeOpportunities: allOpps, setProcessAnswer } = useOpportunities();
   const { activeCompellingEvents, activeOppKinds, activeOppPhases, kindLabel, phaseLabel } =
     useOrgConfig();
+  const { team, canAssignOwner } = useAuth();
 
   const holdingName = (id: string | null | undefined) =>
     holdings.find((h) => h.id === id)?.name ?? "";
@@ -727,6 +828,29 @@ function OpportunityFicheTab({
                   {phaseLabel(p.id)}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            Owner
+            <select
+              value={opportunity.ownerProfileId ?? ""}
+              disabled={!canAssignOwner}
+              onChange={(e) =>
+                onUpdate({ ownerProfileId: e.target.value || null })
+              }
+            >
+              <option value="">— Non rattaché —</option>
+              {team.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.full_name ? `${m.full_name} (${m.email})` : m.email}
+                </option>
+              ))}
+              {opportunity.ownerProfileId &&
+                !team.some((m) => m.id === opportunity.ownerProfileId) && (
+                  <option value={opportunity.ownerProfileId}>
+                    User inconnu / hors équipe
+                  </option>
+                )}
             </select>
           </label>
           <label>

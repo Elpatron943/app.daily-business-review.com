@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import {
   formatEur,
-  soldLineDirectionIds,
+  soldLinePersonaIds,
   type Account,
   type SoldSolution,
 } from "./data";
@@ -13,9 +13,10 @@ import {
   defaultOpportunityVariables,
   type OpportunityKind,
 } from "./opportunities/OpportunityContext";
+import { openOpportunityDetail } from "./opportunities/oppNavigation";
 import { ensureRequiredMappingChecks } from "./opportunities/mappingScore";
 
-type GapKind = "solution" | "module" | "direction";
+type GapKind = "solution" | "module" | "persona";
 
 type EquipmentGap = {
   key: string;
@@ -24,7 +25,7 @@ type EquipmentGap = {
   detail: string;
   solutionId: string;
   moduleIds: string[];
-  directionId?: string;
+  personaId?: string;
   oppKind: OpportunityKind;
 };
 
@@ -56,9 +57,9 @@ export default function AccountEquipmentPanel({
 }: Props) {
   const {
     activeSolutions,
-    activeDirections,
+    activePersonae,
     solutionLabel,
-    directionLabel,
+    personaLabel,
     config,
     catalogFeatures,
     activeOppPhases,
@@ -98,7 +99,7 @@ export default function AccountEquipmentPanel({
 
   const gaps = useMemo(() => {
     const soldSolutionIds = new Set(lines.map((l) => l.solutionId));
-    const equippedDirs = new Set(lines.flatMap(soldLineDirectionIds));
+    const equippedPersonae = new Set(lines.flatMap(soldLinePersonaIds));
     const out: EquipmentGap[] = [];
 
     if (catalogFeatures.solutions) {
@@ -140,17 +141,17 @@ export default function AccountEquipmentPanel({
       }
     }
 
-    if (catalogFeatures.directions) {
-      for (const dir of activeDirections) {
-        if (equippedDirs.has(dir.id)) continue;
+    if (catalogFeatures.personae) {
+      for (const persona of activePersonae) {
+        if (equippedPersonae.has(persona.id)) continue;
         out.push({
-          key: `dir:${dir.id}`,
-          kind: "direction",
-          label: dir.name,
-          detail: "Direction non équipée",
+          key: `persona:${persona.id}`,
+          kind: "persona",
+          label: persona.name,
+          detail: "Persona non équipée",
           solutionId: lines[0]?.solutionId ?? activeSolutions[0]?.id ?? "",
           moduleIds: [],
-          directionId: dir.id,
+          personaId: persona.id,
           oppKind: lines.length > 0 ? "up" : "prospect",
         });
       }
@@ -160,10 +161,10 @@ export default function AccountEquipmentPanel({
   }, [
     lines,
     activeSolutions,
-    activeDirections,
+    activePersonae,
     catalogFeatures.solutions,
     catalogFeatures.modules,
-    catalogFeatures.directions,
+    catalogFeatures.personae,
   ]);
 
   function relatedOpps(gap: EquipmentGap) {
@@ -185,7 +186,7 @@ export default function AccountEquipmentPanel({
     const bits = [account.name, gap.label];
     if (gap.kind === "module") bits.unshift("Upsell");
     if (gap.kind === "solution") bits.unshift("Whitespace");
-    if (gap.kind === "direction") bits.unshift(`Direction ${gap.label}`);
+    if (gap.kind === "persona") bits.unshift(`Persona ${gap.label}`);
     setDraft({
       gap,
       name: bits.filter(Boolean).join(" · "),
@@ -202,7 +203,7 @@ export default function AccountEquipmentPanel({
     const kind = draft.gap.oppKind;
     const fd = new FormData(e.currentTarget);
     const solutionId =
-      draft.gap.kind === "direction"
+      draft.gap.kind === "persona"
         ? String(fd.get("solutionId") ?? draft.gap.solutionId)
         : draft.gap.solutionId;
 
@@ -216,9 +217,9 @@ export default function AccountEquipmentPanel({
       kind,
       solutionId,
       moduleIds: draft.gap.moduleIds,
-      directionIds:
-        draft.gap.kind === "direction" && draft.gap.directionId
-          ? [draft.gap.directionId]
+      personaIds:
+        draft.gap.kind === "persona" && draft.gap.personaId
+          ? [draft.gap.personaId]
           : [],
       variables: showsDealVariables(kind)
         ? defaultOpportunityVariables(config.oppVariables)
@@ -231,7 +232,7 @@ export default function AccountEquipmentPanel({
     });
     if (!id) return;
     setDraft(null);
-    sessionStorage.setItem("powermap.openOppDetail", id);
+    openOpportunityDetail(id, { type: "account", accountId: account.id });
     onOpenOpportunities?.();
   }
 
@@ -247,16 +248,16 @@ export default function AccountEquipmentPanel({
       .join(", ");
   }
 
-  function lineDirections(line: SoldSolution) {
-    const ids = soldLineDirectionIds(line);
+  function linePersonae(line: SoldSolution) {
+    const ids = soldLinePersonaIds(line);
     if (ids.length === 0) return "Niveau entreprise";
-    return ids.map((id) => directionLabel(id)).join(", ");
+    return ids.map((id) => personaLabel(id)).join(", ");
   }
 
   const gapKindLabel: Record<GapKind, string> = {
     solution: "Solution",
     module: "Module",
-    direction: "Direction",
+    persona: "Persona",
   };
 
   return (
@@ -272,7 +273,7 @@ export default function AccountEquipmentPanel({
                 <tr>
                   <th>Solution</th>
                   {catalogFeatures.modules && <th>Modules</th>}
-                  {catalogFeatures.directions && <th>Directions</th>}
+                  {catalogFeatures.personae && <th>Personae</th>}
                   <th>CA facturé</th>
                 </tr>
               </thead>
@@ -283,8 +284,8 @@ export default function AccountEquipmentPanel({
                       <strong>{solutionLabel(line.solutionId)}</strong>
                     </td>
                     {catalogFeatures.modules && <td>{lineModules(line)}</td>}
-                    {catalogFeatures.directions && (
-                      <td>{lineDirections(line)}</td>
+                    {catalogFeatures.personae && (
+                      <td>{linePersonae(line)}</td>
                     )}
                     <td className="num">{formatEur(line.billedAmount)}</td>
                   </tr>
@@ -301,7 +302,7 @@ export default function AccountEquipmentPanel({
           {[
             catalogFeatures.solutions && "solutions",
             catalogFeatures.modules && "modules",
-            catalogFeatures.directions && "directions",
+            catalogFeatures.personae && "personae",
           ]
             .filter(Boolean)
             .join(", ") || "éléments"}{" "}
@@ -391,7 +392,7 @@ export default function AccountEquipmentPanel({
                 }
               />
             </label>
-            {draft.gap.kind === "direction" && (
+            {draft.gap.kind === "persona" && (
               <label>
                 Solution cible
                 <select

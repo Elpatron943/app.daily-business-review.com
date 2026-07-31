@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { roleLabel, useAuth, type AppRole } from "./AuthContext";
+import { roleLabel, useAuth, APP_ROLES, type AppRole } from "./AuthContext";
 
 /** Gestion de l’équipe commerciale — réservé admin. */
 export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
@@ -142,8 +142,11 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
                 disabled={inviting || billing.seatsFull}
                 onChange={(e) => setNewRole(e.target.value as AppRole)}
               >
-                <option value="user">Commercial</option>
-                <option value="admin">Admin</option>
+                {APP_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {roleLabel[r]}
+                  </option>
+                ))}
               </select>
             </label>
             <button
@@ -193,8 +196,11 @@ export default function TeamAdminPanel({ onClose }: { onClose: () => void }) {
                               void setRole(m.id, e.target.value as AppRole)
                             }
                           >
-                            <option value="user">Commercial</option>
-                            <option value="admin">Admin</option>
+                            {APP_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {roleLabel[r]}
+                              </option>
+                            ))}
                           </select>
                         )}
                       </td>

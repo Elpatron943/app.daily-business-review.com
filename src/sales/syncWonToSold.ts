@@ -1,5 +1,6 @@
 import {
   isCompanyLevelSoldLine,
+  soldLinePersonaIds,
   type SoldSolution,
 } from "../data";
 import type { Opportunity } from "../opportunities/OpportunityContext";
@@ -23,8 +24,8 @@ export function buildSoldLineFromWonOpportunity(
       isCompanyLevelSoldLine(s),
   );
 
-  const directionIds = Array.isArray(opportunity.directionIds)
-    ? [...new Set(opportunity.directionIds.filter(Boolean))]
+  const personaIds = Array.isArray(opportunity.personaIds)
+    ? [...new Set(opportunity.personaIds.filter(Boolean))]
     : [];
 
   if (existing) {
@@ -33,12 +34,13 @@ export function buildSoldLineFromWonOpportunity(
       opportunity.kind === "renewal"
         ? amount
         : existing.billedAmount + amount;
+    const existingPersonae = soldLinePersonaIds(existing);
     return {
       id: existing.id,
       solutionId: existing.solutionId,
       accountId: existing.accountId,
-      directionId: existing.directionId,
-      directionIds: existing.directionIds ?? [],
+      personaId: existing.personaId,
+      personaIds: existingPersonae,
       moduleIds:
         opportunity.moduleIds?.length
           ? [
@@ -55,8 +57,8 @@ export function buildSoldLineFromWonOpportunity(
   return {
     solutionId: opportunity.solutionId,
     accountId: opportunity.primaryAccountId,
-    directionId: directionIds[0] ?? null,
-    directionIds,
+    personaId: personaIds[0] ?? null,
+    personaIds,
     moduleIds: opportunity.moduleIds ?? [],
     billedAmount: amount,
   };

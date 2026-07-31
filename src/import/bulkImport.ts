@@ -2,6 +2,7 @@ import {
   ACCOUNT_SIZES,
   COMMERCIAL_STATUSES,
   migrateAccountSize,
+  isCompanyLevelSoldLine,
   type Account,
   type AccountSize,
   type AccountType,
@@ -9,7 +10,7 @@ import {
   type Contact,
   type SoldSolution,
 } from "../data";
-import type { DirectionDef, SectorDef, SolutionDef } from "../config/types";
+import type { PersonaDef, SectorDef, SolutionDef } from "../config/types";
 import {
   OPPORTUNITY_KINDS,
   OPPORTUNITY_PHASES,
@@ -58,6 +59,8 @@ export type PlannedAccount = {
   holdingId: string | null;
   sector?: string;
   size?: AccountSize;
+  ownerProfileId?: string | null;
+  ownerEmail?: string;
 };
 
 export type PlannedContact = {
@@ -66,10 +69,16 @@ export type PlannedContact = {
   action: "create" | "update";
   id?: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   title: string;
+  email?: string;
+  phone?: string;
   accountKey: string;
   accountId: string;
-  directionId: string;
+  personaId: string;
+  ownerProfileId?: string | null;
+  ownerEmail?: string;
 };
 
 export type PlannedOpportunity = {
@@ -85,6 +94,10 @@ export type PlannedOpportunity = {
   phase: string;
   kind: OpportunityKind;
   solutionId: string;
+  moduleIds: string[];
+  personaIds: string[];
+  ownerProfileId?: string | null;
+  ownerEmail?: string;
 };
 
 export type PlannedSoldSolution = {
@@ -96,7 +109,7 @@ export type PlannedSoldSolution = {
   accountId: string;
   solutionId: string;
   moduleIds: string[];
-  directionIds: string[];
+  personaIds: string[];
   billedAmount: number;
 };
 
@@ -114,10 +127,20 @@ export type ImportContext = {
   contacts: Contact[];
   opportunities: Opportunity[];
   soldSolutions: SoldSolution[];
-  directions: DirectionDef[];
+  personae: PersonaDef[];
   sectors: SectorDef[];
   solutions: SolutionDef[];
+  /** Statuts commerciaux org (id + libellé). */
+  statuses: Array<{ id: string; label: string }>;
+  /** Tailles / effectifs org. */
+  sizes: Array<{ id: string; label: string }>;
+  /** Phases opportunité org. */
+  phases: Array<{ id: string; label: string }>;
+  /** Natures opportunité org. */
+  kinds: Array<{ id: string; label: string }>;
   oppMappingSubtypes: OppMappingSubtypeDef[];
+  /** Membres de l’org (e-mail → id) pour rattacher l’owner. */
+  orgUsers: Array<{ id: string; email: string; fullName?: string | null }>;
 };
 
 function norm(s: string): string {
@@ -165,31 +188,68 @@ function parseType(raw: string): AccountType | null {
   return null;
 }
 
-function parseStatus(raw: string): CommercialStatus | null {
+function matchCatalogOption(
+  raw: string,
+  options: Array<{ id: string; label: string }>,
+): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  const n = norm(t);
+  const hit = options.find((o) => norm(o.id) === n || norm(o.label) === n);
+  return hit?.id ?? null;
+}
+
+function parseStatus(
+  raw: string,
+  statuses: Array<{ id: string; label: string }>,
+): CommercialStatus | null {
   const n = norm(raw);
-  if (!n) return "Prospect";
-  if (n === "client") return "Client";
-  if (n === "prospect") return "Prospect";
-  if (n === "partner" || n === "partenaire") return "Partner";
-  if (n === "concurrent" || n === "competitor") return "Concurrent";
-  if (n === "other" || n === "autre") return "Prospect";
+  if (!n) {
+    return (
+      matchCatalogOption("Prospect", statuses) ??
+      statuses[0]?.id ??
+      "Prospect"
+    );
+  }
+  const fromCatalog = matchCatalogOption(raw, statuses);
+  if (fromCatalog) return fromCatalog;
+  if (n === "client") return matchCatalogOption("Client", statuses) ?? "Client";
+  if (n === "prospect")
+    return matchCatalogOption("Prospect", statuses) ?? "Prospect";
+  if (n === "partner" || n === "partenaire")
+    return matchCatalogOption("Partner", statuses) ?? "Partner";
+  if (n === "concurrent" || n === "competitor")
+    return matchCatalogOption("Concurrent", statuses) ?? "Concurrent";
+  if (n === "other" || n === "autre")
+    return matchCatalogOption("Prospect", statuses) ?? "Prospect";
   if ((COMMERCIAL_STATUSES as string[]).includes(raw.trim())) {
     return raw.trim() as CommercialStatus;
   }
-  return null;
+  // Valeur hors liste : id slugifié (ajout catalogue si confirmé)
+  return slugifyKey(raw.trim()) || raw.trim();
 }
 
-function parseKind(raw: string): OpportunityKind | null {
+function parseKind(
+  raw: string,
+  kinds: Array<{ id: string; label: string }>,
+): OpportunityKind | null {
   const n = norm(raw);
-  if (!n) return "prospect";
-  if (n === "up" || n === "upsell") return "up";
+  if (!n) {
+    return (matchCatalogOption("prospect", kinds) ??
+      kinds[0]?.id ??
+      "prospect") as OpportunityKind;
+  }
+  const fromCatalog = matchCatalogOption(raw, kinds);
+  if (fromCatalog) return fromCatalog as OpportunityKind;
+  if (n === "up" || n === "upsell")
+    return (matchCatalogOption("up", kinds) ?? "up") as OpportunityKind;
   if (
     n === "cross" ||
     n === "cross_sell" ||
     n === "cross-sell" ||
     n === "crosssell"
   )
-    return "cross";
+    return (matchCatalogOption("cross", kinds) ?? "cross") as OpportunityKind;
   if (
     n === "new_in_group" ||
     n === "nouveau_compte" ||
@@ -197,32 +257,50 @@ function parseKind(raw: string): OpportunityKind | null {
     n === "nouveau compte dans le groupe" ||
     n === "new"
   )
-    return "new_in_group";
-  if (n === "prospect") return "prospect";
+    return (matchCatalogOption("new_in_group", kinds) ??
+      "new_in_group") as OpportunityKind;
+  if (n === "prospect")
+    return (matchCatalogOption("prospect", kinds) ??
+      "prospect") as OpportunityKind;
   if (
     n === "renewal" ||
     n === "renouvellement" ||
     n === "renew" ||
     n === "renouv"
   )
-    return "renewal";
+    return (matchCatalogOption("renewal", kinds) ??
+      "renewal") as OpportunityKind;
   if ((OPPORTUNITY_KINDS as string[]).includes(raw.trim())) {
     return raw.trim() as OpportunityKind;
   }
-  return null;
+  return (slugifyKey(raw.trim()) || raw.trim()) as OpportunityKind;
 }
 
-function parsePhase(raw: string): string | null {
+function parsePhase(
+  raw: string,
+  phases: Array<{ id: string; label: string }>,
+): string | null {
   const n = norm(raw);
-  if (!n) return "Whitespace";
+  if (!n) {
+    return (
+      matchCatalogOption("Whitespace", phases) ??
+      phases[0]?.id ??
+      "Whitespace"
+    );
+  }
+  const fromCatalog = matchCatalogOption(raw, phases);
+  if (fromCatalog) return fromCatalog;
   const aliases: Record<string, string> = {
     whitespace: "Whitespace",
     "white space": "Whitespace",
     white_space: "Whitespace",
     discovery: "Discovery",
-    "solution validation": "Solution Validation",
-    solution_validation: "Solution Validation",
-    validation: "Solution Validation",
+    qualification: "Qualification",
+    qualified: "Qualification",
+    proposal: "Proposal",
+    "solution validation": "Proposal",
+    solution_validation: "Proposal",
+    validation: "Proposal",
     negotiation: "Negotiation",
     negociation: "Negotiation",
     "closed won": "Closed Won",
@@ -232,9 +310,33 @@ function parsePhase(raw: string): string | null {
     closed_lost: "Closed Lost",
     perdu: "Closed Lost",
   };
-  if (aliases[n]) return aliases[n];
+  if (aliases[n]) {
+    return matchCatalogOption(aliases[n], phases) ?? aliases[n];
+  }
   const hit = OPPORTUNITY_PHASES.find((p) => norm(p) === n);
-  return hit ?? null;
+  if (hit) return matchCatalogOption(hit, phases) ?? hit;
+  return slugifyKey(raw.trim()) || raw.trim();
+}
+
+function resolveSize(
+  raw: string | undefined,
+  sizes: Array<{ id: string; label: string }>,
+): AccountSize | undefined {
+  const t = (raw ?? "").trim();
+  if (!t) return undefined;
+  const migrated = migrateAccountSize(t);
+  if (migrated) {
+    const hit = matchCatalogOption(migrated, sizes);
+    if (hit) return hit as AccountSize;
+    if (ACCOUNT_SIZES.includes(migrated as AccountSize)) {
+      return migrated as AccountSize;
+    }
+  }
+  const fromCatalog = matchCatalogOption(t, sizes);
+  if (fromCatalog) return fromCatalog as AccountSize;
+  if (ACCOUNT_SIZES.includes(t as AccountSize)) return t as AccountSize;
+  // Conserve l’id slugifié (ajout catalogue si confirmé)
+  return (slugifyKey(t) || t) as AccountSize;
 }
 
 function resolveSector(
@@ -248,21 +350,24 @@ function resolveSector(
   const byName = sectors.find(
     (s) => s.active !== false && norm(s.name) === norm(t),
   );
-  return byName?.id ?? t;
+  if (byName) return byName.id;
+  return slugifyKey(t);
 }
 
-function resolveDirection(
+function resolvePersona(
   raw: string,
-  directions: DirectionDef[],
+  personae: PersonaDef[],
 ): string | null {
-  const active = directions.filter((d) => d.active !== false);
+  const active = personae.filter((d) => d.active !== false);
   if (active.length === 0) return null;
   const t = raw.trim();
   if (!t) return active[0].id;
   const byId = active.find((d) => d.id === t);
   if (byId) return byId.id;
   const byName = active.find((d) => norm(d.name) === norm(t));
-  return byName?.id ?? null;
+  if (byName) return byName.id;
+  // Valeur hors liste (ajout catalogue si confirmé)
+  return slugifyKey(t);
 }
 
 function resolveSolution(
@@ -279,7 +384,8 @@ function resolveSolution(
   );
   if (byCode) return byCode.id;
   const byName = active.find((s) => norm(s.name) === norm(t));
-  return byName?.id ?? "";
+  if (byName) return byName.id;
+  return slugifyKey(t);
 }
 
 function splitMulti(raw: string): string[] {
@@ -318,9 +424,9 @@ function resolveModules(
   return [...new Set(ids)];
 }
 
-function resolveDirectionsMulti(
+function resolvePersonaeMulti(
   raw: string,
-  directions: DirectionDef[],
+  personae: PersonaDef[],
   rowNum: number,
   issues: ImportRowIssue[],
 ): string[] {
@@ -328,17 +434,39 @@ function resolveDirectionsMulti(
   if (tokens.length === 0) return [];
   const ids: string[] = [];
   for (const token of tokens) {
-    const id = resolveDirection(token, directions);
+    const id = resolvePersona(token, personae);
     if (id) ids.push(id);
     else {
       issues.push({
         row: rowNum,
         level: "warning",
-        message: `Direction « ${token} » introuvable`,
+        message: `Persona « ${token} » introuvable`,
       });
     }
   }
   return [...new Set(ids)];
+}
+
+function resolveOwnerByEmail(
+  raw: string,
+  orgUsers: ImportContext["orgUsers"],
+  rowNum: number,
+  issues: ImportRowIssue[],
+): { ownerProfileId: string | null; ownerEmail: string } {
+  const email = raw.trim().toLowerCase();
+  if (!email) {
+    return { ownerProfileId: null, ownerEmail: "" };
+  }
+  const hit = orgUsers.find((u) => u.email.trim().toLowerCase() === email);
+  if (hit) {
+    return { ownerProfileId: hit.id, ownerEmail: email };
+  }
+  issues.push({
+    row: rowNum,
+    level: "warning",
+    message: `Owner « ${raw.trim()} » introuvable dans l’équipe DBR — rattachement manuel requis sur la fiche entreprise`,
+  });
+  return { ownerProfileId: null, ownerEmail: email };
 }
 
 function findSoldByKey(
@@ -362,8 +490,7 @@ function findSoldByKey(
       (s) =>
         s.accountId === accountId &&
         s.solutionId === solutionId &&
-        (!s.directionIds || s.directionIds.length === 0) &&
-        !s.directionId,
+        isCompanyLevelSoldLine(s),
     );
   }
   return undefined;
@@ -465,6 +592,7 @@ export const ACCOUNT_TEMPLATE_HEADERS = [
   "holding_key",
   "sector",
   "size",
+  "owner_email",
 ];
 
 export const CONTACT_TEMPLATE_HEADERS = [
@@ -472,7 +600,7 @@ export const CONTACT_TEMPLATE_HEADERS = [
   "name",
   "title",
   "account_key",
-  "direction",
+  "persona",
 ];
 
 export const OPPORTUNITY_TEMPLATE_HEADERS = [
@@ -522,7 +650,7 @@ export function buildImportPlan(
     const resolved = resolveRowKey(row, rowNum, issues, "Groupe");
     if (!resolved) return;
     const { name, externalKey } = resolved;
-    const status = parseStatus(row.status ?? "");
+    const status = parseStatus(row.status ?? "", ctx.statuses);
     if (!status) {
       issues.push({
         row: rowNum,
@@ -541,12 +669,8 @@ export function buildImportPlan(
       return;
     }
     const existing = findAccountByKey(externalKey, ctx.accounts);
-    const size = migrateAccountSize(row.size);
-    if (
-      row.size?.trim() &&
-      !size &&
-      !ACCOUNT_SIZES.includes(row.size.trim() as AccountSize)
-    ) {
+    const size = resolveSize(row.size, ctx.sizes);
+    if (row.size?.trim() && !size) {
       issues.push({
         row: rowNum,
         level: "warning",
@@ -565,6 +689,12 @@ export function buildImportPlan(
       holdingId: null,
       sector: resolveSector(row.sector ?? "", ctx.sectors),
       size,
+      ...resolveOwnerByEmail(
+        row.owner_email ?? "",
+        ctx.orgUsers,
+        rowNum,
+        issues,
+      ),
     });
     pendingKeys.add(keySlug);
     pendingKeys.add(externalKey);
@@ -589,7 +719,7 @@ export function buildImportPlan(
     const resolved = resolveRowKey(row, rowNum, issues, "Entreprise");
     if (!resolved) return;
     const { name, externalKey } = resolved;
-    const status = parseStatus(row.status ?? "");
+    const status = parseStatus(row.status ?? "", ctx.statuses);
     if (!status) {
       issues.push({
         row: rowNum,
@@ -627,12 +757,8 @@ export function buildImportPlan(
       }
     }
     const existing = findAccountByKey(externalKey, ctx.accounts);
-    const size = migrateAccountSize(row.size);
-    if (
-      row.size?.trim() &&
-      !size &&
-      !ACCOUNT_SIZES.includes(row.size.trim() as AccountSize)
-    ) {
+    const size = resolveSize(row.size, ctx.sizes);
+    if (row.size?.trim() && !size) {
       issues.push({
         row: rowNum,
         level: "warning",
@@ -651,6 +777,12 @@ export function buildImportPlan(
       holdingId,
       sector: resolveSector(row.sector ?? "", ctx.sectors),
       size,
+      ...resolveOwnerByEmail(
+        row.owner_email ?? "",
+        ctx.orgUsers,
+        rowNum,
+        issues,
+      ),
     });
     pendingKeys.add(keySlug);
     pendingKeys.add(externalKey);
@@ -700,27 +832,27 @@ export function buildImportPlan(
       }
     }
 
-    const directionId = resolveDirection(row.direction ?? "", ctx.directions);
-    if (!directionId) {
+    const personaRaw = (row.persona ?? row.direction ?? "").trim();
+    const personaId = resolvePersona(personaRaw, ctx.personae);
+    if (!personaId) {
       issues.push({
         row: rowNum,
         level: "error",
-        message: "Aucune direction active dans les Settings",
+        message: "Aucune persona active dans les Settings",
       });
       return;
     }
-    const directionRaw = (row.direction ?? "").trim();
-    if (directionRaw) {
-      const exact = ctx.directions.some(
+    if (personaRaw) {
+      const exact = ctx.personae.some(
         (d) =>
           d.active !== false &&
-          (d.id === directionRaw || norm(d.name) === norm(directionRaw)),
+          (d.id === personaRaw || norm(d.name) === norm(personaRaw)),
       );
       if (!exact) {
         issues.push({
           row: rowNum,
           level: "warning",
-          message: `Direction « ${directionRaw} » introuvable → defaut`,
+          message: `Persona « ${personaRaw} » introuvable → defaut`,
         });
       }
     }
@@ -742,10 +874,20 @@ export function buildImportPlan(
       action: existing ? "update" : "create",
       id: existing?.id,
       name,
+      firstName: (row.firstname ?? "").trim() || undefined,
+      lastName: (row.lastname ?? "").trim() || undefined,
       title: (row.title ?? "").trim(),
+      email: (row.email ?? "").trim() || undefined,
+      phone: (row.phone ?? "").trim() || undefined,
       accountKey,
       accountId,
-      directionId,
+      personaId,
+      ...resolveOwnerByEmail(
+        row.owner_email ?? "",
+        ctx.orgUsers,
+        rowNum,
+        issues,
+      ),
     });
   });
 
@@ -786,7 +928,7 @@ export function buildImportPlan(
         String(row.amount ?? "0").replace(/\s/g, "").replace(",", "."),
       ) || 0;
     const closeDate = (row.close_date ?? "").trim();
-    const phaseParsed = parsePhase(row.phase ?? "");
+    const phaseParsed = parsePhase(row.phase ?? "", ctx.phases);
     if ((row.phase ?? "").trim() && !phaseParsed) {
       issues.push({
         row: rowNum,
@@ -795,8 +937,21 @@ export function buildImportPlan(
       });
     }
     const phase = phaseParsed || "Whitespace";
-    const kind = parseKind(row.kind ?? "") ?? "prospect";
+    const kind = parseKind(row.kind ?? "", ctx.kinds) ?? "prospect";
     const solutionId = resolveSolution(row.solution ?? "", ctx.solutions);
+    const moduleIds = resolveModules(
+      row.modules ?? "",
+      solutionId,
+      ctx.solutions,
+      rowNum,
+      issues,
+    );
+    const personaIds = resolvePersonaeMulti(
+      row.personae ?? row.directions ?? row.direction ?? "",
+      ctx.personae,
+      rowNum,
+      issues,
+    );
 
     const existing =
       findOpportunityByKey(externalKey, ctx.opportunities) ??
@@ -822,6 +977,14 @@ export function buildImportPlan(
       phase,
       kind,
       solutionId,
+      moduleIds,
+      personaIds,
+      ...resolveOwnerByEmail(
+        row.owner_email ?? "",
+        ctx.orgUsers,
+        rowNum,
+        issues,
+      ),
     });
   });
 
@@ -895,9 +1058,9 @@ export function buildImportPlan(
       rowNum,
       issues,
     );
-    const directionIds = resolveDirectionsMulti(
-      row.directions ?? row.direction ?? "",
-      ctx.directions,
+    const personaIds = resolvePersonaeMulti(
+      row.personae ?? row.directions ?? row.direction ?? "",
+      ctx.personae,
       rowNum,
       issues,
     );
@@ -935,7 +1098,7 @@ export function buildImportPlan(
       accountId,
       solutionId,
       moduleIds,
-      directionIds,
+      personaIds,
       billedAmount,
     });
   });

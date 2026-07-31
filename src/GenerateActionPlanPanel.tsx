@@ -1,13 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { useOrgConfig } from "./config/ConfigContext";
-import { useDomain } from "./domain/DomainContext";
-import {
-  useAccountPlans,
-  type AccountPlan,
-} from "./accountPlans/AccountPlanContext";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   useOpportunities,
   type Opportunity,
+  type OpportunityActionStatus,
 } from "./opportunities/OpportunityContext";
 import {
   checkOpenAiStatus,
@@ -15,23 +10,23 @@ import {
   type GeneratedPlanActionDraft,
   type OpenAiStatus,
 } from "./research/openaiClient";
+import { useOrgConfig } from "./config/ConfigContext";
+import { useDomain } from "./domain/DomainContext";
+import { isActionOverdue } from "./accountPlans/AccountPlanContext";
 
 type DraftRow = GeneratedPlanActionDraft & { selected: boolean };
 
+const ACTION_STATUSES: OpportunityActionStatus[] = ["Todo", "Doing", "Done"];
+
 type Props = {
-  plan: AccountPlan;
-  /** Opportunité prioritaire pour le contexte IA (sinon 1re liée). */
-  focusOpportunityId?: string | null;
+  opportunity: Opportunity;
 };
 
-export default function GenerateActionPlanPanel({
-  plan,
-  focusOpportunityId = null,
-}: Props) {
-  const { config, activeContactTypes, activeDirections } = useOrgConfig();
+export default function GenerateActionPlanPanel({ opportunity }: Props) {
+  const { config, activeContactTypes, activePersonae } = useOrgConfig();
   const { activeContacts, activeAccounts } = useDomain();
-  const { activeOpportunities } = useOpportunities();
-  const { addAction, removeAction } = useAccountPlans();
+  const { addAction, updateAction, removeAction } =
+    useOpportunities();
 
   const [status, setStatus] = useState<OpenAiStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +34,9 @@ export default function GenerateActionPlanPanel({
   const [drafts, setDrafts] = useState<DraftRow[] | null>(null);
   const [replaceTodo, setReplaceTodo] = useState(false);
   const [appliedMsg, setAppliedMsg] = useState<string | null>(null);
+  const [newTitle, setNewTitle] = useState("");
+  const [newDue, setNewDue] = useState("");
+  const [newOwner, setNewOwner] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -50,37 +48,19 @@ export default function GenerateActionPlanPanel({
     };
   }, []);
 
-  const opportunity = useMemo(() => {
-    const linked = plan.opportunityIds
-      .map((id) => activeOpportunities.find((o) => o.id === id))
-      .filter((o): o is Opportunity => Boolean(o));
-    if (focusOpportunityId) {
-      const focus = linked.find((o) => o.id === focusOpportunityId);
-      if (focus) return focus;
-    }
-    return linked[0] ?? null;
-  }, [plan.opportunityIds, activeOpportunities, focusOpportunityId]);
-
-  const account = opportunity
-    ? (activeAccounts.find((a) => a.id === opportunity.primaryAccountId) ??
-      activeAccounts.find((a) => a.id === plan.accountId) ??
-      null)
-    : (activeAccounts.find((a) => a.id === plan.accountId) ?? null);
-
+  const account =
+    activeAccounts.find((a) => a.id === opportunity.primaryAccountId) ?? null;
   const holdingName = account?.holdingId
     ? (activeAccounts.find((a) => a.id === account.holdingId)?.name ?? null)
     : null;
 
+  const actions = opportunity.actions ?? [];
+  const today = new Date().toISOString().slice(0, 10);
+
   const canRun =
-    Boolean(status?.available && status.configured) &&
-    Boolean(opportunity) &&
-    !loading;
+    Boolean(status?.available && status.configured) && !loading;
 
   async function handleGenerate() {
-    if (!opportunity) {
-      setError("Lie une opportunité au plan pour générer des actions.");
-      return;
-    }
     setError(null);
     setAppliedMsg(null);
     setLoading(true);
@@ -93,9 +73,9 @@ export default function GenerateActionPlanPanel({
         holdingName,
         contacts: activeContacts,
         contactTypes: activeContactTypes,
-        directions: activeDirections,
-        planDueDate: plan.dueDate,
-        existingActions: plan.actions.map((a) => ({
+        personae: activePersonae,
+        planDueDate: opportunity.closeDate || undefined,
+        existingActions: actions.map((a) => ({
           title: a.title,
           dueDate: a.dueDate,
           status: a.status,
@@ -133,25 +113,38 @@ export default function GenerateActionPlanPanel({
     }
 
     if (replaceTodo) {
-      for (const a of plan.actions) {
-        if (a.status === "Todo") removeAction(plan.id, a.id);
+      for (const a of actions) {
+        if (a.status === "Todo") removeAction(opportunity.id, a.id);
       }
     }
 
     setError(null);
     for (const row of selected) {
-      addAction(plan.id, {
+      addAction(opportunity.id, {
         title: row.title.trim(),
         dueDate: row.dueDate,
         owner: row.owner,
-        opportunityId: opportunity?.id ?? null,
         status: "Todo",
       });
     }
     setAppliedMsg(
-      `${selected.length} action${selected.length > 1 ? "s" : ""} ajoutée${selected.length > 1 ? "s" : ""} — tu peux les modifier ci-dessous.`,
+      `${selected.length} action${selected.length > 1 ? "s" : ""} ajoutée${selected.length > 1 ? "s" : ""} à l’opportunité.`,
     );
     setDrafts(null);
+  }
+
+  function handleAddManual(e: FormEvent) {
+    e.preventDefault();
+    if (!newTitle.trim()) return;
+    addAction(opportunity.id, {
+      title: newTitle.trim(),
+      dueDate: newDue || undefined,
+      owner: newOwner.trim() || undefined,
+      status: "Todo",
+    });
+    setNewTitle("");
+    setNewDue("");
+    setNewOwner("");
   }
 
   return (
@@ -160,8 +153,8 @@ export default function GenerateActionPlanPanel({
         <div>
           <h4>Générer avec IA</h4>
           <p className="muted">
-            À partir du process, du mapping et des contacts de l’opportunité —
-            tu pourras modifier avant et après ajout.
+            À partir du process, du mapping et des contacts — tu pourras
+            modifier avant et après ajout.
           </p>
         </div>
         <button
@@ -172,21 +165,13 @@ export default function GenerateActionPlanPanel({
           title={
             !status?.configured
               ? "L’IA n’est pas encore configurée"
-              : !opportunity
-                ? "Lie une opportunité au plan"
-                : undefined
+              : undefined
           }
         >
           {loading ? "Génération…" : "Générer un plan d’actions"}
         </button>
       </div>
 
-      {!opportunity && (
-        <p className="muted">
-          Aucune opportunité liée à ce plan — rattache-en une pour activer
-          l’IA.
-        </p>
-      )}
       {status && !status.configured && (
         <p className="entry-error">
           L’IA n’est pas encore configurée. Contacte ton administrateur.
@@ -261,11 +246,95 @@ export default function GenerateActionPlanPanel({
               Annuler
             </button>
             <button type="button" className="primary-cta" onClick={handleApply}>
-              Ajouter au plan
+              Ajouter à l’opportunité
             </button>
           </div>
         </div>
       )}
+
+      <section className="entry-subsection" aria-label="Actions de l’opportunité">
+        <h4>Actions</h4>
+        <form className="entry-form" onSubmit={handleAddManual}>
+          <div className="data-form-grid">
+            <label>
+              Titre
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                required
+                placeholder="Prochaine étape…"
+              />
+            </label>
+            <label>
+              Échéance
+              <input
+                type="date"
+                value={newDue}
+                onChange={(e) => setNewDue(e.target.value)}
+              />
+            </label>
+            <label>
+              Owner
+              <input
+                value={newOwner}
+                onChange={(e) => setNewOwner(e.target.value)}
+                placeholder="AE, SE…"
+              />
+            </label>
+          </div>
+          <button type="submit" className="primary-cta" disabled={!newTitle.trim()}>
+            Ajouter une action
+          </button>
+        </form>
+
+        {actions.length === 0 ? (
+          <p className="muted">Aucune action sur cette opportunité.</p>
+        ) : (
+          <ul className="entry-list">
+            {actions.map((a) => {
+              const overdue = isActionOverdue(a, today);
+              return (
+                <li key={a.id}>
+                  <div className="entry-list-main">
+                    <strong>
+                      {a.title}
+                      {overdue ? " · en retard" : ""}
+                    </strong>
+                    <span className="meta">
+                      {a.dueDate ? `Échéance ${a.dueDate}` : "Sans échéance"}
+                      {a.owner ? ` · ${a.owner}` : ""}
+                    </span>
+                  </div>
+                  <div className="plan-create-actions">
+                    <select
+                      value={a.status}
+                      onChange={(e) =>
+                        updateAction(opportunity.id, a.id, {
+                          status: e.target.value as OpportunityActionStatus,
+                        })
+                      }
+                      aria-label={`Statut · ${a.title}`}
+                    >
+                      {ACTION_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="ghost danger-text"
+                      onClick={() => removeAction(opportunity.id, a.id)}
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

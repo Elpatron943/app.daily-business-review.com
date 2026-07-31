@@ -1,5 +1,11 @@
 import type { ImportEntityKind } from "./mappingFields";
-import { DBR_IMPORT_FIELDS } from "./mappingFields";
+import {
+  DBR_IMPORT_FIELDS,
+  IMPORT_ENTITY_KINDS,
+  IMPORT_ENTITY_LABEL,
+  parseScopedField,
+  scopedFieldId,
+} from "./mappingFields";
 
 function extractJsonObject(text: string): unknown {
   const trimmed = text.trim();
@@ -16,29 +22,34 @@ function extractJsonObject(text: string): unknown {
 }
 
 /**
- * Propose un mapping en-têtes fichier → champs DBR via OpenAI.
- * Retourne Record<sourceHeader, fieldId | "">.
+ * Propose un mapping en-têtes fichier → champs DBR scopés via OpenAI.
+ * Retourne Record<sourceHeader, "accounts.name" | "">.
  */
 export async function suggestImportColumnMapping(input: {
   kind: ImportEntityKind;
   headers: string[];
   samples: Record<string, string>;
 }): Promise<Record<string, string>> {
-  const fields = DBR_IMPORT_FIELDS[input.kind];
+  const dbrFields = IMPORT_ENTITY_KINDS.flatMap((kind) =>
+    DBR_IMPORT_FIELDS[kind].map((f) => ({
+      id: scopedFieldId(kind, f.id),
+      label: `${IMPORT_ENTITY_LABEL[kind]} · ${f.label}`,
+      entity: kind,
+      required: Boolean(f.required),
+    })),
+  );
+
   const system = [
     "Tu aides à mapper des colonnes Excel vers le CRM DBR.",
-    "Réponds UNIQUEMENT avec un objet JSON plat : clé = en-tête exact du fichier, valeur = id du champ DBR ou chaîne vide si ignorer.",
+    "Réponds UNIQUEMENT avec un objet JSON plat : clé = en-tête exact du fichier, valeur = id scopé du champ DBR (ex. accounts.name, contacts.firstname, opportunities.name) ou chaîne vide si ignorer.",
     "N’invente pas d’ids hors catalogue. Une colonne source max par champ cible.",
+    "Distingue bien nom d’entreprise, nom de contact, nom d’opportunité, prénom, nom de famille.",
   ].join(" ");
 
   const user = JSON.stringify(
     {
-      entity: input.kind,
-      dbr_fields: fields.map((f) => ({
-        id: f.id,
-        label: f.label,
-        required: Boolean(f.required),
-      })),
+      preferred_entity: input.kind,
+      dbr_fields: dbrFields,
       file_headers: input.headers,
       sample_row: input.samples,
     },
@@ -71,13 +82,18 @@ export async function suggestImportColumnMapping(input: {
   }
 
   const parsed = extractJsonObject(data.content) as Record<string, unknown>;
-  const allowed = new Set(fields.map((f) => f.id));
+  const allowed = new Set(dbrFields.map((f) => f.id));
   const used = new Set<string>();
   const mapping: Record<string, string> = {};
 
   for (const header of input.headers) {
     const raw = parsed[header];
-    const field = typeof raw === "string" ? raw.trim() : "";
+    let field = typeof raw === "string" ? raw.trim() : "";
+    // Accepte aussi un id non scopé renvoyé par l’IA → préfère l’entité du sheet
+    if (field && !parseScopedField(field)) {
+      const scoped = scopedFieldId(input.kind, field);
+      if (allowed.has(scoped)) field = scoped;
+    }
     if (field && allowed.has(field) && !used.has(field)) {
       mapping[header] = field;
       used.add(field);

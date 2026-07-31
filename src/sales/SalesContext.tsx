@@ -78,7 +78,7 @@ type SalesContextValue = {
       accountId: string;
       solutionId: string;
       moduleIds: string[];
-      directionIds: string[];
+      personaIds: string[];
       billedAmount: number;
     }>,
   ) => { created: number; updated: number };
@@ -106,8 +106,18 @@ export function SalesProvider({ children }: { children: ReactNode }) {
       try {
         const lines = await loadOrgSoldSolutions(orgId);
         if (cancelled) return;
-        persistLocal(lines);
-        setSoldSolutions(lines);
+        let next = lines;
+        if (next.length === 0) {
+          const local = loadLocal();
+          if (local.length > 0) {
+            next = local;
+            void upsertSoldSolutionsRemote(orgId, next).catch((err) =>
+              logSyncError("seedSoldSolutions", err),
+            );
+          }
+        }
+        persistLocal(next);
+        setSoldSolutions(next);
       } catch (err) {
         logSyncError("loadSoldSolutions", err);
         if (!cancelled) {
@@ -134,17 +144,17 @@ export function SalesProvider({ children }: { children: ReactNode }) {
 
   const upsertSoldSolution = useCallback(
     (input: Omit<SoldSolution, "id" | "currency"> & { id?: string }) => {
-      const directionIds = Array.isArray(input.directionIds)
-        ? [...new Set(input.directionIds.filter(Boolean))]
-        : input.directionId
-          ? [input.directionId]
+      const personaIds = Array.isArray(input.personaIds)
+        ? [...new Set(input.personaIds.filter(Boolean))]
+        : input.personaId
+          ? [input.personaId]
           : [];
       const line = normalizeSoldSolution({
         id: input.id ?? uid(),
         solutionId: input.solutionId,
         accountId: input.accountId,
-        directionId: directionIds[0] ?? null,
-        directionIds,
+        personaId: personaIds[0] ?? null,
+        personaIds,
         moduleIds: Array.isArray(input.moduleIds) ? input.moduleIds : [],
         currency: "EUR",
         billedAmount: Math.max(0, input.billedAmount),
@@ -184,7 +194,7 @@ export function SalesProvider({ children }: { children: ReactNode }) {
         accountId: string;
         solutionId: string;
         moduleIds: string[];
-        directionIds: string[];
+        personaIds: string[];
         billedAmount: number;
       }>,
     ) => {
@@ -204,13 +214,13 @@ export function SalesProvider({ children }: { children: ReactNode }) {
           } else {
             resolvedId = uid();
           }
-          const directionIds = [...new Set(row.directionIds.filter(Boolean))];
+          const personaIds = [...new Set(row.personaIds.filter(Boolean))];
           const line = normalizeSoldSolution({
             id: resolvedId,
             solutionId: row.solutionId,
             accountId: row.accountId,
-            directionId: directionIds[0] ?? null,
-            directionIds,
+            personaId: personaIds[0] ?? null,
+            personaIds,
             moduleIds: row.moduleIds,
             currency: "EUR",
             billedAmount: Math.max(0, row.billedAmount),

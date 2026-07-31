@@ -26,6 +26,7 @@ import {
   type Opportunity,
 } from "../opportunities/OpportunityContext";
 import { summarizeCatalogue } from "../catalogue/formatCatalogue";
+import { openOpportunityDetail } from "../opportunities/oppNavigation";
 
 function resolveOpportunity(
   plan: AccountPlan,
@@ -36,10 +37,6 @@ function resolveOpportunity(
     if (found) return found;
   }
   return null;
-}
-
-function openOpportunityDetail(opportunityId: string) {
-  sessionStorage.setItem("powermap.openOppDetail", opportunityId);
 }
 
 /**
@@ -178,14 +175,18 @@ export default function AccountPlanOverviewOnFiche({
 
   const health = useMemo(() => {
     if (!plan || !kpis) return null;
+    const linkedActions = companyOpportunities
+      .filter((o) => plan.opportunityIds.includes(o.id))
+      .flatMap((o) => o.actions ?? []);
     return computeAccountHealth({
       plan,
       billedAmount: kpis.billedAmount,
       targetAmount: kpis.targetAmount,
       contactCount,
       whiteSpaceCount: whiteSpaceIds.length,
+      linkedActions,
     });
-  }, [plan, kpis, contactCount, whiteSpaceIds.length]);
+  }, [plan, kpis, contactCount, whiteSpaceIds.length, companyOpportunities]);
 
   const opportunityMap = useMemo(() => {
     if (!account) return null;
@@ -240,7 +241,6 @@ export default function AccountPlanOverviewOnFiche({
       status: "Todo",
       vision: "",
       objectives: [],
-      actions: [],
     });
     setCreating(false);
     setCreateOppIds([]);
@@ -254,7 +254,8 @@ export default function AccountPlanOverviewOnFiche({
   }
 
   function openOpp(id: string) {
-    openOpportunityDetail(id);
+    if (!account) return;
+    openOpportunityDetail(id, { type: "account", accountId: account.id });
     onOpenOpportunities?.();
   }
 
@@ -445,10 +446,13 @@ export default function AccountPlanOverviewOnFiche({
     plan.objectives.length > 0
       ? Math.round((objCounts.Achieved / plan.objectives.length) * 100)
       : 0;
-  const actionsDone = plan.actions.filter((a) => a.status === "Done").length;
+  const linkedActions = companyOpportunities
+    .filter((o) => plan.opportunityIds.includes(o.id))
+    .flatMap((o) => o.actions ?? []);
+  const actionsDone = linkedActions.filter((a) => a.status === "Done").length;
   const actionsPct =
-    plan.actions.length > 0
-      ? Math.round((actionsDone / plan.actions.length) * 100)
+    linkedActions.length > 0
+      ? Math.round((actionsDone / linkedActions.length) * 100)
       : 0;
   const duration = planDurationDays(plan.startDate, plan.dueDate);
   const segmentBits = [

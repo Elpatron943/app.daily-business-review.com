@@ -242,7 +242,6 @@ export default function AccountPlanPage({
         status: "Todo",
         vision: "",
         objectives: [],
-        actions: [],
       });
       setCreating(false);
       setCreateAccountId("");

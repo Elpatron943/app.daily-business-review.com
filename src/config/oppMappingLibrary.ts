@@ -37,35 +37,19 @@ export function buildDefaultOppMappingThemes(): OppMappingThemeDef[] {
 export function normalizeOppMappingThemes(
   raw: OppMappingThemeDef[] | undefined,
 ): OppMappingThemeDef[] {
-  const defaults = buildDefaultOppMappingThemes();
   if (!Array.isArray(raw) || raw.length === 0) {
-    return structuredClone(defaults);
+    return buildDefaultOppMappingThemes();
   }
 
-  const migrated: OppMappingThemeDef[] = raw
+  return raw
     .filter((t) => t && typeof t.id === "string" && t.id.trim() && t.id !== "usp")
     .map((t, i) => ({
       id: t.id.trim(),
       label: (t.label ?? t.id).trim() || t.id,
       active: t.active !== false,
       order: t.order ?? i + 1,
-    }));
-
-  const byId = new Map(migrated.map((t) => [t.id, t] as const));
-  for (const d of defaults) {
-    if (!byId.has(d.id)) {
-      const copy = structuredClone(d);
-      migrated.push(copy);
-      byId.set(d.id, copy);
-    } else {
-      const cur = byId.get(d.id)!;
-      // Préserver le libellé admin s’il a été personnalisé ; sinon seed.
-      if (!cur.label?.trim()) cur.label = d.label;
-      if (cur.active == null) cur.active = true;
-    }
-  }
-
-  return migrated.sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, "fr"));
+    }))
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, "fr"));
 }
 
 export function resolveThemeLabel(
@@ -83,7 +67,31 @@ type LibItem = {
   theme: OppMappingThemeId;
   label: string;
   order: number;
+  /** Carte toujours présente sur chaque opportunité. */
+  required?: boolean;
 };
+
+/**
+ * Socle SWOT d’usine — toujours injecté sur chaque deal.
+ * Modifiable ensuite dans Settings → Mapping (colonne Obligatoire).
+ */
+export const COMPELLING_EVENT_MAPPING_ID = "omap-sp-ce-identified";
+
+export const FACTORY_REQUIRED_MAPPING_IDS = new Set<string>([
+  // Forces
+  "omap-sp-stake-champion",
+  "omap-sp-need-clear",
+  "omap-sp-need-urgency",
+  COMPELLING_EVENT_MAPPING_ID,
+  // Faiblesses / questions critiques
+  "omap-ri-stake-real",
+  "omap-ri-bud-source",
+  "omap-ri-comp-who",
+  "omap-ri-need-pain",
+  // Menaces
+  "omap-th-comp-active",
+  "omap-th-delay",
+]);
 
 const LIB: LibItem[] = [
   // —— Opportunités : objectifs + initiatives client
@@ -135,8 +143,16 @@ const LIB: LibItem[] = [
   // 3. BESOIN — positifs
   { id: "omap-sp-need-clear", category: "signaux_positifs", theme: "besoin", label: "Problème clairement articulé par le client", order: 1 },
   { id: "omap-sp-need-urgency", category: "signaux_positifs", theme: "besoin", label: "Urgence / coût de l’inaction évident", order: 2 },
-  { id: "omap-sp-need-aligned", category: "signaux_positifs", theme: "besoin", label: "Solution alignée avec leurs priorités", order: 3 },
-  { id: "omap-sp-need-roi", category: "signaux_positifs", theme: "besoin", label: "ROI quantifiable pour eux", order: 4 },
+  {
+    id: COMPELLING_EVENT_MAPPING_ID,
+    category: "signaux_positifs",
+    theme: "urgence",
+    label: "Identification d’un compelling event",
+    order: 3,
+    required: true,
+  },
+  { id: "omap-sp-need-aligned", category: "signaux_positifs", theme: "besoin", label: "Solution alignée avec leurs priorités", order: 4 },
+  { id: "omap-sp-need-roi", category: "signaux_positifs", theme: "besoin", label: "ROI quantifiable pour eux", order: 5 },
   // 3. BESOIN — risques
   { id: "omap-ri-need-pain", category: "risques", theme: "besoin", label: "Le besoin est-il vraiment douloureux pour eux ?", order: 1 },
   { id: "omap-ri-need-hammer", category: "risques", theme: "besoin", label: "Ou c’est une solution en quête de problème ?", order: 2 },
@@ -222,7 +238,8 @@ export function buildDefaultOppMappingSubtypes(): OppMappingSubtypeDef[] {
     order: item.order,
     bonus: 1,
     malus: 1,
-    required: false,
+    required:
+      item.required === true || FACTORY_REQUIRED_MAPPING_IDS.has(item.id),
   }));
 }
 
@@ -232,16 +249,18 @@ function clampMappingWeight(raw: unknown, fallback = 1): number {
   return Math.min(10, Math.round(n * 100) / 100);
 }
 
-/** Migre anciennes catégories et fusionne les cartes manquantes de la librairie. */
+/** Normalise les cartes mapping ; catalogue d’usine si vide. */
 export function normalizeOppMappingSubtypes(
   raw: OppMappingSubtypeDef[] | undefined,
 ): OppMappingSubtypeDef[] {
-  const defaults = buildDefaultOppMappingSubtypes();
   if (!Array.isArray(raw) || raw.length === 0) {
-    return structuredClone(defaults);
+    return buildDefaultOppMappingSubtypes();
   }
 
-  const migrated: OppMappingSubtypeDef[] = raw.map((s, i) => {
+  // Catalogue jamais personnalisé sur « Obligatoire » → appliquer le socle d’usine.
+  const applyFactoryRequired = !raw.some((s) => s.required === true);
+
+  const list = raw.map((s, i) => {
     const category =
       (s.category as string) === "pressions"
         ? ("risques" as const)
@@ -251,8 +270,9 @@ export function normalizeOppMappingSubtypes(
             s.category === "initiatives"
           ? s.category
           : ("objectif" as const);
+    const id = s.id || `omap-${i + 1}`;
     return {
-      id: s.id || `omap-${i + 1}`,
+      id,
       category,
       label: s.label ?? "",
       theme: s.theme ?? "custom",
@@ -260,27 +280,29 @@ export function normalizeOppMappingSubtypes(
       order: s.order ?? i + 1,
       bonus: clampMappingWeight(s.bonus, 1),
       malus: clampMappingWeight(s.malus, 1),
-      required: s.required === true,
+      required:
+        s.required === true ||
+        id === COMPELLING_EVENT_MAPPING_ID ||
+        (applyFactoryRequired && FACTORY_REQUIRED_MAPPING_IDS.has(id)),
     };
   });
 
-  const byId = new Map(migrated.map((s) => [s.id, s] as const));
-  for (const d of defaults) {
-    if (!byId.has(d.id)) {
-      const copy = structuredClone(d);
-      migrated.push(copy);
-      byId.set(d.id, copy);
-    } else {
-      const cur = byId.get(d.id)!;
-      cur.category = d.category;
-      cur.label = d.label;
-      if (!cur.theme) cur.theme = d.theme ?? "custom";
-      if (cur.active !== false) cur.active = true;
-      if (cur.bonus == null) cur.bonus = 1;
-      if (cur.malus == null) cur.malus = 1;
-      if (cur.required == null) cur.required = false;
-    }
+  // Injecte les cartes d’usine manquantes (ex. CE obligatoire ajouté après coup).
+  const defaults = buildDefaultOppMappingSubtypes();
+  const have = new Set(list.map((s) => s.id));
+  for (const def of defaults) {
+    if (!FACTORY_REQUIRED_MAPPING_IDS.has(def.id) || have.has(def.id)) continue;
+    list.push({
+      id: def.id,
+      category: def.category,
+      label: def.label,
+      theme: def.theme ?? "custom",
+      active: def.active !== false,
+      order: def.order,
+      bonus: clampMappingWeight(def.bonus, 1),
+      malus: clampMappingWeight(def.malus, 1),
+      required: true,
+    });
   }
-
-  return migrated;
+  return list;
 }

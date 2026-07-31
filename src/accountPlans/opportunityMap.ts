@@ -11,7 +11,11 @@ import type { AccountPlan } from "./AccountPlanContext";
 
 export type OppMapCell = { amount: number; count: number };
 
-/** Won = CA facturé · Upsell / Renouvellement / Cross = pipeline ouvert par type. */
+/**
+ * Won = CA facturé ·
+ * Upsell / Renouvellement / Cross = opportunités ouvertes par type
+ * (y compris phase Whitespace ; hors Won / Lost).
+ */
 export type OppMapBucket = "won" | "up" | "renewal" | "cross";
 
 export type OppMapColumn = {
@@ -54,21 +58,17 @@ export type ProgressBar = {
 
 const emptyCell = (): OppMapCell => ({ amount: 0, count: 0 });
 
-function isOpenPhase(phase: string) {
-  return (
-    phase !== "Whitespace" &&
-    phase !== "Closed Won" &&
-    phase !== "Closed Lost"
-  );
-}
-
 function isWonPhase(phase: string) {
   return phase === "Closed Won";
 }
 
+function isLostPhase(phase: string) {
+  return phase === "Closed Lost";
+}
+
 /** Upsell · renouvellement · expansion (cross / nouveau groupe / prospect). */
 function pipelineBucket(kind: OpportunityKind): "up" | "renewal" | "cross" {
-  if (kind === "up") return "up";
+  if (kind === "up" || kind === "upsell") return "up";
   if (kind === "renewal") return "renewal";
   return "cross";
 }
@@ -92,9 +92,8 @@ function ensureProductCol(
 /**
  * Opportunity Map :
  * - Won = CA facturé (solutions vendues)
- * - Upsell = opportunités ouvertes kind=up
- * - Renouvellement = opportunités ouvertes kind=renewal
- * - Cross = opportunités ouvertes kind=cross / new_in_group / prospect
+ * - Upsell / Renouvellement / Cross = deals ouverts par nature
+ *   (Whitespace inclus — seule Won / Lost exclus)
  */
 export function buildOpportunityMap(input: {
   accountId: string;
@@ -161,11 +160,12 @@ export function buildOpportunityMap(input: {
   });
 
   for (const opp of scopeOpps) {
-    if (isWonPhase(opp.phase)) continue;
-    if (!isOpenPhase(opp.phase)) continue;
+    if (isWonPhase(opp.phase) || isLostPhase(opp.phase)) continue;
+
     const bucket = pipelineBucket(opp.kind);
     const target =
       bucket === "up" ? upBy : bucket === "renewal" ? renewalBy : crossBy;
+
     target._total.amount += opp.amount;
     target._total.count += 1;
     const sid = opp.solutionId;

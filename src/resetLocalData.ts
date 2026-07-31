@@ -1,7 +1,7 @@
 /** Clés métier DBR (localStorage / sessionStorage). */
 const POWERMAP_PREFIX = "powermap.";
 
-/** Incrémente pour forcer un nouveau wipe (une fois par navigateur). */
+/** Marker historique (anciens wipes one-shot). Ne plus incrémenter pour forcer un wipe. */
 export const LOCAL_RESET_VERSION = "fresh-2026-07-27b";
 
 const RESET_MARKER = "powermap._local_reset_version";
@@ -23,14 +23,14 @@ export function clearPowermapStorage() {
 }
 
 /**
- * Efface toutes les données locales si la version de reset a changé.
- * Au prochain chargement, l’app repart sur les seeds / config par défaut.
+ * Ancien wipe one-shot (démos). Désactivé : on pose seulement le marker
+ * pour ne plus jamais effacer le cache CRM au démarrage.
  */
 export function applyLocalResetIfNeeded() {
   try {
-    if (localStorage.getItem(RESET_MARKER) === LOCAL_RESET_VERSION) return;
-    clearPowermapStorage();
-    localStorage.setItem(RESET_MARKER, LOCAL_RESET_VERSION);
+    if (!localStorage.getItem(RESET_MARKER)) {
+      localStorage.setItem(RESET_MARKER, LOCAL_RESET_VERSION);
+    }
   } catch {
     /* ignore quota / private mode */
   }

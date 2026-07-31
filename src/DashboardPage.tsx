@@ -15,10 +15,10 @@ import DashboardRiskMatrix, {
 } from "./DashboardRiskMatrix";
 import {
   useOpportunities,
-  opportunityKindLabel,
   type Opportunity,
 } from "./opportunities/OpportunityContext";
 import { computeProcessProgress } from "./opportunities/salesProcess";
+import { openOpportunityDetail } from "./opportunities/oppNavigation";
 import {
   computeMappingScorecard,
   mappingWeightsFromSubtypes,
@@ -87,8 +87,14 @@ export default function DashboardPage({
   const [zoneFilter, setZoneFilter] = useState<DealZone | null>(null);
 
   function openOpportunity(id: string, oppTab?: string) {
-    sessionStorage.setItem("powermap.openOppDetail", id);
-    if (oppTab) sessionStorage.setItem("powermap.openOppTab", oppTab);
+    openOpportunityDetail(id, { type: "dashboard" });
+    if (oppTab) {
+      try {
+        sessionStorage.setItem("powermap.openOppTab", oppTab);
+      } catch {
+        /* ignore */
+      }
+    }
     setActiveOpportunityId(id);
     onNavigate("opportunites");
   }
@@ -305,49 +311,6 @@ export default function DashboardPage({
               </em>
             </button>
           </section>
-
-          {renewalOpps.length > 0 && (
-            <section
-              className="dash-renewal-cards"
-              aria-label="Opportunités renouvellement"
-            >
-              <header className="dash-renewal-head">
-                <h2>Renouvellements</h2>
-                <p className="muted">
-                  {PERIOD_LABEL[period]} · {renewalOpps.length} opportunité
-                  {renewalOpps.length > 1 ? "s" : ""}
-                </p>
-              </header>
-              <ul className="dash-renewal-list">
-                {renewalOpps
-                  .slice()
-                  .sort((a, b) => (b.amount || 0) - (a.amount || 0))
-                  .map((o) => {
-                    const account =
-                      activeAccounts.find((a) => a.id === o.primaryAccountId)
-                        ?.name ?? o.primaryAccountId;
-                    return (
-                      <li key={o.id}>
-                        <button
-                          type="button"
-                          className="dash-renewal-card"
-                          onClick={() => openOpportunity(o.id)}
-                        >
-                          <span className="dash-renewal-kind">
-                            {opportunityKindLabel.renewal}
-                          </span>
-                          <strong>{o.name}</strong>
-                          <span className="dash-renewal-meta">
-                            {account} · {o.phase}
-                          </span>
-                          <em>{formatEur(o.amount || 0)}</em>
-                        </button>
-                      </li>
-                    );
-                  })}
-              </ul>
-            </section>
-          )}
 
           <DashboardRiskMatrix
             onOpenOpportunity={(id) => openOpportunity(id, "process")}

@@ -16,7 +16,6 @@ import {
   migrateAccountSize,
   wouldCreateReportsToCycle,
   type Account,
-  type AccountResearchBrief,
   type AccountType,
   type CommercialStatus,
   type CompanyRelation,
@@ -27,12 +26,23 @@ import {
   type Status,
 } from "../data";
 import { useAuth } from "../auth/AuthContext";
+import { accountVisibleToUser } from "../auth/permissions";
 import { supabase } from "../supabase/client";
 import {
   loadOrgAccountsContacts,
+  loadOrgLayoutPositions,
+  loadOrgRelations,
   logSyncError,
+  deleteCompanyRelationRemote,
+  deleteContactRelationRemote,
+  pushDomainUiStateRemote,
+  replaceContactReportsToRemote,
   upsertAccountRemote,
   upsertAccountsRemote,
+  upsertCompanyRelationRemote,
+  upsertCompanyRelationsRemote,
+  upsertContactRelationRemote,
+  upsertContactRelationsRemote,
   upsertContactRemote,
   upsertContactsRemote,
 } from "../sync";
@@ -45,7 +55,7 @@ type DomainState = {
   contacts: Contact[];
   companyRelations: CompanyRelation[];
   contactRelations: ContactRelation[];
-  /** Positions manuelles des nœuds sans x/y métier (ex. directions). */
+  /** Positions manuelles des nœuds sans x/y métier (ex. personae). */
   layoutPositions: Record<string, { x: number; y: number }>;
 };
 
@@ -67,90 +77,6 @@ function normalizeLayoutPositions(
     out[id] = { x, y };
   }
   return out;
-}
-
-function normalizeResearchBrief(
-  raw: Account["researchBrief"],
-): AccountResearchBrief | null {
-  if (!raw || typeof raw !== "object") return null;
-  const clamp = (n: unknown) => {
-    const v = typeof n === "number" ? n : Number(n);
-    if (!Number.isFinite(v)) return 0;
-    return Math.max(0, Math.min(100, Math.round(v)));
-  };
-  const press = (
-    list: unknown,
-    sentiment: "positive" | "negative",
-  ): AccountResearchBrief["positivePress"] => {
-    if (!Array.isArray(list)) return [];
-    return list
-      .map((item) => {
-        if (!item || typeof item !== "object") return null;
-        const o = item as Record<string, unknown>;
-        const title = String(o.title ?? "").trim();
-        const summary = String(o.summary ?? "").trim();
-        if (!title && !summary) return null;
-        return {
-          title: title || "Sans titre",
-          summary,
-          sentiment,
-          relevance: clamp(o.relevance),
-          url: o.url ? String(o.url) : undefined,
-          date: o.date ? String(o.date) : undefined,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => Boolean(x));
-  };
-  return {
-    updatedAt: raw.updatedAt || "",
-    querySummary: raw.querySummary || "",
-    content: raw.content || "",
-    citations: Array.isArray(raw.citations)
-      ? raw.citations
-          .filter((c) => c && typeof c.url === "string" && c.url)
-          .map((c) => ({
-            url: c.url,
-            ...(c.title ? { title: c.title } : {}),
-          }))
-      : [],
-    criteriaIds: Array.isArray(raw.criteriaIds)
-      ? raw.criteriaIds.map(String)
-      : [],
-    relevanceScore:
-      raw.relevanceScore == null ? null : clamp(raw.relevanceScore),
-    positivePress: press(raw.positivePress, "positive"),
-    negativePress: press(raw.negativePress, "negative"),
-    matchedCompellingEventIds: Array.isArray(raw.matchedCompellingEventIds)
-      ? raw.matchedCompellingEventIds.map(String)
-      : [],
-    suggestedPersonas: Array.isArray(raw.suggestedPersonas)
-      ? raw.suggestedPersonas
-          .map((item) => {
-            if (!item || typeof item !== "object") return null;
-            const o = item as Record<string, unknown>;
-            const name = String(o.name ?? "").trim();
-            if (!name) return null;
-            return {
-              name,
-              title: String(o.title ?? "").trim() || "Sans titre",
-              suggestedRoleId: o.suggestedRoleId
-                ? String(o.suggestedRoleId)
-                : undefined,
-              suggestedRoleLabel: o.suggestedRoleLabel
-                ? String(o.suggestedRoleLabel)
-                : undefined,
-              directionHint: o.directionHint
-                ? String(o.directionHint)
-                : undefined,
-              whyRelevant: o.whyRelevant ? String(o.whyRelevant) : undefined,
-              sourceHint: o.sourceHint ? String(o.sourceHint) : undefined,
-              confidence:
-                o.confidence == null ? undefined : clamp(o.confidence),
-            };
-          })
-          .filter((x): x is NonNullable<typeof x> => Boolean(x))
-      : [],
-  };
 }
 
 function migrateCommercialStatus(status: string): CommercialStatus {
@@ -212,7 +138,6 @@ function loadLocal(): DomainState {
         commercialStatus: migrateCommercialStatus(a.commercialStatus),
         sector: a.sector ?? seed?.sector,
         size: migrateAccountSize(a.size) ?? migrateAccountSize(seed?.size),
-        researchBrief: normalizeResearchBrief(a.researchBrief),
       };
     });
     const loadedIds = new Set(loadedAccounts.map((a) => a.id));
@@ -231,10 +156,11 @@ function loadLocal(): DomainState {
           influence?: unknown;
           role?: unknown;
         };
+        const legacy = raw as Contact & { directionId?: string };
         return {
           id: raw.id,
           accountId: raw.accountId,
-          directionId: raw.directionId,
+          personaId: raw.personaId ?? legacy.directionId ?? "",
           name: raw.name,
           title: raw.title,
           x: raw.x,
@@ -304,13 +230,13 @@ function accountPosition(
 }
 
 function contactPosition(
-  directionId: string,
+  personaId: string,
   accountId: string,
   existing: Contact[],
   accounts: Account[],
 ) {
   const siblings = existing.filter(
-    (c) => c.directionId === directionId && c.active,
+    (c) => c.personaId === personaId && c.active,
   );
   const account = accounts.find((a) => a.id === accountId);
   return {
@@ -380,15 +306,21 @@ type DomainContextValue = {
       holdingId: string | null;
       sector?: string;
       size?: Account["size"];
+      ownerProfileId?: string | null;
     }>;
     contacts: Array<{
       action: "create" | "update";
       id?: string;
       name: string;
+      firstName?: string;
+      lastName?: string;
       title: string;
+      email?: string;
+      phone?: string;
       accountKey: string;
       accountId: string;
-      directionId: string;
+      personaId: string;
+      ownerProfileId?: string | null;
     }>;
   }) => { keyToAccountId: Record<string, string>; createdAccounts: number; updatedAccounts: number; createdContacts: number; updatedContacts: number };
   resetDomain: () => void;
@@ -397,11 +329,22 @@ type DomainContextValue = {
 const DomainContext = createContext<DomainContextValue | null>(null);
 
 export function DomainProvider({ children }: { children: ReactNode }) {
-  const { profile, loading: authLoading } = useAuth();
+  const {
+    profile,
+    loading: authLoading,
+    canWriteDomain,
+    canViewAllAccounts,
+    billing,
+  } = useAuth();
   const orgId = profile?.organization_id ?? null;
   const remoteEnabled = Boolean(supabase && orgId);
   const orgIdRef = useRef<string | null>(orgId);
   orgIdRef.current = orgId;
+  const writeAllowedRef = useRef(true);
+  writeAllowedRef.current = canWriteDomain && billing.canWrite;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const layoutPushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [state, setState] = useState<DomainState>(() => emptyDomainState());
 
@@ -415,32 +358,73 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        const { accounts, contacts } = await loadOrgAccountsContacts(orgId);
+        const [{ accounts, contacts }, relations, layoutPositions] =
+          await Promise.all([
+            loadOrgAccountsContacts(orgId),
+            loadOrgRelations(orgId),
+            loadOrgLayoutPositions(orgId),
+          ]);
         if (cancelled) return;
-        setState((prev) => {
-          const next: DomainState = {
-            ...prev,
-            accounts,
-            contacts,
-            companyRelations: prev.companyRelations.length
-              ? prev.companyRelations
-              : [],
-            contactRelations: prev.contactRelations.length
-              ? prev.contactRelations
-              : [],
-          };
-          persistLocal(next);
-          return next;
-        });
+
+        const local = loadLocal();
+        let nextAccounts = accounts;
+        let nextContacts = contacts;
+        let companyRelations = relations.companyRelations;
+        let contactRelations = relations.contactRelations;
+        let layout = layoutPositions;
+
+        // Première synchro : pousser le cache local si le cloud est vide.
+        if (nextAccounts.length === 0 && local.accounts.length > 0) {
+          nextAccounts = local.accounts;
+          void upsertAccountsRemote(orgId, nextAccounts).catch((err) =>
+            logSyncError("seedAccounts", err),
+          );
+        }
+        if (nextContacts.length === 0 && local.contacts.length > 0) {
+          nextContacts = local.contacts;
+          void upsertContactsRemote(orgId, nextContacts).catch((err) =>
+            logSyncError("seedContacts", err),
+          );
+        }
+        if (
+          companyRelations.length === 0 &&
+          local.companyRelations.length > 0
+        ) {
+          companyRelations = local.companyRelations;
+          void upsertCompanyRelationsRemote(orgId, companyRelations).catch(
+            (err) => logSyncError("seedCompanyRelations", err),
+          );
+        }
+        if (
+          contactRelations.length === 0 &&
+          local.contactRelations.length > 0
+        ) {
+          contactRelations = local.contactRelations;
+          void upsertContactRelationsRemote(orgId, contactRelations).catch(
+            (err) => logSyncError("seedContactRelations", err),
+          );
+        }
+        if (
+          Object.keys(layout).length === 0 &&
+          Object.keys(local.layoutPositions).length > 0
+        ) {
+          layout = local.layoutPositions;
+          pushDomainUiStateRemote(orgId, layout);
+        }
+
+        const next: DomainState = {
+          accounts: nextAccounts,
+          contacts: nextContacts,
+          companyRelations,
+          contactRelations,
+          layoutPositions: layout,
+        };
+        persistLocal(next);
+        setState(next);
       } catch (err) {
         logSyncError("loadDomain", err);
-        if (!cancelled) {
-          setState((prev) => {
-            const next = { ...prev, accounts: [], contacts: [] };
-            persistLocal(next);
-            return next;
-          });
-        }
+        // Ne jamais vider comptes / contacts sur erreur de sync : garder le cache local.
+        if (!cancelled) setState(loadLocal());
       }
     })();
 
@@ -465,19 +449,72 @@ export function DomainProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const pushCompanyRelation = useCallback((relation: CompanyRelation) => {
+    const id = orgIdRef.current;
+    if (!id || !supabase) return;
+    void upsertCompanyRelationRemote(id, relation).catch((err) =>
+      logSyncError("upsertCompanyRelation", err),
+    );
+  }, []);
+
+  const pushDeleteCompanyRelation = useCallback((relationId: string) => {
+    const id = orgIdRef.current;
+    if (!id || !supabase) return;
+    void deleteCompanyRelationRemote(id, relationId).catch((err) =>
+      logSyncError("deleteCompanyRelation", err),
+    );
+  }, []);
+
+  const pushContactRelation = useCallback((relation: ContactRelation) => {
+    const id = orgIdRef.current;
+    if (!id || !supabase) return;
+    void upsertContactRelationRemote(id, relation).catch((err) =>
+      logSyncError("upsertContactRelation", err),
+    );
+  }, []);
+
+  const pushDeleteContactRelation = useCallback((relationId: string) => {
+    const id = orgIdRef.current;
+    if (!id || !supabase) return;
+    void deleteContactRelationRemote(id, relationId).catch((err) =>
+      logSyncError("deleteContactRelation", err),
+    );
+  }, []);
+
+  const scheduleLayoutPush = useCallback(
+    (layoutPositions: Record<string, { x: number; y: number }>) => {
+      const id = orgIdRef.current;
+      if (!id || !supabase) return;
+      if (layoutPushTimerRef.current) clearTimeout(layoutPushTimerRef.current);
+      layoutPushTimerRef.current = setTimeout(() => {
+        pushDomainUiStateRemote(id, layoutPositions);
+      }, 400);
+    },
+    [],
+  );
+
   const commit = useCallback((next: DomainState) => {
     setState(next);
     persistLocal(next);
   }, []);
 
-  const activeAccounts = useMemo(
-    () => state.accounts.filter((a) => a.active),
-    [state.accounts],
-  );
-  const activeContacts = useMemo(
-    () => state.contacts.filter((c) => c.active),
-    [state.contacts],
-  );
+  const activeAccounts = useMemo(() => {
+    const active = state.accounts.filter((a) => a.active);
+    if (canViewAllAccounts) return active;
+    return active.filter((a) =>
+      accountVisibleToUser(a, {
+        userId: profile?.id,
+        role: profile?.role,
+      }),
+    );
+  }, [state.accounts, canViewAllAccounts, profile?.id, profile?.role]);
+
+  const activeContacts = useMemo(() => {
+    const active = state.contacts.filter((c) => c.active);
+    if (canViewAllAccounts) return active;
+    const visibleAccountIds = new Set(activeAccounts.map((a) => a.id));
+    return active.filter((c) => visibleAccountIds.has(c.accountId));
+  }, [state.contacts, canViewAllAccounts, activeAccounts]);
 
   const upsertAccount = useCallback(
     (
@@ -488,11 +525,39 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         active?: boolean;
       },
     ): string => {
+      if (!writeAllowedRef.current) return input.id ?? "";
+      const me = profileRef.current;
       let resultId = input.id ?? "";
       let synced: Account | null = null;
+      let cascadedContacts: Contact[] = [];
       setState((prev) => {
         if (input.id) {
+          const existing = prev.accounts.find((a) => a.id === input.id);
+          if (
+            me?.role === "user" &&
+            existing &&
+            existing.ownerProfileId &&
+            existing.ownerProfileId !== me.id
+          ) {
+            resultId = input.id;
+            return prev;
+          }
           resultId = input.id;
+          const nextOwner =
+            input.ownerProfileId !== undefined
+              ? input.ownerProfileId
+              : existing?.ownerProfileId;
+          // Commercial : ne peut pas réassigner l’owner
+          const ownerProfileId =
+            me?.role === "user"
+              ? (existing?.ownerProfileId ?? me.id)
+              : nextOwner;
+          const prevOwner = existing?.ownerProfileId ?? null;
+          const resolvedOwner =
+            ownerProfileId !== undefined ? ownerProfileId : prevOwner;
+          const ownerChanged =
+            input.ownerProfileId !== undefined &&
+            (resolvedOwner ?? null) !== (prevOwner ?? null);
           const nextAccounts = prev.accounts.map((a) =>
             a.id === input.id
               ? {
@@ -507,15 +572,27 @@ export function DomainProvider({ children }: { children: ReactNode }) {
                   active: input.active ?? a.active,
                   x: input.x ?? a.x,
                   y: input.y ?? a.y,
-                  researchBrief:
-                    input.researchBrief !== undefined
-                      ? input.researchBrief
-                      : a.researchBrief,
+                  ownerProfileId: resolvedOwner,
                 }
               : a,
           );
+          let nextContacts = prev.contacts;
+          if (ownerChanged) {
+            nextContacts = prev.contacts.map((c) =>
+              c.accountId === input.id
+                ? { ...c, ownerProfileId: resolvedOwner ?? null }
+                : c,
+            );
+            cascadedContacts = nextContacts.filter(
+              (c) => c.accountId === input.id,
+            );
+          }
           synced = nextAccounts.find((a) => a.id === input.id) ?? null;
-          const next = { ...prev, accounts: nextAccounts };
+          const next = {
+            ...prev,
+            accounts: nextAccounts,
+            contacts: nextContacts,
+          };
           persistLocal(next);
           return next;
         }
@@ -535,6 +612,9 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           x: input.x ?? pos.x,
           y: input.y ?? pos.y,
           active: true,
+          ownerProfileId:
+            input.ownerProfileId ??
+            (me?.role === "user" ? me.id : null),
         };
         resultId = account.id;
         synced = account;
@@ -543,6 +623,14 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         return next;
       });
       if (synced) pushAccount(synced);
+      if (cascadedContacts.length > 0) {
+        const id = orgIdRef.current;
+        if (id && supabase) {
+          void upsertContactsRemote(id, cascadedContacts).catch((err) =>
+            logSyncError("cascadeOwnerContacts", err),
+          );
+        }
+      }
       return resultId;
     },
     [pushAccount],
@@ -619,7 +707,11 @@ export function DomainProvider({ children }: { children: ReactNode }) {
                       ? input.lastName
                       : c.lastName,
                   accountId: input.accountId,
-                  directionId: input.directionId,
+                  personaId: input.personaId,
+                  ownerProfileId:
+                    input.ownerProfileId !== undefined
+                      ? input.ownerProfileId
+                      : c.ownerProfileId,
                   active: input.active ?? c.active,
                   x: input.x ?? c.x,
                   y: input.y ?? c.y,
@@ -631,8 +723,9 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           persistLocal(next);
           return next;
         }
+        const account = prev.accounts.find((a) => a.id === input.accountId);
         const pos = contactPosition(
-          input.directionId,
+          input.personaId,
           input.accountId,
           prev.contacts,
           prev.accounts,
@@ -646,7 +739,11 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           firstName: input.firstName ?? null,
           lastName: input.lastName ?? null,
           accountId: input.accountId,
-          directionId: input.directionId,
+          personaId: input.personaId,
+          ownerProfileId:
+            input.ownerProfileId !== undefined
+              ? input.ownerProfileId
+              : (account?.ownerProfileId ?? null),
           x: input.x ?? pos.x,
           y: input.y ?? pos.y,
           active: true,
@@ -700,21 +797,21 @@ export function DomainProvider({ children }: { children: ReactNode }) {
   const upsertCompanyRelation = useCallback(
     (input: Omit<CompanyRelation, "id"> & { id?: string }) => {
       if (input.source === input.target) return;
+      let synced: CompanyRelation | null = null;
       setState((prev) => {
         if (input.id) {
-          const next = {
-            ...prev,
-            companyRelations: prev.companyRelations.map((r) =>
-              r.id === input.id
-                ? {
-                    ...r,
-                    source: input.source,
-                    target: input.target,
-                    relation: input.relation,
-                  }
-                : r,
-            ),
-          };
+          const nextRels = prev.companyRelations.map((r) =>
+            r.id === input.id
+              ? {
+                  ...r,
+                  source: input.source,
+                  target: input.target,
+                  relation: input.relation,
+                }
+              : r,
+          );
+          synced = nextRels.find((r) => r.id === input.id) ?? null;
+          const next = { ...prev, companyRelations: nextRels };
           persistLocal(next);
           return next;
         }
@@ -724,6 +821,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           target: input.target,
           relation: input.relation,
         };
+        synced = rel;
         const next = {
           ...prev,
           companyRelations: [...prev.companyRelations, rel],
@@ -731,66 +829,65 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         persistLocal(next);
         return next;
       });
+      if (synced) pushCompanyRelation(synced);
     },
-    [],
+    [pushCompanyRelation],
   );
 
-  const removeCompanyRelation = useCallback((id: string) => {
-    setState((prev) => {
-      const next = {
-        ...prev,
-        companyRelations: prev.companyRelations.filter((r) => r.id !== id),
-      };
-      persistLocal(next);
-      return next;
-    });
-  }, []);
+  const removeCompanyRelation = useCallback(
+    (id: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          companyRelations: prev.companyRelations.filter((r) => r.id !== id),
+        };
+        persistLocal(next);
+        return next;
+      });
+      pushDeleteCompanyRelation(id);
+    },
+    [pushDeleteCompanyRelation],
+  );
 
   const upsertContactRelation = useCallback(
     (input: Omit<ContactRelation, "id"> & { id?: string }) => {
       if (input.source === input.target) return;
+      let synced: ContactRelation | null = null;
+      let removedIds: string[] = [];
       setState((prev) => {
         let relations = prev.contactRelations;
         if (input.relation === "ReportsTo") {
-          const base = relations.filter(
-            (r) =>
-              !(r.relation === "ReportsTo" && r.source === input.source) &&
-              r.id !== input.id,
-          );
-          if (wouldCreateReportsToCycle(input.source, input.target, base)) {
+          removedIds = [];
+          const base = relations.filter((r) => {
+            if (r.id === input.id) return true;
+            if (r.relation === "ReportsTo" && r.source === input.source) {
+              removedIds.push(r.id);
+              return false;
+            }
+            return true;
+          });
+          const withoutSelf = base.filter((r) => r.id !== input.id);
+          if (
+            wouldCreateReportsToCycle(input.source, input.target, withoutSelf)
+          ) {
+            removedIds = [];
             return prev;
           }
-          relations = base;
+          relations = withoutSelf;
         }
         if (input.id) {
-          const next = {
-            ...prev,
-            contactRelations: relations.map((r) =>
-              r.id === input.id
-                ? {
-                    ...r,
-                    source: input.source,
-                    target: input.target,
-                    relation: input.relation,
-                  }
-                : r,
-            ),
+          const updated: ContactRelation = {
+            id: input.id,
+            source: input.source,
+            target: input.target,
+            relation: input.relation,
           };
-          // si l'id n'était plus dans relations (ReportsTo remplacé), réajouter
-          if (
-            input.relation === "ReportsTo" &&
-            !next.contactRelations.some((r) => r.id === input.id)
-          ) {
-            next.contactRelations = [
-              ...next.contactRelations,
-              {
-                id: input.id,
-                source: input.source,
-                target: input.target,
-                relation: input.relation,
-              },
-            ];
-          }
+          const hasId = relations.some((r) => r.id === input.id);
+          const nextRels = hasId
+            ? relations.map((r) => (r.id === input.id ? updated : r))
+            : [...relations, updated];
+          synced = updated;
+          const next = { ...prev, contactRelations: nextRels };
           persistLocal(next);
           return next;
         }
@@ -800,6 +897,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           target: input.target,
           relation: input.relation,
         };
+        synced = rel;
         const next = {
           ...prev,
           contactRelations: [...relations, rel],
@@ -807,24 +905,31 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         persistLocal(next);
         return next;
       });
+      for (const rid of removedIds) pushDeleteContactRelation(rid);
+      if (synced) pushContactRelation(synced);
     },
-    [],
+    [pushContactRelation, pushDeleteContactRelation],
   );
 
-  const removeContactRelation = useCallback((id: string) => {
-    setState((prev) => {
-      const next = {
-        ...prev,
-        contactRelations: prev.contactRelations.filter((r) => r.id !== id),
-      };
-      persistLocal(next);
-      return next;
-    });
-  }, []);
+  const removeContactRelation = useCallback(
+    (id: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          contactRelations: prev.contactRelations.filter((r) => r.id !== id),
+        };
+        persistLocal(next);
+        return next;
+      });
+      pushDeleteContactRelation(id);
+    },
+    [pushDeleteContactRelation],
+  );
 
   const setContactParent = useCallback(
     (childId: string, parentId: string | null): boolean => {
       let ok = true;
+      let synced: ContactRelation | null = null;
       setState((prev) => {
         const without = prev.contactRelations.filter(
           (r) => !(r.relation === "ReportsTo" && r.source === childId),
@@ -842,7 +947,9 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           ok = false;
           return prev;
         }
-        if (!prev.contacts.some((c) => c.id === parentId && c.active !== false)) {
+        if (
+          !prev.contacts.some((c) => c.id === parentId && c.active !== false)
+        ) {
           ok = false;
           return prev;
         }
@@ -852,6 +959,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           target: parentId,
           relation: "ReportsTo",
         };
+        synced = rel;
         const next = {
           ...prev,
           contactRelations: [...without, rel],
@@ -859,6 +967,14 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         persistLocal(next);
         return next;
       });
+      if (ok) {
+        const id = orgIdRef.current;
+        if (id && supabase) {
+          void replaceContactReportsToRemote(id, childId, synced).catch((err) =>
+            logSyncError("replaceContactReportsTo", err),
+          );
+        }
+      }
       return ok;
     },
     [],
@@ -904,6 +1020,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
     (id: string, x: number, y: number) => {
       let syncedAccount: Account | null = null;
       let syncedContact: Contact | null = null;
+      let layoutToPush: Record<string, { x: number; y: number }> | null = null;
       setState((prev) => {
         if (prev.accounts.some((a) => a.id === id)) {
           const nextAccounts = prev.accounts.map((a) =>
@@ -927,13 +1044,15 @@ export function DomainProvider({ children }: { children: ReactNode }) {
           ...prev,
           layoutPositions: { ...prev.layoutPositions, [id]: { x, y } },
         };
+        layoutToPush = next.layoutPositions;
         persistLocal(next);
         return next;
       });
       if (syncedAccount) pushAccount(syncedAccount);
       if (syncedContact) pushContact(syncedContact);
+      if (layoutToPush) scheduleLayoutPush(layoutToPush);
     },
-    [pushAccount, pushContact],
+    [pushAccount, pushContact, scheduleLayoutPush],
   );
 
   const importDomainBatch = useCallback(
@@ -949,16 +1068,22 @@ export function DomainProvider({ children }: { children: ReactNode }) {
         holdingId: string | null;
         sector?: string;
         size?: Account["size"];
+        ownerProfileId?: string | null;
       }>;
       contacts: Array<{
         action: "create" | "update";
         id?: string;
         externalKey?: string;
         name: string;
+        firstName?: string;
+        lastName?: string;
         title: string;
+        email?: string;
+        phone?: string;
         accountKey: string;
         accountId: string;
-        directionId: string;
+        personaId: string;
+        ownerProfileId?: string | null;
       }>;
     }) => {
       const keyToAccountId: Record<string, string> = {};
@@ -1036,6 +1161,10 @@ export function DomainProvider({ children }: { children: ReactNode }) {
                     holdingId: null,
                     sector: row.sector,
                     size: row.size,
+                    ownerProfileId:
+                      row.ownerProfileId !== undefined
+                        ? row.ownerProfileId
+                        : a.ownerProfileId,
                     active: true,
                   }
                 : a,
@@ -1051,6 +1180,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
               holdingId: null,
               sector: row.sector,
               size: row.size,
+              ownerProfileId: row.ownerProfileId ?? null,
               x: pos.x,
               y: pos.y,
               active: true,
@@ -1074,6 +1204,10 @@ export function DomainProvider({ children }: { children: ReactNode }) {
                     holdingId,
                     sector: row.sector,
                     size: row.size,
+                    ownerProfileId:
+                      row.ownerProfileId !== undefined
+                        ? row.ownerProfileId
+                        : a.ownerProfileId,
                     active: true,
                   }
                 : a,
@@ -1089,6 +1223,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
               holdingId,
               sector: row.sector,
               size: row.size,
+              ownerProfileId: row.ownerProfileId ?? null,
               x: pos.x,
               y: pos.y,
               active: true,
@@ -1132,9 +1267,17 @@ export function DomainProvider({ children }: { children: ReactNode }) {
                 ? {
                     ...c,
                     name: row.name.trim(),
+                    firstName: row.firstName ?? c.firstName,
+                    lastName: row.lastName ?? c.lastName,
                     title: row.title.trim(),
+                    email: row.email ?? c.email,
+                    phone: row.phone ?? c.phone,
                     accountId,
-                    directionId: row.directionId,
+                    personaId: row.personaId,
+                    ownerProfileId:
+                      row.ownerProfileId !== undefined
+                        ? row.ownerProfileId
+                        : c.ownerProfileId,
                     active: true,
                   }
                 : c,
@@ -1142,7 +1285,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
             updatedContacts++;
           } else {
             const pos = contactPosition(
-              row.directionId,
+              row.personaId,
               accountId,
               contacts,
               accounts,
@@ -1150,9 +1293,14 @@ export function DomainProvider({ children }: { children: ReactNode }) {
             contacts.push({
               id: row.resolvedId,
               name: row.name.trim(),
+              firstName: row.firstName,
+              lastName: row.lastName,
               title: row.title.trim(),
+              email: row.email,
+              phone: row.phone,
               accountId,
-              directionId: row.directionId,
+              personaId: row.personaId,
+              ownerProfileId: row.ownerProfileId ?? null,
               x: pos.x,
               y: pos.y,
               active: true,

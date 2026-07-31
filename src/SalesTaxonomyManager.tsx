@@ -6,32 +6,72 @@ import type {
   OppKindDef,
   OppKindTargetMode,
   OppPhaseDef,
-  OppPhaseKpiRole,
 } from "./config/types";
+import { isBuiltInOppPhaseId } from "./config/types";
 
-const PHASE_ROLES: { id: OppPhaseKpiRole; label: string }[] = [
-  { id: "whitespace", label: "Whitespace (cible)" },
-  { id: "pipeline", label: "Pipeline (cible)" },
-  { id: "won", label: "Won (CA installé)" },
-  { id: "lost", label: "Lost (hors KPI)" },
+const KIND_MODES: {
+  id: OppKindTargetMode;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    id: "by_phase",
+    label: "Suit la phase",
+    hint: "Le montant suit Whitespace / étapes / Won selon la phase du deal",
+  },
+  {
+    id: "renewal",
+    label: "Renouvellement",
+    hint: "Compte dans le bucket Renouvellement de la cible (tant que le deal est ouvert)",
+  },
+  {
+    id: "none",
+    label: "Hors cible",
+    hint: "N’entre jamais dans la cible Dashboard (ex. deal interne)",
+  },
 ];
 
-const KIND_MODES: { id: OppKindTargetMode; label: string }[] = [
-  { id: "by_phase", label: "Selon la phase" },
-  { id: "renewal", label: "Bucket renouvellement" },
-  { id: "none", label: "Hors cible" },
+function kindModeLabel(mode: OppKindTargetMode | string): string {
+  return KIND_MODES.find((m) => m.id === mode)?.label ?? mode;
+}
+
+function phaseKindBadge(p: OppPhaseDef): string {
+  if (p.kpiRole === "whitespace") return "Whitespace · 1ʳᵉ étape";
+  if (p.kpiRole === "won") return "Won · CA installé";
+  if (p.kpiRole === "lost") return "Lost · hors KPI";
+  return "Étape du funnel";
+}
+
+export type SalesTaxonomySection =
+  | "kpi"
+  | "phases"
+  | "kinds"
+  | "statuses"
+  | "sizes";
+
+const ALL_SECTIONS: SalesTaxonomySection[] = [
+  "kpi",
+  "phases",
+  "kinds",
+  "statuses",
+  "sizes",
 ];
 
 export default function SalesTaxonomyManager({
   showInactive,
+  sections = ALL_SECTIONS,
 }: {
   showInactive: boolean;
+  /** Sous-sections à afficher (défaut : toutes). */
+  sections?: SalesTaxonomySection[];
 }) {
+  const show = (s: SalesTaxonomySection) => sections.includes(s);
   const {
     config,
     addOppPhase,
     updateOppPhase,
     removeOppPhase,
+    moveOppPhase,
     addOppKind,
     updateOppKind,
     removeOppKind,
@@ -76,7 +116,6 @@ export default function SalesTaxonomyManager({
   );
 
   const [phaseLabel, setPhaseLabel] = useState("");
-  const [phaseRole, setPhaseRole] = useState<OppPhaseKpiRole>("pipeline");
   const [editingPhase, setEditingPhase] = useState<string | null>(null);
 
   const [kindLabel, setKindLabel] = useState("");
@@ -94,23 +133,23 @@ export default function SalesTaxonomyManager({
     e.preventDefault();
     if (!phaseLabel.trim()) return;
     if (editingPhase) {
-      updateOppPhase(editingPhase, {
-        label: phaseLabel.trim(),
-        kpiRole: phaseRole,
-      });
+      updateOppPhase(editingPhase, { label: phaseLabel.trim() });
     } else {
-      addOppPhase(phaseLabel, phaseRole);
+      addOppPhase(phaseLabel);
     }
     setEditingPhase(null);
     setPhaseLabel("");
-    setPhaseRole("pipeline");
   };
 
   const startEditPhase = (p: OppPhaseDef) => {
     setEditingPhase(p.id);
     setPhaseLabel(p.label);
-    setPhaseRole(p.kpiRole);
   };
+
+  const customPhases = useMemo(
+    () => phases.filter((p) => !isBuiltInOppPhaseId(p.id)),
+    [phases],
+  );
 
   const submitKind = (e: FormEvent) => {
     e.preventDefault();
@@ -172,6 +211,7 @@ export default function SalesTaxonomyManager({
 
   return (
     <div className="sales-taxonomy-manager">
+      {show("kpi") && (
       <section className="settings-block">
         <h3>Règles KPI</h3>
         <p className="muted">
@@ -227,7 +267,7 @@ export default function SalesTaxonomyManager({
                 updateKpiRules({ includePipelineInTarget: e.target.checked })
               }
             />
-            Cible : Pipeline
+            Cible : étapes en cours (hors Whitespace / Won / Lost)
           </label>
           <label>
             <input
@@ -241,30 +281,23 @@ export default function SalesTaxonomyManager({
           </label>
         </div>
       </section>
+      )}
 
+      {show("phases") && (
       <section className="settings-block">
         <h3>Phases d’opportunité</h3>
         <p className="muted">
-          L’id reste stable (ex. Whitespace) — utilisé-le pour les données
-          existantes. Le rôle KPI pilote les buckets.
+          Funnel pipeline (Discovery, Proposal…). Ajouter une phase crée aussi
+          un domaine Process vide du même nom. Whitespace, Won et Lost sont les
+          ancres KPI — les étapes du milieu sont réordonnables (▲ ▼).
         </p>
         <form className="settings-add" onSubmit={submitPhase}>
           <input
             value={phaseLabel}
             onChange={(e) => setPhaseLabel(e.target.value)}
-            placeholder="Libellé de phase"
+            placeholder="Libellé d’étape (ex. RDV fait)"
             required
           />
-          <select
-            value={phaseRole}
-            onChange={(e) => setPhaseRole(e.target.value as OppPhaseKpiRole)}
-          >
-            {PHASE_ROLES.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
-              </option>
-            ))}
-          </select>
           <button type="submit">{editingPhase ? "Enregistrer" : "Ajouter"}</button>
           {editingPhase && (
             <button
@@ -273,7 +306,6 @@ export default function SalesTaxonomyManager({
               onClick={() => {
                 setEditingPhase(null);
                 setPhaseLabel("");
-                setPhaseRole("pipeline");
               }}
             >
               Annuler
@@ -281,60 +313,105 @@ export default function SalesTaxonomyManager({
           )}
         </form>
         <ul className="settings-list">
-          {phases.map((p) => (
-            <li key={p.id} className={!p.active ? "inactive" : ""}>
-              <button
-                type="button"
-                className="linkish dir-name"
-                onClick={() => startEditPhase(p)}
-              >
-                {p.label}
-              </button>
-              <span className="muted">{p.id}</span>
-              <span className="muted">
-                {PHASE_ROLES.find((r) => r.id === p.kpiRole)?.label ?? p.kpiRole}
-              </span>
-              {p.active ? (
+          {phases.map((p) => {
+            const builtIn = isBuiltInOppPhaseId(p.id);
+            const customIndex = customPhases.findIndex((c) => c.id === p.id);
+            return (
+              <li key={p.id} className={!p.active ? "inactive" : ""}>
+                {!builtIn ? (
+                  <span className="order-arrows">
+                    <button
+                      type="button"
+                      className="ghost order-arrow"
+                      onClick={() => moveOppPhase(p.id, -1)}
+                      disabled={customIndex <= 0}
+                      title="Monter"
+                      aria-label="Monter"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost order-arrow"
+                      onClick={() => moveOppPhase(p.id, 1)}
+                      disabled={
+                        customIndex < 0 ||
+                        customIndex >= customPhases.length - 1
+                      }
+                      title="Descendre"
+                      aria-label="Descendre"
+                    >
+                      ▼
+                    </button>
+                  </span>
+                ) : (
+                  <span className="order-arrows order-arrows-spacer" aria-hidden />
+                )}
                 <button
                   type="button"
-                  className="ghost"
-                  onClick={() => removeOppPhase(p.id)}
+                  className="linkish dir-name"
+                  onClick={() => startEditPhase(p)}
                 >
-                  Désactiver
+                  {p.label}
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => updateOppPhase(p.id, { active: true })}
-                >
-                  Réactiver
-                </button>
-              )}
-            </li>
-          ))}
+                <span className="muted">{phaseKindBadge(p)}</span>
+                {p.id === "Whitespace" ? (
+                  <span className="muted">Toujours active</span>
+                ) : p.active ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => removeOppPhase(p.id)}
+                  >
+                    Désactiver
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => updateOppPhase(p.id, { active: true })}
+                  >
+                    Réactiver
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </section>
+      )}
 
+      {show("kinds") && (
       <section className="settings-block">
-        <h3>Types d’opportunité</h3>
-        <form className="settings-add" onSubmit={submitKind}>
-          <input
-            value={kindLabel}
-            onChange={(e) => setKindLabel(e.target.value)}
-            placeholder="Libellé (ex. Upsell)"
-            required
-          />
-          <select
-            value={kindMode}
-            onChange={(e) => setKindMode(e.target.value as OppKindTargetMode)}
-          >
-            {KIND_MODES.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+        <h3>Natures de deal</h3>
+        <p className="muted">
+          Préparamétré : Upsell, Cross-sell, New logo, Renouvellement. Tu peux
+          en ajouter d’autres. Le 2ᵉ champ dit comment le montant compte dans
+          la cible Dashboard (en général « Suit la phase », sauf Renouvellement).
+        </p>
+        <form className="settings-add settings-add-kinds" onSubmit={submitKind}>
+          <label className="settings-add-field">
+            <span>Nature</span>
+            <input
+              value={kindLabel}
+              onChange={(e) => setKindLabel(e.target.value)}
+              placeholder="ex. Expansion…"
+              required
+            />
+          </label>
+          <label className="settings-add-field">
+            <span>Compte dans la cible ?</span>
+            <select
+              value={kindMode}
+              onChange={(e) => setKindMode(e.target.value as OppKindTargetMode)}
+            >
+              {KIND_MODES.map((m) => (
+                <option key={m.id} value={m.id} title={m.hint}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button type="submit">{editingKind ? "Enregistrer" : "Ajouter"}</button>
           {editingKind && (
             <button
@@ -350,6 +427,9 @@ export default function SalesTaxonomyManager({
             </button>
           )}
         </form>
+        <p className="muted settings-kinds-hint">
+          {KIND_MODES.find((m) => m.id === kindMode)?.hint}
+        </p>
         <ul className="settings-list">
           {kinds.map((k) => (
             <li key={k.id} className={!k.active ? "inactive" : ""}>
@@ -360,11 +440,7 @@ export default function SalesTaxonomyManager({
               >
                 {k.label}
               </button>
-              <span className="muted">{k.id}</span>
-              <span className="muted">
-                {KIND_MODES.find((m) => m.id === k.targetMode)?.label ??
-                  k.targetMode}
-              </span>
+              <span className="muted">{kindModeLabel(k.targetMode)}</span>
               {k.active ? (
                 <button
                   type="button"
@@ -386,7 +462,9 @@ export default function SalesTaxonomyManager({
           ))}
         </ul>
       </section>
+      )}
 
+      {show("statuses") && (
       <section className="settings-block">
         <h3>Statuts commerciaux</h3>
         <form className="settings-add" onSubmit={submitStatus}>
@@ -446,7 +524,9 @@ export default function SalesTaxonomyManager({
           ))}
         </ul>
       </section>
+      )}
 
+      {show("sizes") && (
       <section className="settings-block">
         <h3>Tranches d’effectif</h3>
         <form className="settings-add" onSubmit={submitSize}>
@@ -510,6 +590,7 @@ export default function SalesTaxonomyManager({
           ))}
         </ul>
       </section>
+      )}
     </div>
   );
 }

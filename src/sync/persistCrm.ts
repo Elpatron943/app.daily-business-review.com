@@ -7,10 +7,12 @@ import type {
 import {
   accountToRow,
   contactToRow,
+  opportunityActionToRow,
   opportunityToRow,
   soldSolutionToRow,
   stakeholderToRow,
 } from "./mappers";
+import type { OpportunityAction } from "../opportunities/OpportunityContext";
 
 function requireClient() {
   if (!supabase) throw new Error("Supabase non configuré.");
@@ -94,6 +96,11 @@ export async function upsertOpportunityRemote(
     opportunity.id,
     opportunity.stakeholders ?? [],
   );
+  await replaceOpportunityActionsRemote(
+    organizationId,
+    opportunity.id,
+    opportunity.actions ?? [],
+  );
 }
 
 export async function upsertOpportunitiesRemote(
@@ -112,6 +119,11 @@ export async function upsertOpportunitiesRemote(
       organizationId,
       o.id,
       o.stakeholders ?? [],
+    );
+    await replaceOpportunityActionsRemote(
+      organizationId,
+      o.id,
+      o.actions ?? [],
     );
   }
 }
@@ -136,6 +148,27 @@ export async function replaceOpportunityStakeholdersRemote(
     stakeholderToRow(organizationId, opportunityId, s),
   );
   const { error } = await sb.from("opportunity_stakeholders").insert(rows);
+  if (error) throw new Error(error.message);
+}
+
+export async function replaceOpportunityActionsRemote(
+  organizationId: string,
+  opportunityId: string,
+  actions: OpportunityAction[],
+): Promise<void> {
+  const sb = requireClient();
+  const { error: delError } = await sb
+    .from("opportunity_actions")
+    .delete()
+    .eq("organization_id", organizationId)
+    .eq("opportunity_id", opportunityId);
+  if (delError) throw new Error(delError.message);
+
+  if (actions.length === 0) return;
+  const rows = actions.map((a, i) =>
+    opportunityActionToRow(organizationId, opportunityId, a, i),
+  );
+  const { error } = await sb.from("opportunity_actions").insert(rows);
   if (error) throw new Error(error.message);
 }
 

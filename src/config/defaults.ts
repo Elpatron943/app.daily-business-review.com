@@ -1,36 +1,30 @@
-import { DEFAULT_SALES_PROCESS } from "../opportunities/salesProcess";
+import {
+  buildDefaultOppPhases,
+  DEFAULT_SALES_PROCESS,
+} from "../opportunities/salesProcess";
 import {
   buildDefaultOppMappingSubtypes,
   buildDefaultOppMappingThemes,
 } from "./oppMappingLibrary";
-import type { OrgConfig } from "./types";
-import { DEFAULT_CATALOG_FEATURES, DEFAULT_KPI_RULES } from "./types";
+import type { OrgConfig, OppKindDef, OppPhaseDef } from "./types";
+import {
+  DEFAULT_CATALOG_FEATURES,
+  DEFAULT_KPI_RULES,
+  DEFAULT_OPP_KINDS,
+} from "./types";
 
+/**
+ * Paramètres d’usine : référentiels sales génériques prêts à l’emploi.
+ * L’org peut tout modifier / désactiver ensuite dans Settings.
+ * Identité vendeur (profil) et catalogue offre restent vides (spécifiques client).
+ */
 export const defaultConfig: OrgConfig = {
   version: 1,
   catalogFeatures: { ...DEFAULT_CATALOG_FEATURES },
   orgProfile: {
-    name: "Powermap Vendor",
-    description:
-      "Éditeur B2B de cartographie d’influence et d’account planning. Nous aidons les équipes sales enterprise à qualifier les deals, mapper le pouvoir et prioriser les actions.",
-    usps: [
-      {
-        id: "usp-org-1",
-        label: "Account planning multi-opps",
-        description:
-          "Un plan unique par compte, relié à plusieurs opportunités et au process de qualification.",
-        active: true,
-        order: 1,
-      },
-      {
-        id: "usp-org-2",
-        label: "Power mapping + process",
-        description:
-          "Combinaison cartographie d’influence et scoring process (domaines / questions) dans le même outil.",
-        active: true,
-        order: 2,
-      },
-    ],
+    name: "",
+    description: "",
+    usps: [],
   },
   contactTypes: [
     {
@@ -76,158 +70,9 @@ export const defaultConfig: OrgConfig = {
       order: 6,
     },
   ],
-  solutions: [
-    {
-      id: "sol-platform",
-      name: "Platform EU",
-      code: "PLT",
-      description:
-        "Plateforme collaborative pour cartographier les comptes, les contacts d’influence et piloter l’account plan.",
-      active: true,
-      order: 1,
-      modules: [
-        {
-          id: "mod-plt-core",
-          label: "Core Platform",
-          description: "Socle comptes, contacts, relations et canvas de carte.",
-          usps: [
-            {
-              id: "usp-plt-core-1",
-              label: "Carte live multi-acteurs",
-              description:
-                "Visualisation des relations d’influence en temps réel, filtrable par type de contact.",
-              active: true,
-              order: 1,
-            },
-          ],
-          active: true,
-          order: 1,
-        },
-        {
-          id: "mod-plt-sso",
-          label: "SSO / IAM",
-          description: "Authentification entreprise (SAML / OIDC).",
-          usps: [],
-          active: true,
-          order: 2,
-        },
-        {
-          id: "mod-plt-api",
-          label: "API & Connecteurs",
-          description: "API REST et connecteurs CRM pour synchroniser le pipeline.",
-          usps: [
-            {
-              id: "usp-plt-api-1",
-              label: "Sync CRM bidirectionnelle",
-              description:
-                "Opportunités et contacts alignés avec le CRM sans double saisie.",
-              active: true,
-              order: 1,
-            },
-          ],
-          active: true,
-          order: 3,
-        },
-        {
-          id: "mod-plt-analytics",
-          label: "Analytics Add-on",
-          description: "Tableaux de bord process et matrice des risques portefeuille.",
-          usps: [],
-          active: true,
-          order: 4,
-        },
-      ],
-    },
-    {
-      id: "sol-analytics",
-      name: "Analytics Suite",
-      code: "ANL",
-      description:
-        "Suite d’analyse pour mesurer la santé du pipeline et les goulots process.",
-      active: true,
-      order: 2,
-      modules: [
-        {
-          id: "mod-anl-dash",
-          label: "Dashboards",
-          description: "KPI process pondérés et suivi des deals à risque.",
-          usps: [],
-          active: true,
-          order: 1,
-        },
-        {
-          id: "mod-anl-lake",
-          label: "Data Lake",
-          description: "Historisation des réponses process et outcomes.",
-          usps: [],
-          active: true,
-          order: 2,
-        },
-        {
-          id: "mod-anl-alerts",
-          label: "Alerting",
-          description: "Alertes sur domaines bloquants et close dates.",
-          usps: [],
-          active: true,
-          order: 3,
-        },
-      ],
-    },
-    {
-      id: "sol-support",
-      name: "Premium Support",
-      code: "SUP",
-      description: "Accompagnement CSM et enablement sales sur le déploiement.",
-      active: true,
-      order: 3,
-      modules: [
-        {
-          id: "mod-sup-gold",
-          label: "Gold",
-          description: "Support standard + revues trimestrielles.",
-          usps: [],
-          active: true,
-          order: 1,
-        },
-        {
-          id: "mod-sup-plat",
-          label: "Platinum",
-          description: "CSM dédié + ateliers process / power mapping.",
-          usps: [],
-          active: true,
-          order: 2,
-        },
-      ],
-    },
-  ],
-  competitors: [
-    {
-      id: "comp-altmap",
-      name: "AltMap",
-      description:
-        "Concurrent historique focus org charts. Fort sur la visualisation, plus faible sur le process de qualification et l’account planning multi-opps.",
-      active: true,
-      order: 1,
-      features: [
-        {
-          id: "cf-alt-chart",
-          label: "Org chart interactif",
-          description: "Cartographie hiérarchique soignée, export PowerPoint.",
-          ourModuleId: "mod-plt-core",
-          active: true,
-          order: 1,
-        },
-        {
-          id: "cf-alt-crm",
-          label: "Connecteur Salesforce",
-          description: "Sync contacts et comptes, pas d’opportunités multi-plans.",
-          ourModuleId: "mod-plt-api",
-          active: true,
-          order: 2,
-        },
-      ],
-    },
-  ],
+  /** Offre produit : à configurer par l’org. */
+  solutions: [],
+  competitors: [],
   oppVariables: [
     {
       id: "var-users",
@@ -246,13 +91,19 @@ export const defaultConfig: OrgConfig = {
       defaultValue: 0,
     },
   ],
-  directions: [
-    { id: "dir-fr-fin", name: "Finance", active: true, order: 1 },
-    { id: "dir-fr-ops", name: "Sales Ops", active: true, order: 2 },
-    { id: "dir-fr-it", name: "IT", active: true, order: 3 },
-    { id: "dir-de-tech", name: "Technology", active: true, order: 4 },
-    { id: "dir-de-proc", name: "Procurement", active: true, order: 5 },
-    { id: "dir-nova-sales", name: "Sales", active: true, order: 6 },
+  personae: [
+    { id: "persona-dg", name: "DG / Economic Buyer", active: true, order: 1 },
+    { id: "persona-cfo", name: "CFO / Finance Buyer", active: true, order: 2 },
+    { id: "persona-cio", name: "CIO / IT Buyer", active: true, order: 3 },
+    { id: "persona-coo", name: "COO / Operations", active: true, order: 4 },
+    { id: "persona-chro", name: "CHRO / HR Buyer", active: true, order: 5 },
+    { id: "persona-cpo", name: "CPO / Procurement", active: true, order: 6 },
+    {
+      id: "persona-champion",
+      name: "Champion métier",
+      active: true,
+      order: 7,
+    },
   ],
   sectors: [
     {
@@ -289,7 +140,6 @@ export const defaultConfig: OrgConfig = {
     { id: "bocat-calc", label: "Paramètres de calcul", active: true, order: 7 },
   ],
   boFields: [
-    // Réduction des coûts
     {
       id: "bo-cost-ops",
       label: "Réduire les coûts opérationnels",
@@ -317,7 +167,6 @@ export const defaultConfig: OrgConfig = {
       order: 3,
       defaultValue: 0,
     },
-    // Réduction des risques
     {
       id: "bo-risk-cyber",
       label: "Réduire les cyberattaques provenant des tiers",
@@ -345,7 +194,6 @@ export const defaultConfig: OrgConfig = {
       order: 6,
       defaultValue: 0,
     },
-    // Croissance
     {
       id: "bo-growth-clients",
       label: "Gagner davantage de clients",
@@ -373,7 +221,6 @@ export const defaultConfig: OrgConfig = {
       order: 9,
       defaultValue: 0,
     },
-    // Efficacité opérationnelle
     {
       id: "bo-ops-delay",
       label: "Réduire les délais de traitement",
@@ -401,7 +248,6 @@ export const defaultConfig: OrgConfig = {
       order: 12,
       defaultValue: 0,
     },
-    // Conformité
     {
       id: "bo-comp-nis2",
       label: "Être conforme à NIS2, DORA, CSRD, etc.",
@@ -429,7 +275,6 @@ export const defaultConfig: OrgConfig = {
       order: 15,
       defaultValue: 0,
     },
-    // Expérience utilisateur
     {
       id: "bo-ux-suppliers",
       label: "Améliorer la satisfaction des fournisseurs",
@@ -457,7 +302,6 @@ export const defaultConfig: OrgConfig = {
       order: 18,
       defaultValue: 0,
     },
-    // Paramètres de calcul
     {
       id: "oneTimeInvestment",
       label: "Investissement one-shot (€)",
@@ -483,12 +327,7 @@ export const defaultConfig: OrgConfig = {
   riskMatrix: {
     processHighThreshold: 70,
     processLowThreshold: 35,
-    pipelinePhases: [
-      "Whitespace",
-      "Discovery",
-      "Solution Validation",
-      "Negotiation",
-    ],
+    pipelinePhases: [],
     axisLabels: {
       processHigh: "Process élevé",
       processMid: "Process moyen",
@@ -496,57 +335,6 @@ export const defaultConfig: OrgConfig = {
       pipeline: "Opportunity Mapping",
     },
   },
-  researchCriteria: [
-    {
-      id: "rc-ce",
-      label: "Compelling Event",
-      hint: "Identifier pourquoi le client doit agir maintenant — rapprocher des Compelling Events du catalogue admin quand c’est pertinent.",
-      active: true,
-      order: 1,
-    },
-    {
-      id: "rc-initiatives",
-      label: "Initiatives & programmes",
-      hint: "Programmes digitaux, cloud, cyber, M&A, transformation en cours ou annoncés.",
-      active: true,
-      order: 2,
-    },
-    {
-      id: "rc-decision",
-      label: "Decision Criteria",
-      hint: "Critères d’achat formels / informels probables pour ce type d’achat IT / B2B.",
-      active: true,
-      order: 3,
-    },
-    {
-      id: "rc-competitor",
-      label: "Concurrent en place",
-      hint: "Solutions / éditeurs déjà présents ou mentionnés (stack, appels d’offres, partenariats).",
-      active: true,
-      order: 4,
-    },
-    {
-      id: "rc-pressures",
-      label: "Pressions (budget / réglementaire)",
-      hint: "Contraintes budgétaires, conformité, audits, pressions board / marché.",
-      active: true,
-      order: 5,
-    },
-    {
-      id: "rc-buyers",
-      label: "Personas & décideurs",
-      hint: "Identifier des personas / décideurs documentés publiquement (site, presse, LinkedIn public) — noms, titres, rôle probable — pour créer des contacts.",
-      active: true,
-      order: 6,
-    },
-    {
-      id: "rc-news",
-      label: "Actualités 6 mois",
-      hint: "Actualité globale de l’entreprise sur les 6 derniers mois : faits marquants, presse positive et négative, utiles à un account plan.",
-      active: true,
-      order: 7,
-    },
-  ],
   compellingEvents: [
     {
       id: "ce-reg-deadline",
@@ -597,38 +385,13 @@ export const defaultConfig: OrgConfig = {
       order: 6,
     },
   ],
-  oppPhases: [
-    { id: "Whitespace", label: "Whitespace", kpiRole: "whitespace", active: true, order: 1 },
-    { id: "Discovery", label: "Discovery", kpiRole: "pipeline", active: true, order: 2 },
-    {
-      id: "Solution Validation",
-      label: "Solution Validation",
-      kpiRole: "pipeline",
-      active: true,
-      order: 3,
-    },
-    { id: "Negotiation", label: "Negotiation", kpiRole: "pipeline", active: true, order: 4 },
-    { id: "Closed Won", label: "Closed Won", kpiRole: "won", active: true, order: 5 },
-    { id: "Closed Lost", label: "Closed Lost", kpiRole: "lost", active: true, order: 6 },
-  ],
-  oppKinds: [
-    { id: "up", label: "Upsell", targetMode: "by_phase", active: true, order: 1 },
-    { id: "cross", label: "Cross-sell", targetMode: "by_phase", active: true, order: 2 },
-    { id: "renewal", label: "Renouvellement", targetMode: "renewal", active: true, order: 3 },
-    {
-      id: "new_in_group",
-      label: "Nouveau compte dans le groupe",
-      targetMode: "by_phase",
-      active: true,
-      order: 4,
-    },
-    { id: "prospect", label: "Prospect", targetMode: "by_phase", active: true, order: 5 },
-  ],
+  oppPhases: buildDefaultOppPhases() as OppPhaseDef[],
+  oppKinds: structuredClone(DEFAULT_OPP_KINDS) as OppKindDef[],
   commercialStatuses: [
     { id: "Client", label: "Client", active: true, order: 1 },
     { id: "Prospect", label: "Prospect", active: true, order: 2 },
-    { id: "Concurrent", label: "Concurrent", active: true, order: 3 },
-    { id: "Partner", label: "Partenaire", active: true, order: 4 },
+    { id: "Partner", label: "Partenaire", active: true, order: 3 },
+    { id: "Concurrent", label: "Concurrent", active: true, order: 4 },
   ],
   accountSizes: [
     { id: "1-1000", label: "Jusqu’à 1 000", active: true, order: 1 },

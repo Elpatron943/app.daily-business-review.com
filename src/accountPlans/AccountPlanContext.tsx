@@ -2,10 +2,20 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { useAuth } from "../auth/AuthContext";
+import { supabase } from "../supabase/client";
+import {
+  loadOrgAccountPlans,
+  logSyncError,
+  pushAccountPlansRemote,
+  upsertAccountPlansRemote,
+} from "../sync";
 
 export type ActionStatus = "Todo" | "Doing" | "Done";
 
@@ -42,16 +52,6 @@ export type PlanObjective = {
   status: ObjectiveStatus;
 };
 
-export type PlanAction = {
-  id: string;
-  title: string;
-  dueDate?: string;
-  owner?: string;
-  /** Rattachement optionnel à une opportunité (pour séparer l’UI en onglets). */
-  opportunityId?: string | null;
-  status: ActionStatus;
-};
-
 export type AccountPlan = {
   id: string;
   /**
@@ -80,8 +80,17 @@ export type AccountPlan = {
   revenueTarget?: number;
   vision: string;
   objectives: PlanObjective[];
-  actions: PlanAction[];
   active: boolean;
+};
+
+/** @deprecated Les actions vivent sur l’opportunité. Conservé pour migrations locales. */
+export type PlanAction = {
+  id: string;
+  title: string;
+  dueDate?: string;
+  owner?: string;
+  opportunityId?: string | null;
+  status: ActionStatus;
 };
 
 /** Normalise l’ancien champ `opportunityId` → `opportunityIds`. */
@@ -168,32 +177,6 @@ const defaultPlans: AccountPlan[] = [
         id: "pobj-3",
         label: "Ouvrir Analytics Suite sur Acme France",
         status: "NotStarted",
-      },
-    ],
-    actions: [
-      {
-        id: "pact-1",
-        title: "Workshop architecture avec IT DE",
-        dueDate: "2026-06-15",
-        owner: "AE",
-        opportunityId: "opp-acme-renewal",
-        status: "Doing",
-      },
-      {
-        id: "pact-2",
-        title: "Brief budget Q3 avec Finance Groupe",
-        dueDate: "2026-07-01",
-        owner: "AE",
-        opportunityId: "opp-acme-renewal",
-        status: "Todo",
-      },
-      {
-        id: "pact-3",
-        title: "Cartographier Procurement groupe",
-        dueDate: "2026-05-01",
-        owner: "SE",
-        opportunityId: "opp-acme-renewal",
-        status: "Todo",
       },
     ],
     active: true,
@@ -298,12 +281,6 @@ function load(): StoredState {
           objectives: (p.objectives ?? []).map((o) =>
             migrateObjective(o as PlanObjective & { done?: boolean }),
           ),
-          actions: (p.actions ?? []).map((a) => ({
-            ...a,
-            opportunityId:
-              (a as Partial<PlanAction>).opportunityId ?? null,
-            status: a.status ?? "Todo",
-          })),
         };
       },
     );
@@ -323,6 +300,8 @@ export type HealthInput = {
   targetAmount: number;
   contactCount: number;
   whiteSpaceCount: number;
+  /** Actions des opportunités liées (plus sur le plan). */
+  linkedActions?: { title: string; status: ActionStatus }[];
 };
 
 /** Santé compte dérivée (non persistée). */
@@ -333,6 +312,7 @@ export function computeAccountHealth(input: HealthInput): AccountHealth {
     targetAmount,
     contactCount,
     whiteSpaceCount,
+    linkedActions = [],
   } = input;
 
   let score = 0;
@@ -353,13 +333,13 @@ export function computeAccountHealth(input: HealthInput): AccountHealth {
   if (plan && plan.active) {
     if (plan.vision.trim()) score += 5;
     if (plan.objectives.some((o) => o.label.trim())) score += 10;
-    if (plan.actions.some((a) => a.title.trim())) score += 10;
+    if (linkedActions.some((a) => a.title.trim())) score += 10;
     const objs = plan.objectives.filter((o) => o.label.trim());
     if (objs.length > 0) {
       const done = objs.filter((o) => o.status === "Achieved").length;
       score += Math.round((done / objs.length) * 10);
     }
-    const acts = plan.actions.filter((a) => a.title.trim());
+    const acts = linkedActions.filter((a) => a.title.trim());
     if (acts.length > 0) {
       const done = acts.filter((a) => a.status === "Done").length;
       score += Math.round((done / acts.length) * 5);
@@ -392,7 +372,7 @@ export function computeAccountHealth(input: HealthInput): AccountHealth {
 }
 
 export function isActionOverdue(
-  action: PlanAction,
+  action: { status: ActionStatus; dueDate?: string },
   today = new Date().toISOString().slice(0, 10),
 ): boolean {
   return action.status !== "Done" && !!action.dueDate && action.dueDate < today;
@@ -406,27 +386,39 @@ export function isPlanOverdue(
 }
 
 export type OverdueActionAlert = {
-  planId: string;
-  /** Première opportunité liée (affichage). */
   opportunityId: string;
-  opportunityIds: string[];
   accountId: string;
-  action: PlanAction;
+  action: {
+    id: string;
+    title: string;
+    dueDate?: string;
+    owner?: string;
+    status: ActionStatus;
+  };
 };
 
 export function collectOverdueActions(
-  plans: AccountPlan[],
+  opportunities: {
+    id: string;
+    primaryAccountId: string;
+    active?: boolean;
+    actions?: {
+      id: string;
+      title: string;
+      dueDate?: string;
+      owner?: string;
+      status: ActionStatus;
+    }[];
+  }[],
   today = new Date().toISOString().slice(0, 10),
 ): OverdueActionAlert[] {
   const out: OverdueActionAlert[] = [];
-  for (const plan of plans.filter((p) => p.active)) {
-    for (const action of plan.actions) {
+  for (const opp of opportunities.filter((o) => o.active !== false)) {
+    for (const action of opp.actions ?? []) {
       if (isActionOverdue(action, today)) {
         out.push({
-          planId: plan.id,
-          opportunityId: plan.opportunityIds[0] ?? "",
-          opportunityIds: plan.opportunityIds,
-          accountId: plan.accountId,
+          opportunityId: opp.id,
+          accountId: opp.primaryAccountId,
           action,
         });
       }
@@ -501,27 +493,75 @@ type AccountPlanContextValue = {
     patch: Partial<PlanObjective>,
   ) => void;
   removeObjective: (planId: string, objectiveId: string) => void;
-  addAction: (
-    planId: string,
-    input: Omit<PlanAction, "id" | "status"> & { status?: ActionStatus },
-  ) => void;
-  updateAction: (
-    planId: string,
-    actionId: string,
-    patch: Partial<PlanAction>,
-  ) => void;
-  removeAction: (planId: string, actionId: string) => void;
 };
 
 const AccountPlanContext = createContext<AccountPlanContextValue | null>(null);
 
 export function AccountPlanProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<StoredState>(() => load());
+  const { profile, loading: authLoading } = useAuth();
+  const orgId = profile?.organization_id ?? null;
+  const orgIdRef = useRef<string | null>(orgId);
+  orgIdRef.current = orgId;
+  const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const commit = useCallback((next: StoredState) => {
-    setState(next);
-    persist(next);
+  const [state, setState] = useState<StoredState>(() => ({ plans: [] }));
+
+  useEffect(() => {
+    if (authLoading) return;
+    let cancelled = false;
+    (async () => {
+      if (!orgId || !supabase) {
+        if (!cancelled) setState(load());
+        return;
+      }
+      try {
+        const remote = await loadOrgAccountPlans(orgId);
+        if (cancelled) return;
+        if (remote.length > 0) {
+          const next = { plans: remote };
+          persist(next);
+          setState(next);
+          return;
+        }
+        const local = load();
+        if (local.plans.length > 0) {
+          persist(local);
+          setState(local);
+          void upsertAccountPlansRemote(orgId, local.plans).catch((err) =>
+            logSyncError("seedAccountPlans", err),
+          );
+          return;
+        }
+        const empty = { plans: [] as AccountPlan[] };
+        persist(empty);
+        setState(empty);
+      } catch (err) {
+        logSyncError("loadAccountPlans", err);
+        if (!cancelled) setState(load());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, orgId]);
+
+  const schedulePush = useCallback((plans: AccountPlan[]) => {
+    const id = orgIdRef.current;
+    if (!id || !supabase) return;
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => {
+      pushAccountPlansRemote(id, plans);
+    }, 400);
   }, []);
+
+  const commit = useCallback(
+    (next: StoredState) => {
+      setState(next);
+      persist(next);
+      schedulePush(next.plans);
+    },
+    [schedulePush],
+  );
 
   const activePlans = useMemo(
     () => state.plans.filter((p) => p.active),
@@ -584,7 +624,6 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
                   owner: input.owner ?? p.owner,
                   vision: input.vision ?? p.vision,
                   objectives: input.objectives ?? p.objectives,
-                  actions: input.actions ?? p.actions,
                 }
               : p,
           ),
@@ -634,7 +673,6 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
                   owner: input.owner ?? p.owner,
                   vision: input.vision ?? p.vision,
                   objectives: input.objectives ?? p.objectives,
-                  actions: input.actions ?? p.actions,
                 }
               : p,
           ),
@@ -652,7 +690,6 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
         owner: input.owner,
         vision: input.vision,
         objectives: input.objectives ?? [],
-        actions: input.actions ?? [],
         active: true,
       };
       commit({
@@ -682,88 +719,115 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
     ) => {
       if (!opportunityId) return null;
 
-      const withoutOpp = state.plans.map((p) =>
-        p.active && normalizeOpportunityIds(p).includes(opportunityId)
-          ? {
-              ...p,
-              opportunityIds: normalizeOpportunityIds(p).filter(
-                (id) => id !== opportunityId,
-              ),
-            }
-          : p,
-      );
-
-      if (planId === null) {
-        commit({ plans: withoutOpp });
-        return null;
-      }
-
-      if (planId === "new") {
-        const resolvedAccountId =
-          opts?.accountId ||
-          state.plans.find(
-            (p) =>
-              p.active && normalizeOpportunityIds(p).includes(opportunityId),
-          )?.accountId;
-        if (!resolvedAccountId) return null;
-        const existingForAccount = withoutOpp.find(
-          (p) => p.active && p.accountId === resolvedAccountId,
-        );
-        if (existingForAccount) {
-          commit({
-            plans: withoutOpp.map((p) =>
-              p.id === existingForAccount.id
-                ? {
-                    ...p,
-                    opportunityIds: [
-                      ...new Set([
-                        ...normalizeOpportunityIds(p),
-                        opportunityId,
-                      ]),
-                    ],
-                    dueDate: opts?.dueDate || p.dueDate,
-                  }
-                : p,
-            ),
-          });
-          return existingForAccount.id;
-        }
-        const id = uid("plan");
-        const plan: AccountPlan = {
-          id,
-          opportunityIds: [opportunityId],
-          accountId: resolvedAccountId,
-          startDate: todayIso(),
-          dueDate: opts?.dueDate || defaultDueDate(),
-          status: "Todo",
-          vision: "",
-          objectives: [],
-          actions: [],
-          active: true,
-        };
-        commit({ plans: [...withoutOpp, plan] });
-        return id;
-      }
-
-      const target = withoutOpp.find((p) => p.id === planId && p.active);
-      if (!target) {
-        commit({ plans: withoutOpp });
-        return null;
-      }
-      commit({
-        plans: withoutOpp.map((p) =>
-          p.id === planId
+      let resultId: string | null = null;
+      let pushed: AccountPlan[] | null = null;
+      setState((prev) => {
+        const withoutOpp = prev.plans.map((p) =>
+          p.active && normalizeOpportunityIds(p).includes(opportunityId)
             ? {
                 ...p,
-                opportunityIds: [...normalizeOpportunityIds(p), opportunityId],
-                accountId: opts?.accountId || p.accountId,
+                opportunityIds: normalizeOpportunityIds(p).filter(
+                  (id) => id !== opportunityId,
+                ),
               }
             : p,
-        ),
+        );
+
+        if (planId === null) {
+          resultId = null;
+          const next = { plans: withoutOpp };
+          persist(next);
+          pushed = next.plans;
+          return next;
+        }
+
+        if (planId === "new") {
+          const resolvedAccountId =
+            opts?.accountId ||
+            prev.plans.find(
+              (p) =>
+                p.active &&
+                normalizeOpportunityIds(p).includes(opportunityId),
+            )?.accountId;
+          if (!resolvedAccountId) {
+            resultId = null;
+            return prev;
+          }
+          const existingForAccount = withoutOpp.find(
+            (p) => p.active && p.accountId === resolvedAccountId,
+          );
+          if (existingForAccount) {
+            resultId = existingForAccount.id;
+            const next = {
+              plans: withoutOpp.map((p) =>
+                p.id === existingForAccount.id
+                  ? {
+                      ...p,
+                      opportunityIds: [
+                        ...new Set([
+                          ...normalizeOpportunityIds(p),
+                          opportunityId,
+                        ]),
+                      ],
+                      dueDate: opts?.dueDate || p.dueDate,
+                    }
+                  : p,
+              ),
+            };
+            persist(next);
+            pushed = next.plans;
+            return next;
+          }
+          const id = uid("plan");
+          resultId = id;
+          const plan: AccountPlan = {
+            id,
+            opportunityIds: [opportunityId],
+            accountId: resolvedAccountId,
+            startDate: todayIso(),
+            dueDate: opts?.dueDate || defaultDueDate(),
+            status: "Todo",
+            vision: "",
+            objectives: [],
+            active: true,
+          };
+          const next = { plans: [...withoutOpp, plan] };
+          persist(next);
+          pushed = next.plans;
+          return next;
+        }
+
+        const target = withoutOpp.find((p) => p.id === planId && p.active);
+        if (!target) {
+          resultId = null;
+          const next = { plans: withoutOpp };
+          persist(next);
+          pushed = next.plans;
+          return next;
+        }
+        resultId = planId;
+        const next = {
+          plans: withoutOpp.map((p) =>
+            p.id === planId
+              ? {
+                  ...p,
+                  opportunityIds: [
+                    ...normalizeOpportunityIds(p),
+                    opportunityId,
+                  ],
+                  accountId: opts?.accountId || p.accountId,
+                }
+              : p,
+          ),
+        };
+        persist(next);
+        pushed = next.plans;
+        return next;
       });
-      return planId;
+      if (pushed) schedulePush(pushed);
+      return resultId;
     },
-    [commit, state.plans],
+    [schedulePush],
   );
 
   const updatePlan = useCallback(
@@ -847,77 +911,6 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
     [commit, state.plans],
   );
 
-  const addAction = useCallback(
-    (
-      planId: string,
-      input: Omit<PlanAction, "id" | "status"> & { status?: ActionStatus },
-    ) => {
-      const title = input.title.trim();
-      if (!title) return;
-      const plan = state.plans.find((p) => p.id === planId && p.active);
-      if (!plan) {
-        throw new Error(
-          "Une action doit être rattachée à un account plan existant.",
-        );
-      }
-      commit({
-        plans: state.plans.map((p) =>
-          p.id === planId
-            ? {
-                ...p,
-                actions: [
-                  ...p.actions,
-                  {
-                    id: uid("pact"),
-                    title,
-                    dueDate: input.dueDate || undefined,
-                    owner: input.owner?.trim() || undefined,
-                    opportunityId: input.opportunityId ?? null,
-                    status: input.status ?? "Todo",
-                  },
-                ],
-              }
-            : p,
-        ),
-      });
-    },
-    [commit, state.plans],
-  );
-
-  const updateAction = useCallback(
-    (planId: string, actionId: string, patch: Partial<PlanAction>) => {
-      commit({
-        plans: state.plans.map((p) =>
-          p.id === planId
-            ? {
-                ...p,
-                actions: p.actions.map((a) =>
-                  a.id === actionId ? { ...a, ...patch, id: a.id } : a,
-                ),
-              }
-            : p,
-        ),
-      });
-    },
-    [commit, state.plans],
-  );
-
-  const removeAction = useCallback(
-    (planId: string, actionId: string) => {
-      commit({
-        plans: state.plans.map((p) =>
-          p.id === planId
-            ? {
-                ...p,
-                actions: p.actions.filter((a) => a.id !== actionId),
-              }
-            : p,
-        ),
-      });
-    },
-    [commit, state.plans],
-  );
-
   const value = useMemo(
     () => ({
       plans: state.plans,
@@ -932,9 +925,6 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
       addObjective,
       updateObjective,
       removeObjective,
-      addAction,
-      updateAction,
-      removeAction,
     }),
     [
       state.plans,
@@ -949,9 +939,6 @@ export function AccountPlanProvider({ children }: { children: ReactNode }) {
       addObjective,
       updateObjective,
       removeObjective,
-      addAction,
-      updateAction,
-      removeAction,
     ],
   );
 

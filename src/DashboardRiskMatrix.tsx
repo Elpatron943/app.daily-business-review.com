@@ -14,6 +14,7 @@ import {
   mappingWeightsFromSubtypes,
   type MappingScorecard,
 } from "./opportunities/mappingScore";
+import { computeDealScore } from "./opportunities/dealScore";
 
 /** Zone Process × Opportunity Mapping. */
 export type DealZone = "commitment" | "best_case" | "pipeline" | "risk";
@@ -30,6 +31,7 @@ type RiskPoint = {
   accountName: string;
   processPct: number;
   mappingPct: number;
+  dealPct: number;
   mapping: MappingScorecard;
   zone: DealZone;
   jitterX: number;
@@ -154,6 +156,7 @@ export default function DashboardRiskMatrix({
           mappingWeights,
         );
         const mappingPct = mappingAxisPct(mapping);
+        const dealPct = computeDealScore(overallPct, mappingPct);
         const zone = dealZoneFromScores(
           overallPct,
           mappingPct,
@@ -167,6 +170,7 @@ export default function DashboardRiskMatrix({
           accountName: account?.name ?? "—",
           processPct: overallPct,
           mappingPct,
+          dealPct,
           mapping,
           zone,
           jitterX: hashJitter(o.id, 7),
@@ -269,14 +273,19 @@ export default function DashboardRiskMatrix({
                       width: r * 2,
                       height: r * 2,
                     }}
-                    title={`${p.opportunity.name} · ${DEAL_ZONE_LABEL[p.zone]} · Process ${p.processPct}% · Mapping ${p.mappingPct}% · ${formatEur(p.opportunity.amount)}`}
+                    title={`${p.opportunity.name} · ${DEAL_ZONE_LABEL[p.zone]} · Score ${p.dealPct}% · Process ${p.processPct}% · Mapping ${p.mappingPct}% · ${formatEur(p.opportunity.amount)}`}
                     onMouseEnter={() => setHoverId(p.opportunity.id)}
                     onMouseLeave={() => setHoverId(null)}
                     onFocus={() => setHoverId(p.opportunity.id)}
                     onBlur={() => setHoverId(null)}
                     onClick={() => onOpenOpportunity(p.opportunity.id)}
                   >
-                    <span className="sr-only">{p.opportunity.name}</span>
+                    <span className="dash-scatter-score" aria-hidden>
+                      {p.dealPct}
+                    </span>
+                    <span className="sr-only">
+                      {p.opportunity.name} · score {p.dealPct}%
+                    </span>
                   </button>
                 );
               })}
@@ -295,8 +304,8 @@ export default function DashboardRiskMatrix({
                 <strong>{hovered.opportunity.name}</strong>
                 <span>{DEAL_ZONE_LABEL[hovered.zone]}</span>
                 <span>
-                  Process {hovered.processPct}% · Mapping{" "}
-                  {hovered.mappingPct}%
+                  Score {hovered.dealPct}% · Process {hovered.processPct}% ·
+                  Mapping {hovered.mappingPct}%
                 </span>
                 <span>
                   {hovered.mapping.covered}✓ · {hovered.mapping.notMastered}✗ ·{" "}

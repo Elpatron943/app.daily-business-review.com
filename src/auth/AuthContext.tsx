@@ -12,10 +12,16 @@ import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../supabase/client";
 import {
   isAppRole,
-  roleLabel,
   type AppRole,
   type UserProfile,
 } from "./types";
+import {
+  can,
+  canAssignOwner,
+  canViewAllAccounts,
+  canWriteDomain,
+  type Permission,
+} from "./permissions";
 import {
   countOrganizationSeats,
   loadOrganizationBilling,
@@ -37,6 +43,11 @@ type AuthContextValue = {
   profile: UserProfile | null;
   role: AppRole | null;
   isAdmin: boolean;
+  /** Capacité RBAC (hors verrou billing). */
+  can: (permission: Permission) => boolean;
+  canWriteDomain: boolean;
+  canViewAllAccounts: boolean;
+  canAssignOwner: boolean;
   team: UserProfile[];
   profileError: string | null;
   /** True après clic sur le lien e-mail de reset (event PASSWORD_RECOVERY). */
@@ -119,10 +130,9 @@ async function fetchProfile(userId: string): Promise<{
 }
 
 async function fetchTeam(
-  isAdmin: boolean,
   organizationId: string | null,
 ): Promise<UserProfile[]> {
-  if (!supabase || !isAdmin || !organizationId) return [];
+  if (!supabase || !organizationId) return [];
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
@@ -213,11 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(p);
         setProfileError(error);
         profileUserIdRef.current = p.id;
-        if (p.role === "admin") {
-          setTeam(await fetchTeam(true, p.organization_id));
-        } else {
-          setTeam([]);
-        }
+        setTeam(await fetchTeam(p.organization_id));
         await refreshBilling(p.organization_id ?? null);
       } else if (!bootstrappedRef.current || !sameUser) {
         setProfile(null);
@@ -376,11 +382,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, refreshBilling]);
 
   const refreshTeam = useCallback(async () => {
-    if (profile?.role !== "admin") {
+    if (!profile?.organization_id) {
       setTeam([]);
       return;
     }
-    setTeam(await fetchTeam(true, profile.organization_id));
+    setTeam(await fetchTeam(profile.organization_id));
     await refreshBilling(profile.organization_id);
   }, [profile, refreshBilling]);
 
@@ -468,6 +474,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const role = profile?.role ?? null;
   const isAdmin = role === "admin";
+  const canWriteDomainFlag = canWriteDomain(role);
+  const canViewAllAccountsFlag = canViewAllAccounts(role);
+  const canAssignOwnerFlag = canAssignOwner(role);
 
   const billing = useMemo(
     () => buildBilling(organization, seatsUsed, activeOpportunityCount),
@@ -483,6 +492,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       role,
       isAdmin,
+      can: (permission: Permission) => can(role, permission),
+      canWriteDomain: canWriteDomainFlag,
+      canViewAllAccounts: canViewAllAccountsFlag,
+      canAssignOwner: canAssignOwnerFlag,
       team,
       profileError,
       passwordRecovery,
@@ -506,6 +519,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       role,
       isAdmin,
+      canWriteDomainFlag,
+      canViewAllAccountsFlag,
+      canAssignOwnerFlag,
       team,
       profileError,
       passwordRecovery,
@@ -533,5 +549,6 @@ export function useAuth() {
   return ctx;
 }
 
-export { roleLabel };
-export type { AppRole, UserProfile };
+export { roleLabel, APP_ROLES } from "./types";
+export type { AppRole, UserProfile } from "./types";
+export type { Permission } from "./permissions";

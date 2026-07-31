@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
+import { useAuth } from "./auth/AuthContext";
 import { useOrgConfig } from "./config/ConfigContext";
-import { soldLineDirectionIds } from "./data";
+import { soldLinePersonaIds } from "./data";
 import { useDomain } from "./domain/DomainContext";
 import { useOpportunities } from "./opportunities/OpportunityContext";
 import { useSales } from "./sales/SalesContext";
@@ -14,6 +15,16 @@ import {
   type ImportPlan,
 } from "./import/bulkImport";
 import {
+  applyCatalogGaps,
+  catalogListForField,
+  CATALOG_LIST_LABEL,
+  extendCatalogsWithGaps,
+  findCatalogGaps,
+  formatCatalogGapsMessage,
+  valueExistsInCatalog,
+  type CatalogCatalogs,
+} from "./import/catalogGaps";
+import {
   downloadExcelExport,
   downloadExcelTemplate,
   parseImportWorkbookRaw,
@@ -22,16 +33,16 @@ import {
   type RawImportSheet,
 } from "./import/excel";
 import {
-  applyColumnMapping,
-  DBR_IMPORT_FIELDS,
+  applyMultiEntityMapping,
+  fieldsGroupedAll,
   IMPORT_ENTITY_LABEL,
-  mappingCoversRequired,
+  mappingCoversRequiredAll,
   suggestMappingFromAliases,
   type ColumnMapping,
-  type ImportEntityKind,
 } from "./import/mappingFields";
 import { suggestImportColumnMapping } from "./import/suggestColumnMapping";
 import { checkOpenAiStatus } from "./research/openaiClient";
+import { useConfirm } from "./ui/ConfirmDialog";
 import { useToast } from "./ui/Toast";
 
 type WorkbookState = {
@@ -49,12 +60,14 @@ function sheetKey(sheet: RawImportSheet, index: number) {
 
 export default function ImportManager() {
   const { notify } = useToast();
+  const confirm = useConfirm();
+  const { team } = useAuth();
   const { accounts, contacts, importDomainBatch } = useDomain();
   const { opportunities, importOpportunitiesBatch } = useOpportunities();
   const { soldSolutions, importSoldSolutionsBatch } = useSales();
   const {
     config,
-    activeDirections,
+    activePersonae,
     activeSolutions,
     activeCommercialStatuses,
     activeAccountSizes,
@@ -62,6 +75,15 @@ export default function ImportManager() {
     activeOppKinds,
     statusLabel,
     kindLabel,
+    phaseLabel,
+    sizeLabel,
+    addCommercialStatus,
+    addAccountSize,
+    addSector,
+    addPersona,
+    addOppPhase,
+    addOppKind,
+    addSolution,
   } = useOrgConfig();
 
   const [step, setStep] = useState<ImportStep>("upload");
@@ -75,26 +97,82 @@ export default function ImportManager() {
   const [mappingValidated, setMappingValidated] = useState(false);
   const [importMode, setImportMode] = useState<ImportMode>("upsert");
 
+  const catalogs: CatalogCatalogs = useMemo(
+    () => ({
+      statuses: activeCommercialStatuses.map((s) => ({
+        id: s.id,
+        label: statusLabel(s.id),
+      })),
+      sizes: activeAccountSizes.map((s) => ({
+        id: s.id,
+        label: sizeLabel(s.id),
+      })),
+      sectors: (config.sectors ?? [])
+        .filter((s) => s.active !== false)
+        .map((s) => ({ id: s.id, label: s.name })),
+      personae: activePersonae.map((d) => ({
+        id: d.id,
+        label: d.name,
+      })),
+      phases: activeOppPhases.map((p) => ({
+        id: p.id,
+        label: phaseLabel(p.id),
+      })),
+      kinds: activeOppKinds.map((k) => ({
+        id: k.id,
+        label: kindLabel(k.id),
+      })),
+      solutions: activeSolutions.map((s) => ({
+        id: s.id,
+        label: s.code || s.name,
+      })),
+    }),
+    [
+      activeCommercialStatuses,
+      activeAccountSizes,
+      config.sectors,
+      activePersonae,
+      activeOppPhases,
+      activeOppKinds,
+      activeSolutions,
+      statusLabel,
+      sizeLabel,
+      phaseLabel,
+      kindLabel,
+    ],
+  );
+
   const ctx = useMemo(
     () => ({
       accounts,
       contacts,
       opportunities,
       soldSolutions,
-      directions: activeDirections,
+      personae: activePersonae,
       sectors: config.sectors ?? [],
       solutions: activeSolutions,
+      statuses: catalogs.statuses,
+      sizes: catalogs.sizes,
+      phases: catalogs.phases,
+      kinds: catalogs.kinds,
       oppMappingSubtypes: config.oppMappingSubtypes ?? [],
+      orgUsers: team.map((m) => ({
+        id: m.id,
+        email: m.email,
+        fullName: m.full_name,
+      })),
     }),
     [
       accounts,
       contacts,
       opportunities,
       soldSolutions,
-      activeDirections,
+      activePersonae,
       config.sectors,
       activeSolutions,
+      catalogs,
       config.oppMappingSubtypes,
+      team,
     ],
   );
 
@@ -109,7 +187,7 @@ export default function ImportManager() {
         .map((m) => `${s.code || s.name} > ${m.label}`),
     );
     return {
-      directions: activeDirections.map((d) => d.name),
+      personae: activePersonae.map((d) => d.name),
       sectors,
       solutions,
       modules,
@@ -120,7 +198,7 @@ export default function ImportManager() {
       kinds: activeOppKinds.map((k) => kindLabel(k.id)),
     };
   }, [
-    activeDirections,
+    activePersonae,
     activeSolutions,
     config.sectors,
     activeAccountSizes,
@@ -136,17 +214,30 @@ export default function ImportManager() {
     wb.sheets.forEach((sheet, index) => {
       const key = sheetKey(sheet, index);
       const mapping = wb.mappings[key] ?? {};
-      const table = applyColumnMapping(sheet.headers, sheet.rows, mapping);
-      if (table.rows.length === 0) return;
-      const prev = out[sheet.kind];
-      if (!prev) {
-        out[sheet.kind] = table;
-        return;
+      const tables = applyMultiEntityMapping(
+        sheet.headers,
+        sheet.rows,
+        mapping,
+        sheet.kind,
+      );
+      for (const kind of [
+        "accounts",
+        "contacts",
+        "opportunities",
+        "sold_solutions",
+      ] as const) {
+        const table = tables[kind];
+        if (!table || table.rows.length === 0) continue;
+        const prev = out[kind];
+        if (!prev) {
+          out[kind] = table;
+          continue;
+        }
+        out[kind] = {
+          headers: [...new Set([...prev.headers, ...table.headers])],
+          rows: [...prev.rows, ...table.rows],
+        };
       }
-      out[sheet.kind] = {
-        headers: [...new Set([...prev.headers, ...table.headers])],
-        rows: [...prev.rows, ...table.rows],
-      };
     });
     return out;
   }
@@ -155,14 +246,9 @@ export default function ImportManager() {
     const missing: string[] = [];
     wb.sheets.forEach((sheet, index) => {
       const key = sheetKey(sheet, index);
-      const gaps = mappingCoversRequired(
-        sheet.kind,
-        wb.mappings[key] ?? {},
-      );
+      const gaps = mappingCoversRequiredAll(wb.mappings[key] ?? {});
       if (gaps.length) {
-        missing.push(
-          `${IMPORT_ENTITY_LABEL[sheet.kind]} : ${gaps.join(", ")}`,
-        );
+        missing.push(`${sheet.sheetName} : ${gaps.join(", ")}`);
       }
     });
     return missing;
@@ -269,7 +355,12 @@ export default function ImportManager() {
         nextMappings[key] = await suggestImportColumnMapping({
           kind: sheet.kind,
           headers: sheet.headers,
-          samples: sheet.samples,
+          samples: Object.fromEntries(
+            sheet.headers.map((h) => [
+              h,
+              sheet.sampleValues?.[h]?.[0] ?? sheet.samples[h] ?? "",
+            ]),
+          ),
         });
       }
       setWorkbook({ ...workbook, mappings: nextMappings });
@@ -293,7 +384,7 @@ export default function ImportManager() {
   }
 
   /** L’utilisateur confirme explicitement le mapping avant preview. */
-  function validateMapping() {
+  async function validateMapping() {
     if (!workbook) return;
     const missing = collectMissingRequired(workbook);
     if (missing.length) {
@@ -304,15 +395,97 @@ export default function ImportManager() {
       });
       return;
     }
+
+    const gaps = findCatalogGaps(
+      workbook.sheets.map((sheet, index) => ({
+        headers: sheet.headers,
+        rows: sheet.rows,
+        mapping: workbook.mappings[sheetKey(sheet, index)] ?? {},
+      })),
+      catalogs,
+    );
+
+    if (gaps.length > 0) {
+      const ok = await confirm({
+        title: "Nouvelles valeurs catalogue",
+        message: formatCatalogGapsMessage(gaps),
+        confirmLabel: "Ajouter et continuer",
+        cancelLabel: "Annuler",
+        danger: false,
+      });
+      if (!ok) return;
+      applyCatalogGaps(gaps, {
+        addStatus: addCommercialStatus,
+        addSize: addAccountSize,
+        addSector,
+        addPersona,
+        addPhase: addOppPhase,
+        addKind: addOppKind,
+        addSolution,
+      });
+    }
+
+    const extended = extendCatalogsWithGaps(catalogs, gaps);
+    const planCtx = {
+      ...ctx,
+      statuses: extended.statuses,
+      sizes: extended.sizes,
+      phases: extended.phases,
+      kinds: extended.kinds,
+      personae: [
+        ...activePersonae,
+        ...extended.personae
+          .filter((d) => !activePersonae.some((x) => x.id === d.id))
+          .map((d) => ({
+            id: d.id,
+            name: d.label,
+            active: true,
+            order: 999,
+          })),
+      ],
+      sectors: [
+        ...(config.sectors ?? []),
+        ...extended.sectors
+          .filter(
+            (s) => !(config.sectors ?? []).some((x) => x.id === s.id),
+          )
+          .map((s) => ({
+            id: s.id,
+            name: s.label,
+            active: true,
+            order: 999,
+          })),
+      ],
+      solutions: [
+        ...activeSolutions,
+        ...extended.solutions
+          .filter((s) => !activeSolutions.some((x) => x.id === s.id))
+          .map((s) => ({
+            id: s.id,
+            name: s.label,
+            active: true,
+            order: 999,
+            modules: [],
+            description: "",
+          })),
+      ],
+    };
+
     setMappingValidated(true);
     setResult(null);
-    const nextPlan = buildImportPlan(buildMappedTables(workbook), ctx, importMode);
+    const nextPlan = buildImportPlan(
+      buildMappedTables(workbook),
+      planCtx,
+      importMode,
+    );
     setPlan(nextPlan);
     setStep("preview");
     notify({
       tone: "ok",
       title: "Mapping validé",
-      message: "Contrôlez la prévisualisation puis lancez l’import.",
+      message: gaps.length
+        ? `${gaps.length} valeur(s) ajoutée(s) au catalogue. Contrôlez la prévisualisation.`
+        : "Contrôlez la prévisualisation puis lancez l’import.",
     });
   }
 
@@ -368,6 +541,9 @@ export default function ImportManager() {
             phase: o.phase,
             kind: o.kind,
             solutionId: o.solutionId,
+            moduleIds: o.moduleIds,
+            personaIds: o.personaIds,
+            ownerProfileId: o.ownerProfileId,
             mappingChecks: defaultMappingChecks(ctx.oppMappingSubtypes),
           };
         })
@@ -392,7 +568,7 @@ export default function ImportManager() {
             accountId,
             solutionId: s.solutionId,
             moduleIds: s.moduleIds,
-            directionIds: s.directionIds,
+            personaIds: s.personaIds,
             billedAmount: s.billedAmount,
           };
         })
@@ -435,8 +611,8 @@ export default function ImportManager() {
 
   function exportCurrent() {
     const accountById = new Map(accounts.map((a) => [a.id, a]));
-    const directionById = new Map(
-      activeDirections.map((d) => [d.id, d.name]),
+    const personaById = new Map(
+      activePersonae.map((d) => [d.id, d.name]),
     );
     const sectorById = new Map(
       (config.sectors ?? []).map((s) => [s.id, s.name]),
@@ -444,6 +620,7 @@ export default function ImportManager() {
     const solutionById = new Map(
       activeSolutions.map((s) => [s.id, s.code || s.name]),
     );
+    const ownerById = new Map(team.map((m) => [m.id, m.email]));
 
     const accountRows = accounts
       .filter((a) => a.active !== false)
@@ -459,6 +636,7 @@ export default function ImportManager() {
           holding?.id ?? "",
           a.sector ? (sectorById.get(a.sector) ?? a.sector) : "",
           a.size ?? "",
+          a.ownerProfileId ? (ownerById.get(a.ownerProfileId) ?? "") : "",
         ];
       });
 
@@ -469,7 +647,7 @@ export default function ImportManager() {
         c.name,
         c.title,
         c.accountId,
-        directionById.get(c.directionId) ?? c.directionId,
+        personaById.get(c.personaId) ?? c.personaId,
       ]);
 
     const oppRows = opportunities
@@ -498,8 +676,8 @@ export default function ImportManager() {
       s.accountId,
       solutionById.get(s.solutionId) ?? s.solutionId,
       (s.moduleIds ?? []).map((m) => moduleLabel(s.solutionId, m)).join("; "),
-      soldLineDirectionIds(s)
-        .map((d) => directionById.get(d) ?? d)
+      soldLinePersonaIds(s)
+        .map((d) => personaById.get(d) ?? d)
         .join("; "),
       s.billedAmount,
     ]);
@@ -549,6 +727,17 @@ export default function ImportManager() {
             <strong>nom d’entreprise</strong> (suffit si vous n’avez que ça).
             Modes : ajout, mise à jour, ou les deux.
           </p>
+          <aside className="import-owner-hint" role="note">
+            <strong>Owner (gestionnaire)</strong>
+            <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+              Préférez assigner via la liste déroulante Owner sur la fiche
+              entreprise : contacts et opportunités liés sont rattachés
+              automatiquement. En import, la colonne{" "}
+              <code>Owner_email</code> (e-mail exact d’un user dans Settings →
+              Équipe) permet un rattachement auto ; sinon l’import continue et
+              vous assignez ensuite manuellement.
+            </p>
+          </aside>
         </div>
       </header>
 
@@ -672,9 +861,9 @@ export default function ImportManager() {
             <div>
               <h4>Étape 2 — Validez le mapping</h4>
               <p className="muted">
-                Gauche : en-têtes du fichier · Droite : champs DBR. La
-                proposition (aliases ou IA) est une aide : c’est vous qui
-                validez.
+                Mappez chaque colonne vers un champ DBR (Entreprise, Contact,
+                Opportunité ou Solution vendue). Sur une même ligne, l’entreprise
+                sert automatiquement de rattachement aux contacts / opportunités.
               </p>
             </div>
             <button
@@ -705,40 +894,92 @@ export default function ImportManager() {
             </div>
           ) : (
             <p className="muted import-sheet-label">
-              {activeSheet.sheetName} ·{" "}
-              {IMPORT_ENTITY_LABEL[activeSheet.kind as ImportEntityKind]}
+              {activeSheet.sheetName}
             </p>
           )}
 
           <div className="import-mapping-grid-head">
             <span>En-tête fichier</span>
-            <span>Champ DBR</span>
+            <span>Exemples (3)</span>
+            <span>Champ DBR (toutes entités)</span>
           </div>
           <ul className="import-mapping-list">
-            {activeSheet.headers.map((header) => (
-              <li key={header}>
-                <div className="import-mapping-source">
-                  <strong>{header}</strong>
-                  {activeSheet.samples[header] ? (
-                    <em>ex. {activeSheet.samples[header]}</em>
-                  ) : null}
-                </div>
-                <select
-                  value={activeMapping[header] ?? ""}
-                  onChange={(e) =>
-                    setMappingField(activeSheetIdx, header, e.target.value)
-                  }
-                >
-                  <option value="">— Ignorer —</option>
-                  {DBR_IMPORT_FIELDS[activeSheet.kind].map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.label}
-                      {f.required ? " *" : ""}
-                    </option>
-                  ))}
-                </select>
-              </li>
-            ))}
+            {activeSheet.headers.map((header) => {
+              const fieldId = activeMapping[header] ?? "";
+              const listKind = fieldId
+                ? catalogListForField(fieldId)
+                : null;
+              const examples =
+                activeSheet.sampleValues?.[header] ??
+                (activeSheet.samples[header]
+                  ? [activeSheet.samples[header]]
+                  : []);
+              const newExamples =
+                listKind != null
+                  ? examples.filter(
+                      (v) => !valueExistsInCatalog(v, listKind, catalogs),
+                    )
+                  : [];
+              return (
+                <li key={header}>
+                  <div className="import-mapping-source">
+                    <strong>{header}</strong>
+                  </div>
+                  <div className="import-mapping-examples">
+                    {examples.length ? (
+                      <ul>
+                        {examples.map((v) => (
+                          <li
+                            key={v}
+                            className={
+                              listKind &&
+                              !valueExistsInCatalog(v, listKind, catalogs)
+                                ? "is-new"
+                                : undefined
+                            }
+                            title={
+                              listKind &&
+                              !valueExistsInCatalog(v, listKind, catalogs)
+                                ? `Sera ajouté à « ${CATALOG_LIST_LABEL[listKind]} »`
+                                : undefined
+                            }
+                          >
+                            {v}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <em className="muted">—</em>
+                    )}
+                    {newExamples.length > 0 && listKind ? (
+                      <p className="import-mapping-new-hint">
+                        {newExamples.length === 1
+                          ? `« ${newExamples[0]} » sera ajouté à ${CATALOG_LIST_LABEL[listKind]}`
+                          : `${newExamples.length} valeurs seront ajoutées à ${CATALOG_LIST_LABEL[listKind]}`}
+                      </p>
+                    ) : null}
+                  </div>
+                  <select
+                    value={fieldId}
+                    onChange={(e) =>
+                      setMappingField(activeSheetIdx, header, e.target.value)
+                    }
+                  >
+                    <option value="">— Ignorer —</option>
+                    {fieldsGroupedAll().map((g) => (
+                      <optgroup key={g.group} label={g.group}>
+                        {g.fields.map((f) => (
+                          <option key={f.scopedId} value={f.scopedId}>
+                            {f.label}
+                            {f.required ? " *" : ""}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </li>
+              );
+            })}
           </ul>
 
           <div className="import-mapping-footer">
@@ -760,7 +1001,7 @@ export default function ImportManager() {
             <button
               type="button"
               className="primary-cta"
-              onClick={validateMapping}
+              onClick={() => void validateMapping()}
             >
               Valider le mapping
             </button>
@@ -833,6 +1074,7 @@ export default function ImportManager() {
                         <th>Clé</th>
                         <th>Nom</th>
                         <th>Type</th>
+                        <th>Owner</th>
                         <th>Groupe</th>
                       </tr>
                     </thead>
@@ -844,6 +1086,13 @@ export default function ImportManager() {
                           <td>{a.name}</td>
                           <td>
                             {a.type === "Holding" ? "Groupe" : "Entreprise"}
+                          </td>
+                          <td>
+                            {a.ownerEmail
+                              ? a.ownerProfileId
+                                ? a.ownerEmail
+                                : `${a.ownerEmail} (manuel)`
+                              : "—"}
                           </td>
                           <td>{a.holdingKey || "—"}</td>
                         </tr>

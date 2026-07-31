@@ -19,6 +19,7 @@ import {
   resolveAccountSector,
 } from "./SameSectorPanel";
 import type { AppPage } from "./navigation";
+import { consumeOpenAccountId } from "./opportunities/oppNavigation";
 
 export type DataSection =
   | "entreprises"
@@ -44,7 +45,7 @@ export default function DataEntryPanel({
   onNavigate?: (page: AppPage) => void;
 }) {
   if (section === "opportunites") {
-    return <OpportunityPage />;
+    return <OpportunityPage onNavigate={onNavigate} />;
   }
 
   return (
@@ -82,7 +83,8 @@ function DataEntryPanelInner({
     setContactParent,
   } = useDomain();
   const {
-    activeDirections,
+    activePersonae,
+    personaLabel,
     activeSectors,
     statusLabel,
     sizeLabel,
@@ -105,6 +107,12 @@ function DataEntryPanelInner({
   }, [section]);
 
   useEffect(() => {
+    if (section !== "entreprises") return;
+    const pending = consumeOpenAccountId();
+    if (pending) setDetailId(pending);
+  }, [section]);
+
+  useEffect(() => {
     if (section !== "contacts") setContactDetailId(null);
   }, [section]);
 
@@ -114,7 +122,7 @@ function DataEntryPanelInner({
   const [cEmail, setCEmail] = useState("");
   const [cPhone, setCPhone] = useState("");
   const [cAccount, setCAccount] = useState(entreprises[0]?.id ?? "");
-  const [cDir, setCDir] = useState(activeDirections[0]?.id ?? "");
+  const [cPersona, setCPersona] = useState(activePersonae[0]?.id ?? "");
   const [cParent, setCParent] = useState("");
 
   const [accountFilters, setAccountFilters] = useState<Record<string, string>>({
@@ -128,7 +136,7 @@ function DataEntryPanelInner({
   const [contactFilters, setContactFilters] = useState<Record<string, string>>({
     q: "",
     accountId: "",
-    directionId: "",
+    personaId: "",
     active: "active",
   });
 
@@ -147,7 +155,7 @@ function DataEntryPanelInner({
       setContactFilters({
         q: "",
         accountId: "",
-        directionId: "",
+        personaId: "",
         active: "active",
       });
     }
@@ -201,16 +209,15 @@ function DataEntryPanelInner({
           return false;
         }
         if (
-          contactFilters.directionId &&
-          c.directionId !== contactFilters.directionId
+          contactFilters.personaId &&
+          c.personaId !== contactFilters.personaId
         ) {
           return false;
         }
         if (contactFilters.active === "active" && !c.active) return false;
         if (contactFilters.active === "inactive" && c.active) return false;
         const account = accounts.find((a) => a.id === c.accountId);
-        const dirLabel =
-          activeDirections.find((d) => d.id === c.directionId)?.name ?? "";
+        const personaLbl = personaLabel(c.personaId);
         return matchesQuery(
           q,
           c.name,
@@ -218,7 +225,7 @@ function DataEntryPanelInner({
           c.email,
           c.phone,
           account?.name,
-          dirLabel,
+          personaLbl,
         );
       })
       .slice()
@@ -227,7 +234,8 @@ function DataEntryPanelInner({
     contacts,
     contactFilters,
     accounts,
-    activeDirections,
+    activePersonae,
+    personaLabel,
   ]);
 
   useEffect(() => {
@@ -235,8 +243,8 @@ function DataEntryPanelInner({
   }, [entreprises, cAccount]);
 
   useEffect(() => {
-    if (!cDir && activeDirections[0]) setCDir(activeDirections[0].id);
-  }, [activeDirections, cDir]);
+    if (!cPersona && activePersonae[0]) setCPersona(activePersonae[0].id);
+  }, [activePersonae, cPersona]);
 
   function resetContactForm() {
     setCName("");
@@ -245,12 +253,12 @@ function DataEntryPanelInner({
     setCPhone("");
     setCParent("");
     setCAccount(entreprises[0]?.id ?? "");
-    setCDir(activeDirections[0]?.id ?? "");
+    setCPersona(activePersonae[0]?.id ?? "");
   }
 
   const submitContactCreate = (e: FormEvent) => {
     e.preventDefault();
-    if (!cName.trim() || !cAccount || !cDir) return;
+    if (!cName.trim() || !cAccount || !cPersona) return;
     const entreprise = activeAccounts.find((a) => a.id === cAccount);
     if (!entreprise || entreprise.type !== "Entreprise") return;
     const id = upsertContact({
@@ -258,7 +266,7 @@ function DataEntryPanelInner({
       title: cTitle,
       email: cEmail,
       phone: cPhone,
-      directionId: cDir,
+      personaId: cPersona,
       accountId: cAccount,
     });
     if (id) setContactParent(id, cParent || null);
@@ -537,12 +545,12 @@ function DataEntryPanelInner({
                     .map((a) => ({ value: a.id, label: a.name })),
                 },
                 {
-                  id: "directionId",
+                  id: "personaId",
                   kind: "select",
-                  label: "Direction",
-                  options: activeDirections.map((d) => ({
-                    value: d.id,
-                    label: d.name,
+                  label: "Persona",
+                  options: activePersonae.map((p) => ({
+                    value: p.id,
+                    label: p.name,
                   })),
                 },
                 {
@@ -559,7 +567,22 @@ function DataEntryPanelInner({
             />
             <ul className="entry-list">
               {filteredContacts.length === 0 && (
-                <li className="muted">Aucun résultat.</li>
+                <li className="muted">
+                  {entreprises.length === 0 ? (
+                    <>
+                      Impossible d’ajouter un contact sans entreprise.{" "}
+                      <button
+                        type="button"
+                        className="ghost linkish"
+                        onClick={() => onNavigate?.("entreprises")}
+                      >
+                        Créer une entreprise d’abord →
+                      </button>
+                    </>
+                  ) : (
+                    "Aucun résultat."
+                  )}
+                </li>
               )}
               {filteredContacts.map((c) => {
                   const parentId = getContactParentId(c.id, contactRelations);
@@ -567,9 +590,7 @@ function DataEntryPanelInner({
                     ? activeContacts.find((p) => p.id === parentId)
                     : null;
                   const account = accounts.find((a) => a.id === c.accountId);
-                  const dirLabel =
-                    activeDirections.find((d) => d.id === c.directionId)
-                      ?.name ?? "";
+                  const personaLbl = personaLabel(c.personaId);
                   return (
                     <li key={c.id} className={!c.active ? "inactive" : ""}>
                       <button
@@ -582,7 +603,7 @@ function DataEntryPanelInner({
                           {c.title ? `${c.title} · ` : ""}
                           {c.email ? `${c.email} · ` : ""}
                           {c.phone ? `${c.phone} · ` : ""}
-                          {dirLabel}
+                          {personaLbl}
                           {account ? ` · ${account.name}` : ""}
                           {parent ? ` · parent : ${parent.name}` : ""}
                         </span>
@@ -677,7 +698,7 @@ function DataEntryPanelInner({
                         value={cAccount}
                         onChange={(e) => {
                           setCAccount(e.target.value);
-                          setCDir(activeDirections[0]?.id ?? "");
+                          setCPersona(activePersonae[0]?.id ?? "");
                         }}
                         required
                       >
@@ -689,16 +710,16 @@ function DataEntryPanelInner({
                       </select>
                     </label>
                     <label>
-                      Direction
+                      Persona
                       <select
-                        value={cDir}
-                        onChange={(e) => setCDir(e.target.value)}
+                        value={cPersona}
+                        onChange={(e) => setCPersona(e.target.value)}
                         required
                       >
                         <option value="">Choisir…</option>
-                        {activeDirections.map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {d.name}
+                        {activePersonae.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
                           </option>
                         ))}
                       </select>

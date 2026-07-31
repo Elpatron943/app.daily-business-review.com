@@ -31,10 +31,6 @@ import SameSectorPanel, {
 } from "./SameSectorPanel";
 import AccountOpportunitiesInfluenceOverview from "./AccountOpportunitiesInfluenceOverview";
 import { useOrgConfig } from "./config/ConfigContext";
-import {
-  directionNodeId,
-  parseDirectionNodeId,
-} from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
 import { useSales } from "./sales/SalesContext";
 import { isModuleEnabled } from "./billing/optionalModules";
@@ -57,13 +53,8 @@ import {
   getContactChildrenIds,
   getContactParentId,
   opportunitiesForAccountScope,
-  opportunitiesForDirectionScope,
   salesForAccountScope,
-  salesForDirectionScope,
-  soldSolutionsForDirection,
-  soldLineMatchesDirection,
-  isCompanyLevelSoldLine,
-  soldLineDirectionIds,
+  soldLinePersonaIds,
   type AccountType,
   type CommercialStatus,
   type CompanyRelationType,
@@ -302,42 +293,6 @@ function FocusAccountCamera({
   return null;
 }
 
-function DirectionNode({ data }: NodeProps) {
-  const { statusLabel } = useOrgConfig();
-  const d = data as {
-    name: string;
-    accountName: string;
-    commercialStatus: CommercialStatus;
-    memberCount: number;
-    solutions: { name: string; billed: number }[];
-  };
-  return (
-    <div className={`node direction-node ${statusClass(d.commercialStatus)}`}>
-      <Handle type="target" position={Position.Top} className="handle" />
-      <span className="node-eyebrow">Direction</span>
-      <strong>{d.name}</strong>
-      <span className={`badge ${statusClass(d.commercialStatus)}`}>
-        {statusLabel(d.commercialStatus)}
-      </span>
-      <span className="node-meta">
-        {d.accountName} · {d.memberCount} contact
-        {d.memberCount > 1 ? "s" : ""}
-      </span>
-      {d.solutions.length > 0 && (
-        <div className="solution-chips">
-          {d.solutions.map((s) => (
-            <span key={s.name} className="solution-chip">
-              {s.name}
-              {s.billed > 0 ? ` · CA ${formatEur(s.billed)}` : ""}
-            </span>
-          ))}
-        </div>
-      )}
-      <Handle type="source" position={Position.Bottom} className="handle" />
-    </div>
-  );
-}
-
 function ContactNode({ data }: NodeProps) {
   const { contactTypeLabel, contactTypeColor } = useOrgConfig();
   const d = data as {
@@ -346,7 +301,7 @@ function ContactNode({ data }: NodeProps) {
     role: string;
     status?: Status;
     mapped: boolean;
-    directionName: string;
+    personaName: string;
     accountName: string;
   };
   const status = d.mapped ? (d.status ?? "Unknown") : "Unknown";
@@ -372,7 +327,7 @@ function ContactNode({ data }: NodeProps) {
       </span>
       <strong>{d.name}</strong>
       <span className="node-meta">{d.title}</span>
-      <span className="node-direction">{d.directionName}</span>
+      <span className="node-persona">{d.personaName}</span>
       <span className="node-meta">{d.accountName}</span>
       {d.mapped ? (
         <span className="node-meta" style={{ color }}>
@@ -400,16 +355,14 @@ function ContactNode({ data }: NodeProps) {
 
 const nodeTypes = {
   account: AccountNode,
-  direction: DirectionNode,
   contact: ContactNode,
 };
 
 const companyEdgeStyle: Record<
-  CompanyRelationType | "holdingOf" | "hasDirection" | "hasMember",
+  CompanyRelationType | "holdingOf" | "hasMember",
   { stroke: string; strokeDasharray?: string; width?: number }
 > = {
   holdingOf: { stroke: "#374151", width: 2.5 },
-  hasDirection: { stroke: "#78716c", width: 1.75 },
   hasMember: { stroke: "#a8a29e", strokeDasharray: "4 4", width: 1.5 },
   PartnerOf: { stroke: "#2563eb", width: 2.5 },
   CompetitorOf: { stroke: "#b91c1c", strokeDasharray: "6 3", width: 2.5 },
@@ -436,7 +389,7 @@ export default function App() {
     loading: authLoading,
     user,
     profile,
-    isAdmin,
+    can: canPerm,
     profileError,
     passwordRecovery,
     signOut,
@@ -457,17 +410,20 @@ export default function App() {
     return t(key);
   }
 
-  function roleText(role: "admin" | "user") {
-    return role === "admin" ? t("role.admin") : t("role.user");
+  function roleText(role: "admin" | "manager" | "user" | "viewer") {
+    if (role === "admin") return t("role.admin");
+    if (role === "manager") return t("role.manager");
+    if (role === "viewer") return t("role.viewer");
+    return t("role.user");
   }
   const {
     activeSolutions,
     activeContactTypes,
-    activeDirections,
     activeCommercialStatuses,
+    catalogFeatures,
     solutionLabel,
     contactTypeLabel,
-    directionLabel,
+    personaLabel,
     salesTaxonomy,
     statusLabel,
   } = useOrgConfig();
@@ -477,7 +433,6 @@ export default function App() {
     activeContacts,
     companyRelations,
     contactRelations,
-    layoutPositions,
     setMapNodePosition,
     setAccountHolding,
     setContactParent,
@@ -485,66 +440,24 @@ export default function App() {
   const { getPlanForAccount, getPlanForOpportunity } = useAccountPlans();
   const { activeOpportunity, activeOpportunities } = useOpportunities();
 
-  const holdingIdOfAccount = useCallback(
-    (accountId: string) => {
-      const a = activeAccounts.find((x) => x.id === accountId);
-      if (!a) return null;
-      if (a.type === "Holding") return a.id;
-      return a.holdingId;
-    },
-    [activeAccounts],
-  );
-
   const holdingEdges = useMemo(
     () => buildHoldingEdges(activeAccounts),
     [activeAccounts],
   );
 
-  const directionEdges = useMemo(() => {
-    const edges: {
-      id: string;
-      source: string;
-      target: string;
-      type: "hasDirection";
-    }[] = [];
-    const seen = new Set<string>();
-    for (const c of activeContacts) {
-      const holdingId = holdingIdOfAccount(c.accountId);
-      if (!holdingId) continue;
-      if (!activeDirections.some((d) => d.id === c.directionId)) continue;
-      const target = directionNodeId(holdingId, c.directionId);
-      if (seen.has(target)) continue;
-      seen.add(target);
-      edges.push({
-        id: `e-${holdingId}-${c.directionId}`,
-        source: holdingId,
-        target,
-        type: "hasDirection",
-      });
-    }
-    return edges;
-  }, [activeContacts, activeDirections, holdingIdOfAccount]);
-
-  const contactMembershipEdges = useMemo(
+  const accountContactEdges = useMemo(
     () =>
-      activeContacts
-        .filter((c) => activeDirections.some((d) => d.id === c.directionId))
-        .map((c) => {
-          const holdingId = holdingIdOfAccount(c.accountId) ?? c.accountId;
-          const source = directionNodeId(holdingId, c.directionId);
-          return {
-            id: `e-${source}-${c.id}`,
-            source,
-            target: c.id,
-            type: "hasMember" as const,
-          };
-        }),
-    [activeContacts, activeDirections, holdingIdOfAccount],
+      activeContacts.map((c) => ({
+        id: `e-${c.accountId}-${c.id}`,
+        source: c.accountId,
+        target: c.id,
+        type: "hasMember" as const,
+      })),
+    [activeContacts],
   );
 
   const [page, setPage] = useState<AppPage>("dashboard");
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const navigate = useCallback((next: AppPage) => {
     if (next === "account-plans") {
@@ -566,10 +479,15 @@ export default function App() {
     }
   }, [page, billing.organization?.optional_modules]);
 
+  useEffect(() => {
+    if (page === "settings" && !canPerm("settings.access")) {
+      setPage("dashboard");
+    }
+  }, [page, profile?.role, canPerm]);
+
   const [visibleCommercialStatuses, setVisibleCommercialStatuses] = useState<
     Record<string, boolean>
   >({});
-  const [showDirections, setShowDirections] = useState(false);
   const [showContacts, setShowContacts] = useState(false);
   const [showContactLinks, setShowContactLinks] = useState(false);
   const [visibleRoles, setVisibleRoles] = useState<Record<string, boolean>>(
@@ -631,23 +549,14 @@ export default function App() {
     sameEffectif: false,
   });
 
-  /** Compte focus = nœud compte cliqué, ou entreprise du contact / direction. */
+  /** Compte focus = nœud compte cliqué ou entreprise du contact. */
   const focusAccountId = useMemo(() => {
     if (!selectedId) return null;
     if (activeAccounts.some((a) => a.id === selectedId)) return selectedId;
     const contact = activeContacts.find((c) => c.id === selectedId);
     if (contact) return contact.accountId;
-    const dir = parseDirectionNodeId(selectedId);
-    if (dir) {
-      const member = activeContacts.find(
-        (c) =>
-          c.directionId === dir.directionId &&
-          holdingIdOfAccount(c.accountId) === dir.holdingId,
-      );
-      return member?.accountId ?? dir.holdingId;
-    }
     return null;
-  }, [selectedId, activeAccounts, activeContacts, holdingIdOfAccount]);
+  }, [selectedId, activeAccounts, activeContacts]);
 
   const toggleRole = (role: string) => {
     setVisibleRoles((prev) => ({ ...prev, [role]: !prev[role] }));
@@ -689,27 +598,6 @@ export default function App() {
       activeSolutionIds,
       soldSolutions,
     ],
-  );
-
-  const directionPassesSolutionFilter = useCallback(
-    (directionId: string, accountId: string) => {
-      if (!solutionFilterActive) return true;
-      const atDirection = soldSolutions.filter((s) =>
-        soldLineMatchesDirection(s, directionId),
-      );
-      const atCompany = soldSolutions.filter(
-        (s) => s.accountId === accountId && isCompanyLevelSoldLine(s),
-      );
-      if (atDirection.length === 0 && atCompany.length === 0) return true;
-      if (atDirection.some((s) => activeSolutionIds.has(s.solutionId))) {
-        return true;
-      }
-      if (atCompany.some((s) => activeSolutionIds.has(s.solutionId))) {
-        return true;
-      }
-      return false;
-    },
-    [solutionFilterActive, activeSolutionIds, soldSolutions],
   );
 
   const peerGroups = useMemo(
@@ -792,32 +680,6 @@ export default function App() {
     soldSolutions,
   ]);
 
-  const visibleDirectionIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (!crmDetailFiltersVisible || !showDirections) return ids;
-    for (const c of activeContacts) {
-      if (!visibleAccountIds.has(c.accountId)) continue;
-      const acc = activeAccounts.find((a) => a.id === c.accountId);
-      if (!acc || !isCrmDetailStatus(acc.commercialStatus)) continue;
-      const holdingId = holdingIdOfAccount(c.accountId);
-      if (!holdingId || !visibleAccountIds.has(holdingId)) continue;
-      if (!activeDirections.some((d) => d.id === c.directionId)) continue;
-      if (!directionPassesSolutionFilter(c.directionId, c.accountId)) continue;
-      ids.add(directionNodeId(holdingId, c.directionId));
-    }
-    return ids;
-  }, [
-    crmDetailFiltersVisible,
-    showDirections,
-    visibleAccountIds,
-    directionPassesSolutionFilter,
-    activeContacts,
-    activeDirections,
-    activeAccounts,
-    isCrmDetailStatus,
-    holdingIdOfAccount,
-  ]);
-
   const visibleContactIds = useMemo(() => {
     const ids = new Set<string>();
     if (!crmDetailFiltersVisible || !showContacts) return ids;
@@ -828,17 +690,6 @@ export default function App() {
       if (!visibleAccountIds.has(c.accountId)) continue;
       const acc = activeAccounts.find((a) => a.id === c.accountId);
       if (!acc || !isCrmDetailStatus(acc.commercialStatus)) continue;
-      if (showDirections) {
-        const holdingId = holdingIdOfAccount(c.accountId);
-        if (
-          !holdingId ||
-          !visibleDirectionIds.has(
-            directionNodeId(holdingId, c.directionId),
-          )
-        ) {
-          continue;
-        }
-      }
       const stake = stakeByContact.get(c.id);
       if (stake?.role) {
         const roleFilterActive = activeContactTypes.some(
@@ -855,15 +706,12 @@ export default function App() {
   }, [
     crmDetailFiltersVisible,
     showContacts,
-    showDirections,
     visibleAccountIds,
-    visibleDirectionIds,
     visibleRoles,
     activeContactTypes,
     activeContacts,
     activeAccounts,
     isCrmDetailStatus,
-    holdingIdOfAccount,
     activeOpportunity,
   ]);
 
@@ -955,47 +803,6 @@ export default function App() {
       });
     }
 
-    for (const nodeId of visibleDirectionIds) {
-      const parsed = parseDirectionNodeId(nodeId);
-      if (!parsed) continue;
-      const holding = activeAccounts.find((a) => a.id === parsed.holdingId);
-      const dir = activeDirections.find((d) => d.id === parsed.directionId);
-      if (!holding || !dir) continue;
-      const siblings = [...visibleDirectionIds].filter((id) =>
-        id.startsWith(`dnode-${parsed.holdingId}--`),
-      );
-      const index = siblings.indexOf(nodeId);
-      const saved = layoutPositions[nodeId];
-      list.push({
-        id: nodeId,
-        type: "direction",
-        position: saved ?? {
-          x: holding.x - 200 + index * 220,
-          y: holding.y + 270,
-        },
-        selected: selectedId === nodeId,
-        draggable: true,
-        data: {
-          name: dir.name,
-          accountName: holding.name,
-          commercialStatus: "Prospect" as CommercialStatus,
-          memberCount: activeContacts.filter(
-            (c) =>
-              c.directionId === parsed.directionId &&
-              holdingIdOfAccount(c.accountId) === parsed.holdingId &&
-              visibleContactIds.has(c.id),
-          ).length,
-          solutions: soldSolutionsForDirection(
-            parsed.directionId,
-            soldSolutions,
-          ).map((s) => ({
-            name: solutionLabel(s.solutionId),
-            billed: s.billedAmount,
-          })),
-        },
-      });
-    }
-
     for (const c of activeContacts) {
       if (!visibleContactIds.has(c.id)) continue;
       const stake =
@@ -1014,7 +821,7 @@ export default function App() {
           role: stake?.role ?? "",
           status: stake?.status,
           mapped: Boolean(stake),
-          directionName: directionLabel(c.directionId),
+          personaName: personaLabel(c.personaId),
           accountName:
             activeAccounts.find((a) => a.id === c.accountId)?.name ?? "",
         },
@@ -1028,18 +835,14 @@ export default function App() {
     focusAccountId,
     selectedId,
     visibleAccountIds,
-    visibleDirectionIds,
     visibleContactIds,
     soldSolutions,
     solutionLabel,
-    directionLabel,
-    activeDirections,
+    personaLabel,
     activeAccounts,
     activeContacts,
-    holdingIdOfAccount,
     activeOpportunity,
     activeOpportunities,
-    layoutPositions,
     isCrmDetailStatus,
     salesTaxonomy,
   ]);
@@ -1050,14 +853,12 @@ export default function App() {
         peerOverlayActive ? "1" : "0",
         focusAccountId ?? "",
         [...visibleAccountIds].sort().join(","),
-        [...visibleDirectionIds].sort().join(","),
         [...visibleContactIds].sort().join(","),
       ].join("|"),
     [
       peerOverlayActive,
       focusAccountId,
       visibleAccountIds,
-      visibleDirectionIds,
       visibleContactIds,
     ],
   );
@@ -1165,7 +966,6 @@ export default function App() {
     const list: Edge[] = [];
     const visible = new Set([
       ...visibleAccountIds,
-      ...visibleDirectionIds,
       ...visibleContactIds,
     ]);
     const pushIfVisible = (edge: Edge) => {
@@ -1242,22 +1042,8 @@ export default function App() {
       }
     }
 
-    if (showDirections) {
-      for (const e of directionEdges) {
-        const s = companyEdgeStyle.hasDirection;
-        pushIfVisible({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          label: "direction",
-          style: { stroke: s.stroke, strokeWidth: s.width },
-          markerEnd: { type: MarkerType.ArrowClosed, color: s.stroke },
-        });
-      }
-    }
-
-    if (showContacts && showDirections) {
-      for (const e of contactMembershipEdges) {
+    if (showContacts) {
+      for (const e of accountContactEdges) {
         const s = companyEdgeStyle.hasMember;
         pushIfVisible({
           id: e.id,
@@ -1303,14 +1089,11 @@ export default function App() {
     return list;
   }, [
     peerOverlayActive,
-    showDirections,
     showContacts,
     showContactLinks,
     visibleAccountIds,
-    visibleDirectionIds,
     visibleContactIds,
-    directionEdges,
-    contactMembershipEdges,
+    accountContactEdges,
     holdingEdges,
     companyRelations,
     contactRelations,
@@ -1325,29 +1108,21 @@ export default function App() {
     if (!selectedId) return;
     const stillVisible =
       visibleAccountIds.has(selectedId) ||
-      visibleDirectionIds.has(selectedId) ||
       visibleContactIds.has(selectedId);
     if (!stillVisible) setSelectedId(null);
   }, [
     selectedId,
     visibleAccountIds,
-    visibleDirectionIds,
     visibleContactIds,
   ]);
 
   const selectedContact = activeContacts.find((c) => c.id === selectedId);
   const selectedAccount = activeAccounts.find((a) => a.id === selectedId);
-  const selectedDirNode = selectedId
-    ? parseDirectionNodeId(selectedId)
-    : null;
-  const selectedDirection = selectedDirNode
-    ? activeDirections.find((d) => d.id === selectedDirNode.directionId)
-    : null;
 
   const mapPlanAccountId = useMemo(() => {
     if (selectedAccount?.type === "Entreprise") return selectedAccount.id;
     if (selectedContact) return selectedContact.accountId;
-    // Groupe / direction : pas de plan propre
+    // Groupe : pas de plan propre
     return null;
   }, [selectedAccount, selectedContact]);
 
@@ -1412,20 +1187,6 @@ export default function App() {
   ]);
 
   const scopeKpis = useMemo(() => {
-    if (selectedDirection) {
-      return aggregateKpis(
-        salesForDirectionScope(selectedDirection.id, soldSolutions),
-        `Direction ${selectedDirection.name}`,
-        solutionLabel,
-        opportunitiesForDirectionScope(
-          selectedDirection.id,
-          activeOpportunities,
-          activeContacts,
-        ),
-        undefined,
-        salesTaxonomy,
-      );
-    }
     if (selectedAccount) {
       return aggregateKpis(
         salesForAccountScope(
@@ -1447,23 +1208,23 @@ export default function App() {
       );
     }
     if (selectedContact) {
-      const dir = activeDirections.find(
-        (d) => d.id === selectedContact.directionId,
+      return aggregateKpis(
+        salesForAccountScope(
+          selectedContact.accountId,
+          soldSolutions,
+          activeAccounts,
+        ),
+        activeAccounts.find((a) => a.id === selectedContact.accountId)?.name ??
+          "Entreprise",
+        solutionLabel,
+        opportunitiesForAccountScope(
+          selectedContact.accountId,
+          activeOpportunities,
+          activeAccounts,
+        ),
+        undefined,
+        salesTaxonomy,
       );
-      if (dir) {
-        return aggregateKpis(
-          salesForDirectionScope(dir.id, soldSolutions),
-          `Direction ${dir.name} (via contact)`,
-          solutionLabel,
-          opportunitiesForDirectionScope(
-            dir.id,
-            activeOpportunities,
-            activeContacts,
-          ),
-          undefined,
-          salesTaxonomy,
-        );
-      }
     }
     return aggregateKpis(
       [],
@@ -1475,14 +1236,11 @@ export default function App() {
     );
   }, [
     selectedAccount,
-    selectedDirection,
     selectedContact,
     soldSolutions,
     solutionLabel,
     salesTaxonomy,
-    activeDirections,
     activeAccounts,
-    activeContacts,
     activeOpportunities,
   ]);
 
@@ -1605,52 +1363,56 @@ export default function App() {
           ))}
 
         </nav>
-
-        <div className="sidebar-foot">
-          <LanguageSwitcher className="sidebar-lang" />
-          <p className="sidebar-user muted" title={user.email ?? undefined}>
-            {user.email}
-            {profile ? (
-              <>
-                <br />
-                <span className={`role-pill role-${profile.role}`}>
-                  {roleText(profile.role)}
-                </span>
-              </>
-            ) : null}
-          </p>
-          <button
-            type="button"
-            className="ghost tiny"
-            onClick={() => void signOut()}
-          >
-            {t("sidebar.signOut")}
-          </button>
-          {isAdmin && (
-            <button
-              type="button"
-              className="ghost tiny"
-              onClick={() => setTeamOpen(true)}
-            >
-              {t("sidebar.team")}
-            </button>
-          )}
-          {isAdmin && (
-            <button
-              type="button"
-              className="settings-trigger"
-              onClick={() => setSettingsOpen(true)}
-            >
-              {t("sidebar.settings")}
-            </button>
-          )}
-        </div>
       </aside>
 
       <div className="app-main">
+        <header className="app-userbar" aria-label="Compte utilisateur">
+          <div className="app-userbar-actions">
+            <LanguageSwitcher className="app-userbar-lang" />
+            <p className="app-userbar-user muted" title={user.email ?? undefined}>
+              <span className="app-userbar-email">{user.email}</span>
+              {profile ? (
+                <span className={`role-pill role-${profile.role}`}>
+                  {roleText(profile.role)}
+                </span>
+              ) : null}
+            </p>
+            <button
+              type="button"
+              className="ghost tiny"
+              onClick={() => void signOut()}
+            >
+              {t("sidebar.signOut")}
+            </button>
+            {canPerm("team.manage") && (
+              <button
+                type="button"
+                className="ghost tiny"
+                onClick={() => setTeamOpen(true)}
+              >
+                {t("sidebar.team")}
+              </button>
+            )}
+            {canPerm("settings.access") && (
+              <button
+                type="button"
+                className={`ghost tiny${page === "settings" ? " active" : ""}`}
+                onClick={() => navigate("settings")}
+              >
+                {t("sidebar.settings")}
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className="app-main-body">
         {page === "dashboard" && (
           <DashboardPage onNavigate={navigate} />
         )}
+
+        {page === "settings" && canPerm("settings.access") ? (
+          <SettingsPanel onOpenTeam={() => setTeamOpen(true)} />
+        ) : null}
 
         {page === "account-plans" && (
           <AccountPlanPage
@@ -1783,16 +1545,6 @@ export default function App() {
                         <label>
                           <input
                             type="checkbox"
-                            checked={showDirections}
-                            onChange={(e) =>
-                              setShowDirections(e.target.checked)
-                            }
-                          />
-                          Directions
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
                             checked={showContacts}
                             onChange={(e) => setShowContacts(e.target.checked)}
                           />
@@ -1859,7 +1611,6 @@ export default function App() {
                           if (n.className?.includes("is-focus-node"))
                             return "#c9a227";
                           if (n.type === "account") return "#1f2937";
-                          if (n.type === "direction") return "#57534e";
                           return "#0f766e";
                         }}
                         maskColor="rgba(250,248,244,0.7)"
@@ -1872,9 +1623,7 @@ export default function App() {
 
                     <section>
                       <h2>Sélection</h2>
-                      {!selectedContact &&
-                        !selectedAccount &&
-                        !selectedDirection && (
+                      {!selectedContact && !selectedAccount && (
                           <p className="muted">Aucune sélection.</p>
                         )}
                       {selectedContact && (
@@ -1882,8 +1631,8 @@ export default function App() {
                           <strong>{selectedContact.name}</strong>
                           <p>{selectedContact.title}</p>
                           <p>
-                            Direction :{" "}
-                            {directionLabel(selectedContact.directionId)}
+                            Persona :{" "}
+                            {personaLabel(selectedContact.personaId)}
                             <br />
                             Entreprise :{" "}
                             {
@@ -1951,18 +1700,12 @@ export default function App() {
                           </p>
                         </div>
                       )}
-                      {selectedDirection && selectedDirNode && (
-                        <SoldSolutionEditor
-                          accountId={selectedDirNode.holdingId}
-                          directionId={selectedDirection.id}
-                          readOnly
-                        />
-                      )}
                       {selectedAccount &&
                         selectedAccount.type === "Entreprise" && (
                           <SoldSolutionEditor
                             accountId={selectedAccount.id}
-                            directionId={null}
+                            personaId={null}
+                            allowPersonaPick={catalogFeatures.personae}
                             readOnly
                           />
                         )}
@@ -1983,11 +1726,11 @@ export default function App() {
                                 soldSolutions,
                                 activeAccounts,
                               ).map((s) => {
-                                const dirs = soldLineDirectionIds(s);
-                                const dirLabel =
-                                  dirs.length === 0
+                                const personas = soldLinePersonaIds(s);
+                                const personaScopeLabel =
+                                  personas.length === 0
                                     ? " (entreprise)"
-                                    : ` @ ${dirs.map((id) => directionLabel(id)).join(", ")}`;
+                                    : ` @ ${personas.map((id: string) => personaLabel(id)).join(", ")}`;
                                 const mods = (s.moduleIds ?? [])
                                   .map((mid) => {
                                     const sol = activeSolutions.find(
@@ -2002,7 +1745,7 @@ export default function App() {
                                 return (
                                   <li key={s.id}>
                                     {solutionLabel(s.solutionId)}
-                                    {dirLabel}
+                                    {personaScopeLabel}
                                     {mods.length > 0
                                       ? ` · ${mods.join(", ")}`
                                       : ""}{" "}
@@ -2050,12 +1793,10 @@ export default function App() {
             </div>
           </div>
         )}
+        </div>
       </div>
 
-      {settingsOpen && isAdmin && (
-        <SettingsPanel onClose={() => setSettingsOpen(false)} />
-      )}
-      {teamOpen && isAdmin && (
+      {teamOpen && canPerm("team.manage") && (
         <TeamAdminPanel onClose={() => setTeamOpen(false)} />
       )}
     </div>

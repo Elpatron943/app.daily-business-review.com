@@ -123,14 +123,14 @@ export default function CatalogueManager({
           <label className="sold-check">
             <input
               type="checkbox"
-              checked={catalogFeatures.directions}
+              checked={catalogFeatures.personae}
               onChange={(e) =>
-                updateCatalogFeatures({ directions: e.target.checked })
+                updateCatalogFeatures({ personae: e.target.checked })
               }
             />
             <span>
-              <strong>Directions</strong>
-              <em className="meta">Équipement / ventes par direction</em>
+              <strong>Personae</strong>
+              <em className="meta">Équipement / ventes par persona</em>
             </span>
           </label>
         </div>
@@ -418,7 +418,14 @@ function SolutionRow({
                         placeholder="Description du module…"
                         aria-label="Description module"
                       />
-                      <h4 className="nested-hint">USP</h4>
+                      <h4 className="nested-hint">
+                        USP — Unique Selling Points
+                      </h4>
+                      <p className="muted settings-hint">
+                        Points forts spécifiques à ce module (vs concurrent).
+                        Ils apparaissent sur les opportunités liées et dans
+                        l’analyse IA pour renforcer le discours produit.
+                      </p>
                       <ul className="settings-list intel-usp-list">
                         {usps.map((u) => (
                           <li
@@ -482,7 +489,7 @@ function SolutionRow({
                           onChange={(e) =>
                             onNewUspChange(m.id, e.target.value)
                           }
-                          placeholder="Nouvel USP pour ce module"
+                          placeholder="Nouvel Unique Selling Point pour ce module"
                           required
                         />
                         <button type="submit">Ajouter USP</button>

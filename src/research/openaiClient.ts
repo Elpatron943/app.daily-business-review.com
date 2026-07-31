@@ -1,5 +1,6 @@
 import {
   buildOpportunityAnalysisPrompt,
+  parseEnsembleDealReview,
   type OpportunityAnalysisInput,
 } from "./buildOpportunityAnalysisPrompt";
 import {
@@ -19,6 +20,9 @@ export type OpportunityAnalysisResult = {
   updatedAt: string;
   content: string;
   model: string;
+  verdict?: "Go" | "Watch" | "No-go";
+  confidence?: "high" | "medium" | "low";
+  proposedActions: GeneratedPlanActionDraft[];
 };
 
 export type ActionPlanGenerationResult = {
@@ -73,15 +77,20 @@ async function postOpenAiAnalyze(
   };
 }
 
+/** Analyse d’ensemble + actions complémentaires proposées. */
 export async function runOpportunityAnalysis(
   input: OpportunityAnalysisInput,
 ): Promise<OpportunityAnalysisResult> {
   const { system, user } = buildOpportunityAnalysisPrompt(input);
   const { content, model } = await postOpenAiAnalyze(system, user);
+  const parsed = parseEnsembleDealReview(content);
   return {
     updatedAt: new Date().toISOString(),
-    content,
+    content: parsed.analysisMarkdown,
     model,
+    verdict: parsed.verdict,
+    confidence: parsed.confidence,
+    proposedActions: parsed.actions,
   };
 }
 
@@ -99,4 +108,4 @@ export async function runActionPlanGeneration(
   };
 }
 
-export type { GeneratedPlanActionDraft, ActionPlanGenerationInput };
+export type { GeneratedPlanActionDraft };

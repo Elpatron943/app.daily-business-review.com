@@ -12,15 +12,26 @@ import {
   type ProcessDomainDef,
 } from "./opportunities/salesProcess";
 
+function isCompellingEventQuestion(questionId: string, label: string): boolean {
+  return (
+    questionId === "q-qual-ce" ||
+    questionId === "q-tq-ce" ||
+    /compelling event/i.test(label) ||
+    /identification d.?un compelling/i.test(label)
+  );
+}
+
 export default function OpportunityProcessPanel({
   opportunity,
   onAnswer,
+  onUpdate,
 }: {
   opportunity: Opportunity;
   onAnswer: (
     questionId: string,
     patch: { status?: ProcessAnswerStatus; note?: string },
   ) => void;
+  onUpdate?: (patch: Partial<Opportunity>) => void;
 }) {
   const { activeProcessDomains } = useOrgConfig();
   const domains = activeProcessDomains;
@@ -140,6 +151,7 @@ export default function OpportunityProcessPanel({
                     domain={domain}
                     opportunity={opportunity}
                     onAnswer={onAnswer}
+                    onUpdate={onUpdate}
                   />
                 )}
               </li>
@@ -155,6 +167,7 @@ function DomainQuestions({
   domain,
   opportunity,
   onAnswer,
+  onUpdate,
 }: {
   domain: ProcessDomainDef;
   opportunity: Opportunity;
@@ -162,33 +175,86 @@ function DomainQuestions({
     questionId: string,
     patch: { status?: ProcessAnswerStatus; note?: string },
   ) => void;
+  onUpdate?: (patch: Partial<Opportunity>) => void;
 }) {
+  const { activeCompellingEvents } = useOrgConfig();
   const questions = activeQuestions(domain);
   return (
     <ul className="opp-process-questions">
       {questions.map((q) => {
         const answer = getAnswer(opportunity.processAnswers, q.id);
+        const isCe = isCompellingEventQuestion(q.id, q.label);
+        const showCePick = isCe && answer.status === "Yes";
         return (
           <li key={q.id} className={`q-status-${answer.status}`}>
             <div className="opp-process-q-main">
               <strong>{q.label}</strong>
-              {answer.note ? (
-                <p className="opp-process-note">{answer.note}</p>
-              ) : null}
-              <label className="opp-process-note-edit">
-                Note
-                <textarea
-                  rows={2}
-                  value={answer.note ?? ""}
-                  placeholder="Preuve / commentaire…"
-                  onChange={(e) =>
-                    onAnswer(q.id, {
-                      note: e.target.value || undefined,
-                      status: answer.status,
-                    })
-                  }
-                />
-              </label>
+              {showCePick ? (
+                <div className="opp-mapping-ce-pick">
+                  <span className="opp-mapping-ce-pick-label">
+                    Compelling events
+                  </span>
+                  {activeCompellingEvents.length === 0 ? (
+                    <p className="muted">
+                      Aucun compelling event dans le catalogue.
+                    </p>
+                  ) : (
+                    <ul className="opp-module-checks">
+                      {activeCompellingEvents.map((ce) => {
+                        const selected =
+                          opportunity.compellingEventIds?.includes(ce.id) ??
+                          false;
+                        return (
+                          <li key={ce.id}>
+                            <label title={ce.description || undefined}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => {
+                                  const cur =
+                                    opportunity.compellingEventIds ?? [];
+                                  const next = selected
+                                    ? cur.filter((id) => id !== ce.id)
+                                    : [...cur, ce.id];
+                                  onUpdate?.({ compellingEventIds: next });
+                                  onAnswer(q.id, {
+                                    status: "Yes",
+                                    note:
+                                      next.length > 0
+                                        ? `${next.length} CE sélectionné${next.length > 1 ? "s" : ""}`
+                                        : undefined,
+                                  });
+                                }}
+                              />
+                              {ce.label}
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {answer.note ? (
+                    <p className="opp-process-note">{answer.note}</p>
+                  ) : null}
+                  <label className="opp-process-note-edit">
+                    Note
+                    <textarea
+                      rows={2}
+                      value={answer.note ?? ""}
+                      placeholder="Preuve / commentaire…"
+                      onChange={(e) =>
+                        onAnswer(q.id, {
+                          note: e.target.value || undefined,
+                          status: answer.status,
+                        })
+                      }
+                    />
+                  </label>
+                </>
+              )}
             </div>
             <div className="opp-process-q-side">
               <select

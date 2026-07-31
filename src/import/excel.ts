@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { parseCsv, type CsvTable } from "./csv";
 import { normalizeHeader } from "./csv";
+import { collectColumnSamples } from "./catalogGaps";
 import type { ImportEntityKind } from "./mappingFields";
 
 export type ExcelImportTables = {
@@ -16,11 +17,16 @@ export type RawImportSheet = {
   sheetName: string;
   headers: string[];
   rows: Record<string, string>[];
+  /** Jusqu’à 3 valeurs d’exemple distinctes par colonne. */
+  sampleValues: Record<string, string[]>;
+  /** @deprecated préférer sampleValues */
   samples: Record<string, string>;
 };
 
 export type ExcelTemplateRefs = {
-  directions: string[];
+  personae: string[];
+  /** @deprecated alias import — utiliser personae */
+  directions?: string[];
   sectors: string[];
   solutions: string[];
   modules: string[];
@@ -74,7 +80,14 @@ function sheetToRawTable(
   ) as unknown as (string | number | boolean | null)[][];
 
   if (!raw.length) {
-    return { kind, sheetName, headers: [], rows: [], samples: {} };
+    return {
+      kind,
+      sheetName,
+      headers: [],
+      rows: [],
+      sampleValues: {},
+      samples: {},
+    };
   }
 
   const headerCells = (raw[0] ?? []).map((c, idx) => {
@@ -94,10 +107,10 @@ function sheetToRawTable(
     rows.push(row);
   }
 
+  const sampleValues = collectColumnSamples(headerCells, rows, 3);
   const samples: Record<string, string> = {};
-  const first = rows[0];
-  if (first) {
-    for (const h of headerCells) samples[h] = first[h] ?? "";
+  for (const h of headerCells) {
+    samples[h] = sampleValues[h]?.[0] ?? "";
   }
 
   return {
@@ -105,6 +118,7 @@ function sheetToRawTable(
     sheetName,
     headers: headerCells,
     rows,
+    sampleValues,
     samples,
   };
 }
@@ -132,10 +146,10 @@ export async function parseImportWorkbookRaw(
               table.headers.includes("direction")
             ? "contacts"
             : "accounts";
+    const sampleValues = collectColumnSamples(table.headers, table.rows, 3);
     const samples: Record<string, string> = {};
-    const first = table.rows[0];
-    if (first) {
-      for (const h of table.headers) samples[h] = first[h] ?? "";
+    for (const h of table.headers) {
+      samples[h] = sampleValues[h]?.[0] ?? "";
     }
     return [
       {
@@ -143,6 +157,7 @@ export async function parseImportWorkbookRaw(
         sheetName: file.name,
         headers: table.headers,
         rows: table.rows,
+        sampleValues,
         samples,
       },
     ];
@@ -218,8 +233,13 @@ function appendGuide(wb: XLSX.WorkBook) {
     ["Correspondances de clés"],
     ["Entreprises.Cle → Contacts.Compte, Opportunites.Compte, Solutions_vendues.Compte"],
     ["Entreprises.Cle_groupe → Cle d’un groupe (Type = Holding ou Groupe)"],
+    ["Entreprises.Owner_email → e-mail d’un user DBR déjà invité (sinon rattachement manuel)"],
     ["Solutions_vendues.Modules → libellés du catalogue, séparés par ;"],
-    ["Solutions_vendues.Directions → libellés, séparés par ; (vide = niveau entreprise)"],
+    ["Solutions_vendues.Personae → libellés, séparés par ; (vide = niveau entreprise)"],
+    [""],
+    ["Owner (gestionnaire)"],
+    ["Colonne Owner_email = e-mail exact du commercial dans Settings → Équipe."],
+    ["Le user doit exister avant l’import. Sinon : warning + choix manuel sur la fiche."],
     [""],
     ["Type (Entreprises)"],
     ["Holding ou Groupe | Entreprise"],
@@ -229,7 +249,7 @@ function appendGuide(wb: XLSX.WorkBook) {
     [""],
     ["Phase"],
     [
-      "Whitespace | Discovery | Solution Validation | Negotiation | Closed Won | Closed Lost",
+      "Whitespace | Discovery | Qualification | Proposal | Negotiation | Closed Won | Closed Lost",
     ],
     [""],
     ["Nature"],
@@ -250,7 +270,7 @@ function appendReferentiel(wb: XLSX.WorkBook, refs?: ExcelTemplateRefs) {
   for (const v of refs.sizes) refRows.push(["Taille", v]);
   for (const v of refs.phases) refRows.push(["Phase", v]);
   for (const v of refs.kinds) refRows.push(["Nature", v]);
-  for (const v of refs.directions) refRows.push(["Direction", v]);
+  for (const v of refs.personae ?? refs.directions ?? []) refRows.push(["Persona", v]);
   for (const v of refs.sectors) refRows.push(["Secteur", v]);
   for (const v of refs.solutions) refRows.push(["Solution", v]);
   for (const v of refs.modules) refRows.push(["Module", v]);
@@ -267,8 +287,9 @@ const ACCOUNT_HEADERS_FR = [
   "Cle_groupe",
   "Secteur",
   "Taille",
+  "Owner_email",
 ];
-const CONTACT_HEADERS_FR = ["Cle", "Nom", "Titre", "Compte", "Direction"];
+const CONTACT_HEADERS_FR = ["Cle", "Nom", "Titre", "Compte", "Persona"];
 const OPP_HEADERS_FR = [
   "Cle",
   "Nom",
@@ -284,7 +305,7 @@ const SOLD_HEADERS_FR = [
   "Compte",
   "Solution",
   "Modules",
-  "Directions",
+  "Personae",
   "CA_facture",
 ];
 
@@ -294,14 +315,32 @@ export function downloadExcelTemplate(refs?: ExcelTemplateRefs) {
   appendGuide(wb);
 
   appendDataSheet(wb, "Entreprises", ACCOUNT_HEADERS_FR, [
-    ["G1", "Groupe Exemple", "Holding", "Client", "", "", ""],
-    ["E1", "Exemple France", "Entreprise", "Prospect", "G1", "", "1001-2500"],
-    ["E2", "Exemple Belgique", "Entreprise", "Client", "G1", "", "2501-5000"],
+    ["G1", "Groupe Exemple", "Holding", "Client", "", "", "", "admin@exemple.com"],
+    [
+      "E1",
+      "Exemple France",
+      "Entreprise",
+      "Prospect",
+      "G1",
+      "",
+      "1001-2500",
+      "commercial@exemple.com",
+    ],
+    [
+      "E2",
+      "Exemple Belgique",
+      "Entreprise",
+      "Client",
+      "G1",
+      "",
+      "2501-5000",
+      "commercial@exemple.com",
+    ],
   ]);
 
   appendDataSheet(wb, "Contacts", CONTACT_HEADERS_FR, [
-    ["C1", "Alice Martin", "CEO", "E1", refs?.directions[0] ?? ""],
-    ["C2", "Bruno Leroy", "CFO", "E1", refs?.directions[0] ?? ""],
+    ["C1", "Alice Martin", "CEO", "E1", refs?.personae?.[0] ?? refs?.directions?.[0] ?? ""],
+    ["C2", "Bruno Leroy", "CFO", "E1", refs?.personae?.[0] ?? refs?.directions?.[0] ?? ""],
     ["C3", "Chloé Dubois", "IT Director", "E2", ""],
   ]);
 
@@ -322,7 +361,7 @@ export function downloadExcelTemplate(refs?: ExcelTemplateRefs) {
       "E2",
       45000,
       "2026-09-30",
-      "Solution Validation",
+      "Proposal",
       "up",
       refs?.solutions[0] ?? "",
     ],

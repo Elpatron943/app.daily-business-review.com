@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   formatEur,
   isCompanyLevelSoldLine,
-  soldLineDirectionIds,
-  soldLineMatchesDirection,
+  soldLinePersonaIds,
+  soldLineMatchesPersona,
   type SoldSolution,
 } from "./data";
 import { useOrgConfig } from "./config/ConfigContext";
@@ -11,22 +11,22 @@ import { useDomain } from "./domain/DomainContext";
 import { useSales } from "./sales/SalesContext";
 
 /**
- * @param directionId — scope fixe (carte) ; ignoré si `allowDirectionPick`
- * @param allowDirectionPick — fiche entreprise : multi-directions + modules
+ * @param personaId — scope fixe (carte) ; ignoré si `allowPersonaPick`
+ * @param allowPersonaPick — fiche entreprise : multi-personae + modules
  * @param readOnly — carto : affichage seul, aucune saisie
  */
 export default function SoldSolutionEditor({
   accountId,
-  directionId = null,
-  allowDirectionPick = false,
+  personaId = null,
+  allowPersonaPick = false,
   readOnly = false,
 }: {
   accountId: string;
-  directionId?: string | null;
-  allowDirectionPick?: boolean;
+  personaId?: string | null;
+  allowPersonaPick?: boolean;
   readOnly?: boolean;
 }) {
-  const { activeSolutions, activeDirections, solutionLabel, directionLabel, catalogFeatures } =
+  const { activeSolutions, activePersonae, solutionLabel, personaLabel, catalogFeatures } =
     useOrgConfig();
   const { soldSolutions, upsertSoldSolution, removeSoldSolution } = useSales();
   const { activeAccounts } = useDomain();
@@ -35,15 +35,15 @@ export default function SoldSolutionEditor({
   const scopeLabel = account?.name ?? accountId;
 
   const lines = soldSolutions.filter((s) => {
-    if (allowDirectionPick) return s.accountId === accountId;
-    if (directionId) return soldLineMatchesDirection(s, directionId);
+    if (allowPersonaPick) return s.accountId === accountId;
+    if (personaId) return soldLineMatchesPersona(s, personaId);
     return s.accountId === accountId && isCompanyLevelSoldLine(s);
   });
 
   const [solutionId, setSolutionId] = useState(
     activeSolutions[0]?.id ?? "",
   );
-  const [formDirectionIds, setFormDirectionIds] = useState<string[]>([]);
+  const [formPersonaIds, setFormPersonaIds] = useState<string[]>([]);
   const [moduleIds, setModuleIds] = useState<string[]>([]);
   const [billed, setBilled] = useState("0");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -54,10 +54,10 @@ export default function SoldSolutionEditor({
   }, [activeSolutions, solutionId]);
 
   useEffect(() => {
-    if (!allowDirectionPick) {
-      setFormDirectionIds(directionId ? [directionId] : []);
+    if (!allowPersonaPick) {
+      setFormPersonaIds(personaId ? [personaId] : []);
     }
-  }, [allowDirectionPick, directionId]);
+  }, [allowPersonaPick, personaId]);
 
   // Drop modules that don't belong to the newly selected solution
   useEffect(() => {
@@ -69,7 +69,7 @@ export default function SoldSolutionEditor({
     if (readOnly) return;
     setEditingId(line.id);
     setSolutionId(line.solutionId);
-    setFormDirectionIds(soldLineDirectionIds(line));
+    setFormPersonaIds(soldLinePersonaIds(line));
     setModuleIds(line.moduleIds ?? []);
     setBilled(String(line.billedAmount));
   };
@@ -77,16 +77,16 @@ export default function SoldSolutionEditor({
   const resetForm = () => {
     setEditingId(null);
     setSolutionId(activeSolutions[0]?.id ?? "");
-    setFormDirectionIds(
-      allowDirectionPick ? [] : directionId ? [directionId] : [],
+    setFormPersonaIds(
+      allowPersonaPick ? [] : personaId ? [personaId] : [],
     );
     setModuleIds([]);
     setBilled("0");
   };
 
-  const toggleDirection = (id: string) => {
-    if (!allowDirectionPick) return;
-    setFormDirectionIds((prev) =>
+  const togglePersona = (id: string) => {
+    if (!allowPersonaPick) return;
+    setFormPersonaIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
@@ -100,33 +100,33 @@ export default function SoldSolutionEditor({
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (readOnly || !solutionId) return;
-    const directionIds = allowDirectionPick
-      ? formDirectionIds
-      : directionId
-        ? [directionId]
+    const personaIds = allowPersonaPick
+      ? formPersonaIds
+      : personaId
+        ? [personaId]
         : [];
     upsertSoldSolution({
       id: editingId ?? undefined,
       solutionId,
       accountId,
-      directionId: directionIds[0] ?? null,
-      directionIds: catalogFeatures.directions ? directionIds : [],
+      personaId: personaIds[0] ?? null,
+      personaIds: catalogFeatures.personae ? personaIds : [],
       moduleIds: catalogFeatures.modules ? moduleIds : [],
       billedAmount: Number(billed) || 0,
     });
     resetForm();
   };
 
-  const title = allowDirectionPick
+  const title = allowPersonaPick
     ? `Solutions vendues · ${scopeLabel}`
-    : directionId
-      ? `Solutions vendues · Direction ${directionLabel(directionId)}`
+    : personaId
+      ? `Solutions vendues · Persona ${personaLabel(personaId)}`
       : `Solutions vendues · ${scopeLabel}`;
 
-  function formatDirs(line: SoldSolution) {
-    const ids = soldLineDirectionIds(line);
+  function formatPersonae(line: SoldSolution) {
+    const ids = soldLinePersonaIds(line);
     if (ids.length === 0) return "Entreprise";
-    return ids.map((id) => directionLabel(id)).join(", ");
+    return ids.map((id) => personaLabel(id)).join(", ");
   }
 
   function formatModules(line: SoldSolution) {
@@ -162,9 +162,9 @@ export default function SoldSolutionEditor({
                 </button>
               )}{" "}
               — CA {formatEur(s.billedAmount)}
-              {(catalogFeatures.directions &&
-                (allowDirectionPick || directionId)) && (
-                <span className="sold-scope-tag">{formatDirs(s)}</span>
+              {(catalogFeatures.personae &&
+                (allowPersonaPick || personaId)) && (
+                <span className="sold-scope-tag">{formatPersonae(s)}</span>
               )}
               {catalogFeatures.modules && mods ? (
                 <span className="sold-scope-tag sold-modules-tag">{mods}</span>
@@ -218,21 +218,21 @@ export default function SoldSolutionEditor({
             </fieldset>
           )}
 
-          {catalogFeatures.directions && allowDirectionPick && (
+          {catalogFeatures.personae && allowPersonaPick && (
             <fieldset className="sold-multi">
-              <legend>Directions</legend>
+              <legend>Personae</legend>
               <p className="sold-multi-hint muted">
                 Aucune case = rattachement entreprise. Plusieurs possibles.
               </p>
               <div className="sold-check-grid">
-                {activeDirections.map((d) => (
-                  <label key={d.id} className="sold-check">
+                {activePersonae.map((p) => (
+                  <label key={p.id} className="sold-check">
                     <input
                       type="checkbox"
-                      checked={formDirectionIds.includes(d.id)}
-                      onChange={() => toggleDirection(d.id)}
+                      checked={formPersonaIds.includes(p.id)}
+                      onChange={() => togglePersona(p.id)}
                     />
-                    <span>{d.name}</span>
+                    <span>{p.name}</span>
                   </label>
                 ))}
               </div>

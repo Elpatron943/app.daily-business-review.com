@@ -9,6 +9,7 @@ import {
   type AccountSize,
   type CommercialStatus,
 } from "./data";
+import { useAuth } from "./auth/AuthContext";
 import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
 import { useSales } from "./sales/SalesContext";
@@ -16,7 +17,6 @@ import AccountPlanOverviewOnFiche from "./accountPlans/AccountPlanOverviewOnFich
 import AccountOpportunitiesInfluenceOverview from "./AccountOpportunitiesInfluenceOverview";
 import AccountEquipmentPanel from "./AccountEquipmentPanel";
 import SoldSolutionEditor from "./SoldSolutionEditor";
-import TargetResearchPanel from "./research/TargetResearchPanel";
 import { useOpportunities } from "./opportunities/OpportunityContext";
 
 type EcosystemLinkType = "CompetitorOf" | "PartnerOf";
@@ -25,7 +25,6 @@ type Tab =
   | "fiche"
   | "plan"
   | "indicateurs"
-  | "recherche"
   | "contacts"
   | "opportunites"
   | "equipement";
@@ -61,7 +60,8 @@ export default function AccountDetailPage({
   const {
     activeSectors,
     solutionLabel,
-    activeDirections,
+    activePersonae,
+    personaLabel,
     salesTaxonomy,
     statusLabel,
     sizeLabel,
@@ -69,7 +69,9 @@ export default function AccountDetailPage({
     activeAccountSizes,
   } = useOrgConfig();
   const { soldSolutions } = useSales();
-  const { activeOpportunities } = useOpportunities();
+  const { activeOpportunities, assignOwnerForAccount } = useOpportunities();
+  const { team, canAssignOwner, canWriteDomain, billing } = useAuth();
+  const readOnly = !canWriteDomain || !billing.canWrite;
   const [tab, setTab] = useState<Tab>("fiche");
   const [relTo, setRelTo] = useState("");
   const [relType, setRelType] = useState<EcosystemLinkType>("CompetitorOf");
@@ -77,7 +79,7 @@ export default function AccountDetailPage({
 
   const [cName, setCName] = useState("");
   const [cTitle, setCTitle] = useState("");
-  const [cDir, setCDir] = useState("");
+  const [cPersona, setCPersona] = useState("");
   const [cParent, setCParent] = useState("");
   const [creatingContact, setCreatingContact] = useState(false);
 
@@ -187,8 +189,8 @@ export default function AccountDetailPage({
   }, [relType]);
 
   useEffect(() => {
-    if (!cDir && activeDirections[0]) setCDir(activeDirections[0].id);
-  }, [activeDirections, cDir]);
+    if (!cPersona && activePersonae[0]) setCPersona(activePersonae[0].id);
+  }, [activePersonae, cPersona]);
 
   const contactsOnAccount = useMemo(
     () =>
@@ -228,19 +230,19 @@ export default function AccountDetailPage({
     setCName("");
     setCTitle("");
     setCParent("");
-    setCDir(activeDirections[0]?.id ?? "");
+    setCPersona(activePersonae[0]?.id ?? "");
     setCreatingContact(false);
   }
 
   function handleAddContact(e: FormEvent) {
     e.preventDefault();
     if (!account || account.type !== "Entreprise") return;
-    if (!cName.trim() || !cDir) return;
+    if (!cName.trim() || !cPersona) return;
     const id = upsertContact({
       name: cName.trim(),
       title: cTitle.trim(),
       accountId: account.id,
-      directionId: cDir,
+      personaId: cPersona,
     });
     if (id) setContactParent(id, cParent || null);
     resetContactForm();
@@ -269,6 +271,7 @@ export default function AccountDetailPage({
       holdingId: string | null;
       sector: string | undefined;
       size: AccountSize | undefined;
+      ownerProfileId: string | null;
     }>,
   ) {
     upsertAccount({
@@ -284,6 +287,10 @@ export default function AccountDetailPage({
             : account!.holdingId,
       sector: next.sector !== undefined ? next.sector : account!.sector,
       size: next.size !== undefined ? next.size : account!.size,
+      ownerProfileId:
+        next.ownerProfileId !== undefined
+          ? next.ownerProfileId
+          : account!.ownerProfileId,
     });
   }
 
@@ -356,14 +363,6 @@ export default function AccountDetailPage({
         >
           Fiche
         </button>
-        <button
-          type="button"
-          className={tab === "recherche" ? "active" : ""}
-          onClick={() => setTab("recherche")}
-        >
-          Recherche
-          {account.researchBrief?.updatedAt ? " ·" : ""}
-        </button>
         {account.type === "Entreprise" && (
           <button
             type="button"
@@ -411,8 +410,6 @@ export default function AccountDetailPage({
           </button>
         )}
       </nav>
-
-      {tab === "recherche" && <TargetResearchPanel account={account} />}
 
       {tab === "opportunites" && (
         <AccountOpportunitiesInfluenceOverview
@@ -467,16 +464,16 @@ export default function AccountDetailPage({
                   />
                 </label>
                 <label>
-                  Direction
+                  Persona
                   <select
-                    value={cDir}
-                    onChange={(e) => setCDir(e.target.value)}
+                    value={cPersona}
+                    onChange={(e) => setCPersona(e.target.value)}
                     required
                   >
                     <option value="">Choisir…</option>
-                    {activeDirections.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
+                    {activePersonae.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
                       </option>
                     ))}
                   </select>
@@ -528,8 +525,7 @@ export default function AccountDetailPage({
                       <span className="meta">
                         {c.title || "Sans titre"}
                         {" · "}
-                        {activeDirections.find((d) => d.id === c.directionId)
-                          ?.name ?? c.directionId}
+                        {personaLabel(c.personaId)}
                       </span>
                     </button>
                   </li>
@@ -549,6 +545,7 @@ export default function AccountDetailPage({
                 Nom
                 <input
                   value={account.name}
+                  disabled={readOnly}
                   onChange={(e) => patch({ name: e.target.value })}
                 />
               </label>
@@ -564,6 +561,7 @@ export default function AccountDetailPage({
                       ? "Prospect"
                       : account.commercialStatus
                   }
+                  disabled={readOnly}
                   onChange={(e) =>
                     patch({
                       commercialStatus: e.target.value as CommercialStatus,
@@ -578,6 +576,37 @@ export default function AccountDetailPage({
                       </option>
                     ))}
                 </select>
+              </label>
+
+              <label>
+                Owner
+                <select
+                  value={account.ownerProfileId ?? ""}
+                  disabled={readOnly || !canAssignOwner}
+                  onChange={(e) => {
+                    const ownerProfileId = e.target.value || null;
+                    patch({ ownerProfileId });
+                    assignOwnerForAccount(account.id, ownerProfileId);
+                  }}
+                >
+                  <option value="">— Non rattaché —</option>
+                  {team.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.full_name
+                        ? `${m.full_name} (${m.email})`
+                        : m.email}
+                    </option>
+                  ))}
+                  {account.ownerProfileId &&
+                    !team.some((m) => m.id === account.ownerProfileId) && (
+                      <option value={account.ownerProfileId}>
+                        User inconnu / hors équipe
+                      </option>
+                    )}
+                </select>
+                <span className="muted" style={{ display: "block", marginTop: "0.35rem", fontSize: "0.85em" }}>
+                  Contacts et opportunités liés sont rattachés au même owner.
+                </span>
               </label>
 
               {account.type === "Entreprise" && (
@@ -777,7 +806,7 @@ export default function AccountDetailPage({
           {account.type === "Entreprise" && (
             <section className="entry-subsection sold-on-fiche">
               <h2>Solutions vendues</h2>
-              <SoldSolutionEditor accountId={account.id} allowDirectionPick />
+              <SoldSolutionEditor accountId={account.id} allowPersonaPick />
             </section>
           )}
 

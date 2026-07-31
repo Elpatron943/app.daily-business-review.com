@@ -52,7 +52,7 @@ export default function AccountOnboardingWizard({
     setContactParent,
   } = useDomain();
   const {
-    activeDirections,
+    activePersonae,
     activeSectors,
     activeSolutions,
     activeOppVariables,
@@ -91,7 +91,7 @@ export default function AccountOnboardingWizard({
 
   const [cName, setCName] = useState("");
   const [cTitle, setCTitle] = useState("");
-  const [cDir, setCDir] = useState(activeDirections[0]?.id ?? "");
+  const [cPersona, setCPersona] = useState(activePersonae[0]?.id ?? "");
   const [cParent, setCParent] = useState("");
 
   const [oppName, setOppName] = useState("");
@@ -121,8 +121,8 @@ export default function AccountOnboardingWizard({
   );
 
   useEffect(() => {
-    if (!cDir && activeDirections[0]) setCDir(activeDirections[0].id);
-  }, [activeDirections, cDir]);
+    if (!cPersona && activePersonae[0]) setCPersona(activePersonae[0].id);
+  }, [activePersonae, cPersona]);
 
   useEffect(() => {
     if (!oppPhase && activeOppPhases[0]) setOppPhase(activeOppPhases[0].id);
@@ -162,11 +162,11 @@ export default function AccountOnboardingWizard({
 
   function submitContact(e: FormEvent) {
     e.preventDefault();
-    if (!accountId || !cName.trim() || !cDir) return;
+    if (!accountId || !cName.trim() || !cPersona) return;
     const id = upsertContact({
       name: cName,
       title: cTitle,
-      directionId: cDir,
+      personaId: cPersona,
       accountId,
     });
     if (id) setContactParent(id, cParent || null);
@@ -191,7 +191,7 @@ export default function AccountOnboardingWizard({
           ? oppSolution
           : "",
       moduleIds: [],
-      directionIds: [],
+      personaIds: [],
       variables:
         oppKind === "up"
           ? defaultOpportunityVariables(activeOppVariables)
@@ -220,7 +220,6 @@ export default function AccountOnboardingWizard({
       status: "Todo",
       vision: "",
       objectives: [],
-      actions: [],
     });
     onPlanCreated?.(id);
     onClose();
@@ -375,15 +374,15 @@ export default function AccountOnboardingWizard({
                 />
               </label>
               <label>
-                Direction
+                Persona
                 <select
-                  value={cDir}
-                  onChange={(e) => setCDir(e.target.value)}
+                  value={cPersona}
+                  onChange={(e) => setCPersona(e.target.value)}
                   required
                 >
-                  {activeDirections.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
+                  {activePersonae.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
                     </option>
                   ))}
                 </select>

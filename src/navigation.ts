@@ -5,6 +5,7 @@ export type AppPage =
   | "dashboard"
   | "map"
   | "account-plans"
+  | "settings"
   | DataSection
   | OptionalModuleId;
 

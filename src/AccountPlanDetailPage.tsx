@@ -8,15 +8,12 @@ import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
 import { useSales } from "./sales/SalesContext";
 import {
-  collectOverdueActions,
   computeAccountHealth,
   computeWhiteSpace,
   contactsOnAccount,
   countObjectivesByStatus,
-  isActionOverdue,
   isPlanOverdue,
   useAccountPlans,
-  type ActionStatus,
   type ObjectiveStatus,
   type PlanStatus,
   PLAN_STATUSES,
@@ -34,8 +31,6 @@ import {
 } from "./opportunities/OpportunityContext";
 import { useConfirm } from "./ui/ConfirmDialog";
 
-const ACTION_STATUSES: ActionStatus[] = ["Todo", "Doing", "Done"];
-const ACTION_SCOPE_PLAN_ID = "__plan__";
 
 type Tab = "fiche" | "objectifs" | "overview";
 
@@ -52,9 +47,6 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
     addObjective,
     updateObjective,
     removeObjective,
-    addAction,
-    updateAction,
-    removeAction,
     getPlanForOpportunity,
   } = useAccountPlans();
   const askConfirm = useConfirm();
@@ -74,10 +66,6 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
       .map((id) => activeOpportunities.find((o) => o.id === id))
       .filter((o): o is Opportunity => Boolean(o));
   }, [plan, activeOpportunities]);
-
-  const [actionScopeId, setActionScopeId] = useState<string>(
-    () => opportunities[0]?.id ?? ACTION_SCOPE_PLAN_ID,
-  );
 
   const primaryAccountId = opportunities[0]?.primaryAccountId ?? plan?.accountId ?? null;
 
@@ -165,8 +153,7 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
     );
   }
 
-  const overdueCount = collectOverdueActions([plan]).length;
-  const today = new Date().toISOString().slice(0, 10);
+  const overdueCount = 0;
   const dealTotal = planOpportunitiesAmount(opportunities);
 
   const potentialByQuarter = useMemo(() => {
@@ -208,25 +195,6 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
     objFilter === "all"
       ? plan.objectives
       : plan.objectives.filter((o) => o.status === objFilter);
-  const effectiveActionScopeId =
-    actionScopeId === ACTION_SCOPE_PLAN_ID ||
-    opportunities.some((o) => o.id === actionScopeId)
-      ? actionScopeId
-      : ACTION_SCOPE_PLAN_ID;
-
-  const hasPlanLevelActions = plan.actions.some((a) => !a.opportunityId);
-
-  const scopedActions = plan.actions
-    .filter((a) => {
-      if (effectiveActionScopeId === ACTION_SCOPE_PLAN_ID) {
-        return !a.opportunityId;
-      }
-      return a.opportunityId === effectiveActionScopeId;
-    })
-    .sort((a, b) =>
-      (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
-    );
-
   function linkOpportunity(opportunityId: string) {
     const opp = activeOpportunities.find((o) => o.id === opportunityId);
     if (!opp || getPlanForOpportunity(opp.id)) return;
@@ -252,23 +220,6 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     addObjective(plan!.id, String(fd.get("label") ?? ""));
-    e.currentTarget.reset();
-  }
-
-  function handleAddAction(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const oppId =
-      effectiveActionScopeId === ACTION_SCOPE_PLAN_ID
-        ? null
-        : effectiveActionScopeId;
-    addAction(plan!.id, {
-      title: String(fd.get("title") ?? ""),
-      dueDate: String(fd.get("dueDate") ?? "") || undefined,
-      owner: String(fd.get("owner") ?? "") || undefined,
-      status: "Todo",
-      opportunityId: oppId,
-    });
     e.currentTarget.reset();
   }
 
@@ -668,133 +619,6 @@ export default function AccountPlanDetailPage({ planId, onBack }: Props) {
             </form>
           </section>
 
-          <section className="opp-signals">
-            <h3>Actions du plan</h3>
-            <p className="muted">
-              Actions du plan — filtre par opportunité rattachée.
-            </p>
-            <nav
-              className="plan-action-scope-tabs"
-              aria-label="Actions par opportunité"
-            >
-              {(
-                opportunities.length === 0 || hasPlanLevelActions
-              ) && (
-                <button
-                  type="button"
-                  className={
-                    effectiveActionScopeId === ACTION_SCOPE_PLAN_ID
-                      ? "active"
-                      : ""
-                  }
-                  onClick={() => setActionScopeId(ACTION_SCOPE_PLAN_ID)}
-                >
-                  Général
-                </button>
-              )}
-              {opportunities.map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  className={effectiveActionScopeId === o.id ? "active" : ""}
-                  onClick={() => setActionScopeId(o.id)}
-                >
-                  {o.name}
-                </button>
-              ))}
-            </nav>
-
-            {scopedActions.length === 0 ? (
-              <p className="muted">Aucune action planifiée.</p>
-            ) : (
-              <ol className="plan-timeline">
-                {scopedActions.map((a) => {
-                  const overdue = isActionOverdue(a, today);
-                  return (
-                    <li
-                      key={a.id}
-                      className={
-                        a.status === "Done"
-                          ? "done"
-                          : overdue
-                            ? "overdue"
-                            : "upcoming"
-                      }
-                    >
-                      <div className="plan-timeline-mark" aria-hidden />
-                      <div className="plan-timeline-body">
-                        <div className="plan-timeline-meta">
-                          <time>{a.dueDate ?? "Sans date"}</time>
-                          <span>{a.status}</span>
-                          {a.owner && <span>{a.owner}</span>}
-                          {overdue && (
-                            <span className="tag-late">En retard</span>
-                          )}
-                        </div>
-                        <input
-                          className="inline-edit"
-                          value={a.title}
-                          onChange={(e) =>
-                            updateAction(plan.id, a.id, {
-                              title: e.target.value,
-                            })
-                          }
-                        />
-                        <div className="plan-timeline-edit">
-                          <input
-                            type="date"
-                            value={a.dueDate ?? ""}
-                            onChange={(e) =>
-                              updateAction(plan.id, a.id, {
-                                dueDate: e.target.value || undefined,
-                              })
-                            }
-                          />
-                          <input
-                            className="code"
-                            placeholder="Owner"
-                            value={a.owner ?? ""}
-                            onChange={(e) =>
-                              updateAction(plan.id, a.id, {
-                                owner: e.target.value || undefined,
-                              })
-                            }
-                          />
-                          <select
-                            value={a.status}
-                            onChange={(e) =>
-                              updateAction(plan.id, a.id, {
-                                status: e.target.value as ActionStatus,
-                              })
-                            }
-                          >
-                            {ACTION_STATUSES.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            className="ghost"
-                            onClick={() => removeAction(plan.id, a.id)}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-            <form className="settings-add" onSubmit={handleAddAction}>
-              <input name="title" placeholder="Action" required />
-              <input name="dueDate" type="date" />
-              <input name="owner" placeholder="Owner" className="code" />
-              <button type="submit">Ajouter</button>
-            </form>
-          </section>
         </div>
       )}
 

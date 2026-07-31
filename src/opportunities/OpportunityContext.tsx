@@ -19,6 +19,7 @@ import type {
 import { defaultConfig } from "../config/defaults";
 import type { Status } from "../data";
 import { ENGAGEMENT_STATUSES } from "../data";
+import { useDomain } from "../domain/DomainContext";
 import { useSales } from "../sales/SalesContext";
 import { buildSoldLineFromWonOpportunity } from "../sales/syncWonToSold";
 import { supabase } from "../supabase/client";
@@ -35,10 +36,21 @@ import type {
   ProcessAnswers,
 } from "./salesProcess";
 
+export type OpportunityActionStatus = "Todo" | "Doing" | "Done";
+
+export type OpportunityAction = {
+  id: string;
+  title: string;
+  dueDate?: string;
+  owner?: string;
+  status: OpportunityActionStatus;
+};
+
 export const OPPORTUNITY_PHASES = [
   "Whitespace",
   "Discovery",
-  "Solution Validation",
+  "Qualification",
+  "Proposal",
   "Negotiation",
   "Closed Won",
   "Closed Lost",
@@ -50,6 +62,7 @@ export type OpportunityKind = string;
 export const OPPORTUNITY_KINDS: OpportunityKind[] = [
   "up",
   "cross",
+  "new_logo",
   "renewal",
   "new_in_group",
   "prospect",
@@ -58,8 +71,9 @@ export const OPPORTUNITY_KINDS: OpportunityKind[] = [
 export const opportunityKindLabel: Record<string, string> = {
   up: "Upsell",
   cross: "Cross-sell",
+  new_logo: "New logo",
   renewal: "Renouvellement",
-  new_in_group: "Nouveau compte dans le groupe",
+  new_in_group: "New logo",
   prospect: "Prospect",
 };
 
@@ -174,6 +188,15 @@ export type OpportunityAiRecommendations = {
   updatedAt: string;
   content: string;
   model?: string;
+  verdict?: "Go" | "Watch" | "No-go";
+  confidence?: "high" | "medium" | "low";
+  /** Actions complémentaires proposées (à valider puis ajouter au plan). */
+  proposedActions?: Array<{
+    title: string;
+    dueDate?: string;
+    owner?: string;
+    rationale?: string;
+  }>;
 };
 
 export function isEngagementStatus(v: unknown): v is Status {
@@ -349,10 +372,10 @@ export type Opportunity = {
   /** Modules sélectionnés (ids de SolutionDef.modules). */
   moduleIds: string[];
   /**
-   * Directions adressées (catalogue org).
-   * Vide = niveau entreprise (pas de direction ciblée).
+   * Personae adressées (catalogue org).
+   * Vide = niveau entreprise (pas de persona ciblée).
    */
-  directionIds: string[];
+  personaIds: string[];
   /** Compelling Events du catalogue org (pourquoi agir maintenant). */
   compellingEventIds: string[];
   /** Variables admin (nb licences…) — surtout upsell. */
@@ -367,6 +390,8 @@ export type Opportunity = {
   mappingChecks: OppMappingChecks;
   /** Contacts mappés sur le deal (engagement). */
   stakeholders: OpportunityStakeholder[];
+  /** Actions de suivi rattachées à l’opportunité. */
+  actions: OpportunityAction[];
   /** Dernieres recommandations IA. */
   aiRecommendations?: OpportunityAiRecommendations | null;
   active: boolean;
@@ -402,11 +427,11 @@ const defaultOpportunities: Opportunity[] = [
     currency: "EUR",
     closeDate: "2026-09-30",
     primaryAccountId: "fr",
-    phase: "Solution Validation",
+    phase: "Discovery",
     kind: "renewal",
     solutionId: "sol-platform",
     moduleIds: ["mod-plt-core", "mod-plt-sso", "mod-plt-api"],
-    directionIds: ["dir-fr-it"],
+    personaIds: ["dir-fr-it"],
     compellingEventIds: ["ce-contract-renewal", "ce-cost-pressure"],
     variables: {
       "var-users": 250,
@@ -460,6 +485,29 @@ const defaultOpportunities: Opportunity[] = [
       { contactId: "c2", role: "Champion", status: "Aligned" },
       { contactId: "c5", role: "User", status: "Engaged" },
     ],
+    actions: [
+      {
+        id: "oact-1",
+        title: "Workshop architecture avec IT DE",
+        dueDate: "2026-06-15",
+        owner: "AE",
+        status: "Doing",
+      },
+      {
+        id: "oact-2",
+        title: "Brief budget Q3 avec Finance Groupe",
+        dueDate: "2026-07-01",
+        owner: "AE",
+        status: "Todo",
+      },
+      {
+        id: "oact-3",
+        title: "Cartographier Procurement groupe",
+        dueDate: "2026-05-01",
+        owner: "SE",
+        status: "Todo",
+      },
+    ],
     active: true,
   },
 ];
@@ -470,6 +518,57 @@ function uid(prefix: string) {
 
 function emptyStoredState(): StoredState {
   return { opportunities: [], activeOpportunityId: null };
+}
+
+/** Personae effectives (multi + legacy directionIds / directionId). */
+function normalizePersonaIds(raw: {
+  personaIds?: unknown;
+  personaId?: unknown;
+  directionIds?: unknown;
+  directionId?: unknown;
+}): string[] {
+  if (Array.isArray(raw.personaIds)) {
+    return raw.personaIds.filter((id): id is string => typeof id === "string");
+  }
+  if (typeof raw.personaId === "string" && raw.personaId) {
+    return [raw.personaId];
+  }
+  if (Array.isArray(raw.directionIds)) {
+    return raw.directionIds.filter((id): id is string => typeof id === "string");
+  }
+  if (typeof raw.directionId === "string" && raw.directionId) {
+    return [raw.directionId];
+  }
+  return [];
+}
+
+function normalizeOpportunityActions(raw: unknown): OpportunityAction[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OpportunityAction[] = [];
+  raw.forEach((item, i) => {
+    if (!item || typeof item !== "object") return;
+    const a = item as Partial<OpportunityAction>;
+    const title = String(a.title ?? "").trim();
+    if (!title) return;
+    const status: OpportunityActionStatus =
+      a.status === "Doing" || a.status === "Done" || a.status === "Todo"
+        ? a.status
+        : "Todo";
+    out.push({
+      id: typeof a.id === "string" && a.id ? a.id : `oact-${i + 1}`,
+      title,
+      dueDate:
+        typeof a.dueDate === "string" && a.dueDate
+          ? a.dueDate.slice(0, 10)
+          : undefined,
+      owner:
+        typeof a.owner === "string" && a.owner.trim()
+          ? a.owner.trim()
+          : undefined,
+      status,
+    });
+  });
+  return out;
 }
 
 function loadLocal(): StoredState {
@@ -489,14 +588,12 @@ function loadLocal(): StoredState {
         : defaultOpportunities
     ).map((o) => {
       const raw = o as Opportunity & {
+        personaIds?: unknown;
+        personaId?: unknown;
         directionIds?: unknown;
         directionId?: unknown;
       };
-      const directionIds = Array.isArray(raw.directionIds)
-        ? raw.directionIds.filter((id): id is string => typeof id === "string")
-        : typeof raw.directionId === "string" && raw.directionId
-          ? [raw.directionId]
-          : [];
+      const personaIds = normalizePersonaIds(raw);
       return {
       ...o,
       active: o.active !== false,
@@ -513,7 +610,7 @@ function loadLocal(): StoredState {
       moduleIds: Array.isArray(o.moduleIds)
         ? o.moduleIds.filter((id): id is string => typeof id === "string")
         : [],
-      directionIds,
+      personaIds,
       compellingEventIds: Array.isArray(
         (o as Opportunity).compellingEventIds,
       )
@@ -532,6 +629,9 @@ function loadLocal(): StoredState {
       stakeholders: migrateStakeholders(
         (o as Opportunity & { stakeholders?: unknown }).stakeholders,
       ),
+      actions: normalizeOpportunityActions(
+        (o as Opportunity & { actions?: unknown }).actions,
+      ),
       aiRecommendations:
         o.aiRecommendations &&
         typeof o.aiRecommendations === "object" &&
@@ -541,6 +641,61 @@ function loadLocal(): StoredState {
           : null,
     };
     });
+
+    try {
+      const plansRaw = localStorage.getItem("powermap.accountPlans.v1");
+      if (plansRaw) {
+        const parsedPlans = JSON.parse(plansRaw) as {
+          plans?: Array<{
+            actions?: Array<{
+              id?: string;
+              title?: string;
+              dueDate?: string;
+              owner?: string;
+              opportunityId?: string | null;
+              status?: string;
+            }>;
+            opportunityIds?: string[];
+          }>;
+        };
+        const byOpp = new Map<string, OpportunityAction[]>();
+        for (const plan of parsedPlans.plans ?? []) {
+          for (const a of plan.actions ?? []) {
+            const oppId =
+              (typeof a.opportunityId === "string" && a.opportunityId) ||
+              plan.opportunityIds?.[0] ||
+              "";
+            if (!oppId || !a.title?.trim()) continue;
+            const list = byOpp.get(oppId) ?? [];
+            list.push({
+              id:
+                typeof a.id === "string" && a.id
+                  ? a.id
+                  : `oact-mig-${list.length + 1}`,
+              title: a.title.trim(),
+              dueDate: a.dueDate?.slice(0, 10),
+              owner: a.owner?.trim() || undefined,
+              status:
+                a.status === "Doing" ||
+                a.status === "Done" ||
+                a.status === "Todo"
+                  ? a.status
+                  : "Todo",
+            });
+            byOpp.set(oppId, list);
+          }
+        }
+        for (let i = 0; i < opportunities.length; i++) {
+          const opp = opportunities[i];
+          const legacy = byOpp.get(opp.id);
+          if (!legacy?.length || (opp.actions ?? []).length > 0) continue;
+          opportunities[i] = { ...opp, actions: legacy };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
     const activeOpportunityId =
       parsed.activeOpportunityId &&
       opportunities.some(
@@ -582,20 +737,39 @@ type OpportunityContextValue = {
       | "aiRecommendations"
       | "compellingEventIds"
       | "moduleIds"
-      | "directionIds"
+      | "personaIds"
+      | "actions"
     > & {
       businessOutcomes?: BusinessOutcomeValues;
       processAnswers?: ProcessAnswers;
       variables?: OpportunityVariableValues;
       moduleIds?: string[];
-      directionIds?: string[];
+      personaIds?: string[];
       compellingEventIds?: string[];
       mappingChecks?: Opportunity["mappingChecks"];
       stakeholders?: OpportunityStakeholder[];
+      actions?: OpportunityAction[];
     },
   ) => string | null;
   updateOpportunity: (id: string, patch: Partial<Opportunity>) => void;
+  /** Propage l’owner du compte sur toutes ses opportunités. */
+  assignOwnerForAccount: (
+    accountId: string,
+    ownerProfileId: string | null,
+  ) => void;
   removeOpportunity: (id: string) => void;
+  addAction: (
+    opportunityId: string,
+    input: Omit<OpportunityAction, "id" | "status"> & {
+      status?: OpportunityActionStatus;
+    },
+  ) => void;
+  updateAction: (
+    opportunityId: string,
+    actionId: string,
+    patch: Partial<OpportunityAction>,
+  ) => void;
+  removeAction: (opportunityId: string, actionId: string) => void;
   importOpportunitiesBatch: (
     rows: Array<{
       action: "create" | "update";
@@ -608,6 +782,9 @@ type OpportunityContextValue = {
       phase: string;
       kind: OpportunityKind;
       solutionId: string;
+      moduleIds?: string[];
+      personaIds?: string[];
+      ownerProfileId?: string | null;
       mappingChecks?: Opportunity["mappingChecks"];
     }>,
   ) => { created: number; updated: number };
@@ -631,8 +808,11 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
     setActiveOpportunityCount,
     profile,
     loading: authLoading,
+    canWriteDomain,
+    canViewAllAccounts,
   } = useAuth();
   const { kpiClassifier } = useOrgConfig();
+  const { activeAccounts } = useDomain();
   const { soldSolutions, upsertSoldSolution } = useSales();
   const soldSolutionsRef = useRef(soldSolutions);
   soldSolutionsRef.current = soldSolutions;
@@ -669,20 +849,27 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       try {
         const opportunities = await loadOrgOpportunities(orgId);
         if (cancelled) return;
+        let nextOpps = opportunities;
+        if (nextOpps.length === 0) {
+          const local = loadLocal();
+          if (local.opportunities.length > 0) {
+            nextOpps = local.opportunities;
+            void upsertOpportunitiesRemote(orgId, nextOpps).catch((err) =>
+              logSyncError("seedOpportunities", err),
+            );
+          }
+        }
         const next: StoredState = {
-          opportunities,
+          opportunities: nextOpps,
           activeOpportunityId:
-            opportunities.find((o) => o.active)?.id ?? null,
+            nextOpps.find((o) => o.active)?.id ?? null,
         };
         persistLocal(next);
         setState(next);
       } catch (err) {
         logSyncError("loadOpportunities", err);
-        if (!cancelled) {
-          const next = emptyStoredState();
-          persistLocal(next);
-          setState(next);
-        }
+        // Ne jamais écraser le cache local avec un état vide sur erreur réseau / schéma.
+        if (!cancelled) setState(loadLocal());
       }
     })();
 
@@ -712,10 +899,12 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
     [pushOpportunity],
   );
 
-  const activeOpportunities = useMemo(
-    () => state.opportunities.filter((o) => o.active),
-    [state.opportunities],
-  );
+  const activeOpportunities = useMemo(() => {
+    const active = state.opportunities.filter((o) => o.active);
+    if (canViewAllAccounts) return active;
+    const visibleAccountIds = new Set(activeAccounts.map((a) => a.id));
+    return active.filter((o) => visibleAccountIds.has(o.primaryAccountId));
+  }, [state.opportunities, canViewAllAccounts, activeAccounts]);
 
   useEffect(() => {
     setActiveOpportunityCount(activeOpportunities.length);
@@ -724,15 +913,15 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
   const clearQuotaError = useCallback(() => setQuotaError(null), []);
 
   const assertCanCreateOpportunity = useCallback((): string | null => {
-    if (!billing.canWrite) {
-      return "Abonnement en lecture seule — création d’opportunité impossible.";
+    if (!canWriteDomain || !billing.canWrite) {
+      return "Abonnement ou rôle en lecture seule — création d’opportunité impossible.";
     }
     if (billing.opportunitiesFull) {
       const limit = billing.usage.opportunitiesLimit;
       return `Quota d’opportunités actives atteint (${limit}). Passez à une formule supérieure.`;
     }
     return null;
-  }, [billing]);
+  }, [billing, canWriteDomain]);
 
   const activeOpportunity = useMemo(
     () =>
@@ -743,9 +932,13 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
 
   const setActiveOpportunityId = useCallback(
     (id: string | null) => {
-      commit({ ...state, activeOpportunityId: id });
+      setState((prev) => {
+        const next = { ...prev, activeOpportunityId: id };
+        persistLocal(next);
+        return next;
+      });
     },
-    [commit, state],
+    [],
   );
 
   const addOpportunity = useCallback(
@@ -762,16 +955,18 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         | "aiRecommendations"
         | "compellingEventIds"
         | "moduleIds"
-        | "directionIds"
+        | "personaIds"
+        | "actions"
       > & {
         businessOutcomes?: BusinessOutcomeValues;
         processAnswers?: ProcessAnswers;
         variables?: OpportunityVariableValues;
         moduleIds?: string[];
-        directionIds?: string[];
+        personaIds?: string[];
         compellingEventIds?: string[];
         mappingChecks?: Opportunity["mappingChecks"];
         stakeholders?: OpportunityStakeholder[];
+        actions?: OpportunityAction[];
       },
     ) => {
       const blocked = assertCanCreateOpportunity();
@@ -781,6 +976,9 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       }
       setQuotaError(null);
       const id = uid("opp");
+      const accountOwner =
+        activeAccounts.find((a) => a.id === input.primaryAccountId)
+          ?.ownerProfileId ?? null;
       const opportunity: Opportunity = {
         ...input,
         id,
@@ -788,7 +986,7 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         kind: input.kind ?? "prospect",
         solutionId: input.solutionId ?? "",
         moduleIds: input.moduleIds ?? [],
-        directionIds: input.directionIds ?? [],
+        personaIds: input.personaIds ?? [],
         compellingEventIds: input.compellingEventIds ?? [],
         variables: input.variables ?? {},
         businessOutcomes:
@@ -796,7 +994,9 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         processAnswers: input.processAnswers ?? {},
         mappingChecks: input.mappingChecks ?? {},
         stakeholders: migrateStakeholders(input.stakeholders ?? []),
+        actions: normalizeOpportunityActions(input.actions ?? []),
         aiRecommendations: null,
+        ownerProfileId: input.ownerProfileId ?? accountOwner,
       };
       commit(
         {
@@ -807,7 +1007,7 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       );
       return id;
     },
-    [assertCanCreateOpportunity, commit, state],
+    [assertCanCreateOpportunity, commit, state, activeAccounts],
   );
 
   const updateOpportunity = useCallback(
@@ -828,18 +1028,51 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
     [commit, state, materializeWonSale],
   );
 
+  const assignOwnerForAccount = useCallback(
+    (accountId: string, ownerProfileId: string | null) => {
+      let synced: Opportunity[] = [];
+      setState((prev) => {
+        synced = [];
+        const opportunities = prev.opportunities.map((o) => {
+          if (o.primaryAccountId !== accountId) return o;
+          if ((o.ownerProfileId ?? null) === ownerProfileId) return o;
+          const next = { ...o, ownerProfileId };
+          synced.push(next);
+          return next;
+        });
+        if (synced.length === 0) return prev;
+        const next = { ...prev, opportunities };
+        persistLocal(next);
+        return next;
+      });
+      const id = orgIdRef.current;
+      if (id && supabase && synced.length > 0) {
+        void upsertOpportunitiesRemote(id, synced).catch((err) =>
+          logSyncError("cascadeOwnerOpportunities", err),
+        );
+      }
+    },
+    [],
+  );
+
   const removeOpportunity = useCallback(
     (id: string) => {
-      const opportunities = state.opportunities.map((o) =>
-        o.id === id ? { ...o, active: false } : o,
-      );
-      const activeOpportunityId =
-        state.activeOpportunityId === id
-          ? (opportunities.find((o) => o.active)?.id ?? null)
-          : state.activeOpportunityId;
-      commit({ opportunities, activeOpportunityId }, [id]);
+      setState((prev) => {
+        const opportunities = prev.opportunities.map((o) =>
+          o.id === id ? { ...o, active: false } : o,
+        );
+        const activeOpportunityId =
+          prev.activeOpportunityId === id
+            ? (opportunities.find((o) => o.active)?.id ?? null)
+            : prev.activeOpportunityId;
+        const next = { opportunities, activeOpportunityId };
+        persistLocal(next);
+        const opp = opportunities.find((o) => o.id === id);
+        if (opp) pushOpportunity(opp);
+        return next;
+      });
     },
-    [commit, state],
+    [pushOpportunity],
   );
 
   const importOpportunitiesBatch = useCallback(
@@ -855,6 +1088,9 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
         phase: string;
         kind: OpportunityKind;
         solutionId: string;
+        moduleIds?: string[];
+        personaIds?: string[];
+        ownerProfileId?: string | null;
         mappingChecks?: Opportunity["mappingChecks"];
       }>,
     ) => {
@@ -892,6 +1128,12 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
               phase: row.phase,
               kind: row.kind,
               solutionId: row.solutionId,
+              moduleIds: row.moduleIds ?? existing.moduleIds,
+              personaIds: row.personaIds ?? existing.personaIds,
+              ownerProfileId:
+                row.ownerProfileId !== undefined
+                  ? row.ownerProfileId
+                  : existing.ownerProfileId,
               active: true,
             };
             materializeWonSale(existing, nextOpp);
@@ -918,15 +1160,17 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
               phase: row.phase,
               kind: row.kind,
               solutionId: row.solutionId,
-              moduleIds: [],
-              directionIds: [],
+              moduleIds: row.moduleIds ?? [],
+              personaIds: row.personaIds ?? [],
               compellingEventIds: [],
               variables: {},
               businessOutcomes: defaultBusinessOutcomeValues(),
               processAnswers: {},
               mappingChecks: row.mappingChecks ?? {},
               stakeholders: [],
+              actions: [],
               aiRecommendations: null,
+              ownerProfileId: row.ownerProfileId ?? null,
               active: true,
             };
             materializeWonSale(undefined, createdOpp);
@@ -1022,6 +1266,88 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
     [commit, state],
   );
 
+  const addAction = useCallback(
+    (
+      opportunityId: string,
+      input: Omit<OpportunityAction, "id" | "status"> & {
+        status?: OpportunityActionStatus;
+      },
+    ) => {
+      const title = input.title.trim();
+      if (!title) return;
+      commit(
+        {
+          ...state,
+          opportunities: state.opportunities.map((o) =>
+            o.id === opportunityId
+              ? {
+                  ...o,
+                  actions: [
+                    ...(o.actions ?? []),
+                    {
+                      id: uid("oact"),
+                      title,
+                      dueDate: input.dueDate || undefined,
+                      owner: input.owner?.trim() || undefined,
+                      status: input.status ?? "Todo",
+                    },
+                  ],
+                }
+              : o,
+          ),
+        },
+        [opportunityId],
+      );
+    },
+    [commit, state],
+  );
+
+  const updateAction = useCallback(
+    (
+      opportunityId: string,
+      actionId: string,
+      patch: Partial<OpportunityAction>,
+    ) => {
+      commit(
+        {
+          ...state,
+          opportunities: state.opportunities.map((o) =>
+            o.id === opportunityId
+              ? {
+                  ...o,
+                  actions: (o.actions ?? []).map((a) =>
+                    a.id === actionId ? { ...a, ...patch, id: a.id } : a,
+                  ),
+                }
+              : o,
+          ),
+        },
+        [opportunityId],
+      );
+    },
+    [commit, state],
+  );
+
+  const removeAction = useCallback(
+    (opportunityId: string, actionId: string) => {
+      commit(
+        {
+          ...state,
+          opportunities: state.opportunities.map((o) =>
+            o.id === opportunityId
+              ? {
+                  ...o,
+                  actions: (o.actions ?? []).filter((a) => a.id !== actionId),
+                }
+              : o,
+          ),
+        },
+        [opportunityId],
+      );
+    },
+    [commit, state],
+  );
+
   const value = useMemo(
     () => ({
       opportunities: state.opportunities,
@@ -1033,10 +1359,14 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       setActiveOpportunityId,
       addOpportunity,
       updateOpportunity,
+      assignOwnerForAccount,
       removeOpportunity,
       importOpportunitiesBatch,
       setBusinessOutcomeValue,
       setProcessAnswer,
+      addAction,
+      updateAction,
+      removeAction,
     }),
     [
       state.opportunities,
@@ -1048,10 +1378,14 @@ export function OpportunityProvider({ children }: { children: ReactNode }) {
       setActiveOpportunityId,
       addOpportunity,
       updateOpportunity,
+      assignOwnerForAccount,
       removeOpportunity,
       importOpportunitiesBatch,
       setBusinessOutcomeValue,
       setProcessAnswer,
+      addAction,
+      updateAction,
+      removeAction,
     ],
   );
 

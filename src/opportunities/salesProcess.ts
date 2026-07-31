@@ -1,219 +1,244 @@
-import type { ProcessDomainDef } from "../config/types";
+import type { OppPhaseDef, ProcessDomainDef } from "../config/types";
+import { DEFAULT_OPP_PHASES, isBuiltInOppPhaseId } from "../config/types";
 
 export type { ProcessDomainDef, ProcessQuestionDef } from "../config/types";
 
-/** Template Process Enterprise (seed admin — personnalisable ensuite). */
+/**
+ * Étapes de pipeline d’usine (hors ancres Whitespace / Won / Lost).
+ * Source de vérité du funnel — le process s’aligne dessus.
+ */
+export const DEFAULT_PIPELINE_MID_PHASES: Omit<
+  OppPhaseDef,
+  "kpiRole"
+>[] = [
+  { id: "Discovery", label: "Discovery", active: true, order: 2 },
+  { id: "Qualification", label: "Qualification", active: true, order: 3 },
+  { id: "Proposal", label: "Proposal", active: true, order: 4 },
+  { id: "Negotiation", label: "Negotiation", active: true, order: 5 },
+];
+
+/**
+ * Funnel d’usine : Whitespace → étapes pipeline → Won / Lost.
+ * Indépendant du process (c’est la phase qui enrichit le process).
+ */
+export function buildDefaultOppPhases(): OppPhaseDef[] {
+  const ws = DEFAULT_OPP_PHASES.find((p) => p.id === "Whitespace")!;
+  const won = DEFAULT_OPP_PHASES.find((p) => p.id === "Closed Won")!;
+  const lost = DEFAULT_OPP_PHASES.find((p) => p.id === "Closed Lost")!;
+  return [
+    { ...ws, order: 1 },
+    ...DEFAULT_PIPELINE_MID_PHASES.map((p) => ({
+      ...p,
+      kpiRole: "active" as const,
+    })),
+    { ...won, order: 1000 },
+    { ...lost, order: 1001 },
+  ];
+}
+
+/** Phases « actives » du funnel (hors Whitespace / Won / Lost). */
+export function funnelMidPhases(phases: OppPhaseDef[]): OppPhaseDef[] {
+  return [...phases]
+    .filter((p) => p.active !== false && !isBuiltInOppPhaseId(p.id))
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, "fr"));
+}
+
+/**
+ * Domaines process d’usine : un domaine par étape de pipeline,
+ * avec questions de qualification typiques.
+ */
 export const DEFAULT_SALES_PROCESS: ProcessDomainDef[] = [
   {
-    id: "dom-target-selected",
-    label: "Target Selected",
+    id: "dom-discovery",
+    label: "Discovery",
     active: true,
     order: 1,
     questions: [
       {
-        id: "q-ts-1",
+        id: "q-disc-1",
         label: "Le compte cible est-il clairement identifié et priorisé ?",
         active: true,
         order: 1,
       },
       {
-        id: "q-ts-2",
+        id: "q-disc-2",
         label: "As-tu validé le périmètre (Groupe / entités) de l’opportunité ?",
         active: true,
         order: 2,
       },
       {
-        id: "q-ts-3",
-        label: "Le sponsor interne côté vendeur est-il nommé ?",
+        id: "q-disc-3",
+        label: "Le besoin métier du client est-il documenté ?",
         active: true,
         order: 3,
       },
       {
-        id: "q-ts-4",
-        label: "La valeur du deal et l’horizon de close sont-ils estimés ?",
+        id: "q-disc-4",
+        label: "Le sponsor interne côté vendeur est-il nommé ?",
         active: true,
         order: 4,
       },
     ],
   },
   {
-    id: "dom-target-qualified",
-    label: "Target Qualified",
+    id: "dom-qualification",
+    label: "Qualification",
     active: true,
     order: 2,
     questions: [
       {
-        id: "q-tq-1",
-        label: "Le besoin métier du client est-il documenté ?",
+        id: "q-qual-ce",
+        label: "Identification d’un compelling event",
         active: true,
         order: 1,
       },
       {
-        id: "q-tq-ce",
-        label:
-          "Le Compelling Event est-il identifié (pourquoi le client doit agir maintenant) ?",
+        id: "q-qual-1",
+        label: "As-tu confirmé le budget / capacité d’investissement ?",
         active: true,
         order: 2,
       },
       {
-        id: "q-tq-2",
-        label: "As-tu confirmé le budget / capacité d’investissement ?",
+        id: "q-qual-2",
+        label: "Le calendrier d’achat est-il réaliste ?",
         active: true,
         order: 3,
       },
       {
-        id: "q-tq-3",
-        label: "Le calendrier d’achat est-il réaliste ?",
+        id: "q-qual-3",
+        label: "Y a-t-il un Economic Buyer identifiable ?",
         active: true,
         order: 4,
       },
       {
-        id: "q-tq-4",
-        label: "Y a-t-il un Economic Buyer identifiable ?",
+        id: "q-qual-4",
+        label: "La valeur du deal et l’horizon de close sont-ils estimés ?",
         active: true,
         order: 5,
       },
     ],
   },
   {
-    id: "dom-requirements",
-    label: "Requirements",
+    id: "dom-proposal",
+    label: "Proposal",
     active: true,
     order: 3,
     questions: [
       {
-        id: "q-req-1",
+        id: "q-prop-1",
         label:
           "As-tu développé une Competitive Strategy pour gagner le business ?",
         active: true,
         order: 1,
       },
       {
-        id: "q-req-2",
+        id: "q-prop-2",
         label:
-          "Ton Supporter / Mentor a-t-il identifié l’Inner Circle / structure politique ?",
+          "As-tu confirmé avec les Supporters les Formal / Informal Decision Criteria ?",
         active: true,
         order: 2,
       },
       {
-        id: "q-req-3",
-        label:
-          "As-tu confirmé avec les Supporters les Formal / Informal Decision Criteria ?",
+        id: "q-prop-3",
+        label: "As-tu une preuve de valeur (pilot, ROI, business case) ?",
         active: true,
         order: 3,
       },
       {
-        id: "q-req-4",
-        label:
-          "As-tu documenté les Decision Criteria priorisés et l’Insight Map ?",
+        id: "q-prop-4",
+        label: "As-tu validé les Business Outcomes avec le client ?",
         active: true,
         order: 4,
       },
       {
-        id: "q-req-5",
-        label: "Les prérequis techniques / sécurité sont-ils listés ?",
+        id: "q-prop-5",
+        label: "La solution proposée couvre-t-elle les Decision Criteria clés ?",
         active: true,
         order: 5,
-      },
-      {
-        id: "q-req-6",
-        label: "Les critères de succès client sont-ils alignés ?",
-        active: true,
-        order: 6,
       },
     ],
   },
   {
-    id: "dom-evidence",
-    label: "Evidence",
+    id: "dom-negotiation",
+    label: "Negotiation",
     active: true,
     order: 4,
     questions: [
       {
-        id: "q-ev-1",
-        label: "As-tu une preuve de valeur (pilot, ROI, business case) ?",
-        active: true,
-        order: 1,
-      },
-      {
-        id: "q-ev-2",
-        label: "Les references / cas clients pertinents sont-ils partagés ?",
-        active: true,
-        order: 2,
-      },
-      {
-        id: "q-ev-3",
-        label: "La solution proposée couvre-t-elle les Decision Criteria clés ?",
-        active: true,
-        order: 3,
-      },
-      {
-        id: "q-ev-4",
-        label: "As-tu validé le Business Outcomes avec le client ?",
-        active: true,
-        order: 4,
-      },
-      {
-        id: "q-ev-5",
-        label: "Les objections majeures sont-elles traitées ?",
-        active: true,
-        order: 5,
-      },
-    ],
-  },
-  {
-    id: "dom-acquisition",
-    label: "Acquisition",
-    active: true,
-    order: 5,
-    questions: [
-      {
-        id: "q-ac-1",
+        id: "q-neg-1",
         label: "Le processus d’achat / procurement est-il cartographié ?",
         active: true,
         order: 1,
       },
       {
-        id: "q-ac-2",
+        id: "q-neg-2",
         label: "La proposition commerciale est-elle formalisée ?",
         active: true,
         order: 2,
       },
       {
-        id: "q-ac-3",
+        id: "q-neg-3",
         label: "Les termes juridiques / légaux sont-ils en cours ?",
         active: true,
         order: 3,
       },
-    ],
-  },
-  {
-    id: "dom-verbal",
-    label: "Verbal Order",
-    active: true,
-    order: 6,
-    questions: [
       {
-        id: "q-vo-1",
+        id: "q-neg-4",
         label: "As-tu un verbal / handshake de l’Economic Buyer ?",
         active: true,
-        order: 1,
+        order: 4,
       },
       {
-        id: "q-vo-2",
+        id: "q-neg-5",
         label: "La date de signature est-elle confirmée ?",
         active: true,
-        order: 2,
-      },
-      {
-        id: "q-vo-3",
-        label: "Les prochaines étapes de closing sont-elles planifiées ?",
-        active: true,
-        order: 3,
+        order: 5,
       },
     ],
   },
 ];
+
+/**
+ * Assure un domaine process par phase funnel (sans écraser questions existantes).
+ * Appelé à la création d’une phase et au seed d’usine.
+ */
+export function ensureProcessDomainsForPhases(
+  domains: ProcessDomainDef[],
+  phases: OppPhaseDef[],
+): ProcessDomainDef[] {
+  const mid = funnelMidPhases(phases);
+  const byLabel = new Map(
+    domains.map((d) => [d.label.trim().toLowerCase(), d] as const),
+  );
+  const next = [...domains];
+  let orderBase =
+    next.reduce((m, d) => Math.max(m, d.order || 0), 0) || mid.length;
+  for (const phase of mid) {
+    const key = phase.label.trim().toLowerCase();
+    const existing = byLabel.get(key);
+    if (existing) {
+      if (!existing.active) {
+        const i = next.findIndex((d) => d.id === existing.id);
+        if (i >= 0) next[i] = { ...next[i], active: true };
+      }
+      continue;
+    }
+    orderBase += 1;
+    const id = `dom-${phase.id}`
+      .toLowerCase()
+      .replace(/[^a-z0-9+\-_]/g, "-");
+    const created: ProcessDomainDef = {
+      id: next.some((d) => d.id === id) ? `dom-${orderBase}` : id,
+      label: phase.label,
+      active: true,
+      order: orderBase,
+      questions: [],
+    };
+    next.push(created);
+    byLabel.set(key, created);
+  }
+  return next;
+}
 
 export type ProcessAnswerStatus = "None" | "Yes" | "InProgress" | "No";
 
@@ -271,10 +296,14 @@ export function computeDomainProgress(
     return { domainId: domain.id, pct: 0, statuses: [], complete: false };
   }
   const statuses = qs.map((q) => getAnswer(answers, q.id).status);
-  const sum = statuses.reduce((a, s) => a + scoreOf(s), 0);
-  const pct = Math.round((sum / qs.length) * 100);
-  const complete = statuses.every((s) => s === "Yes");
-  return { domainId: domain.id, pct, statuses, complete };
+  const score = statuses.reduce((s, st) => s + scoreOf(st), 0);
+  const pct = Math.round((score / qs.length) * 100);
+  return {
+    domainId: domain.id,
+    pct,
+    statuses,
+    complete: statuses.every((st) => st === "Yes"),
+  };
 }
 
 export function computeProcessProgress(

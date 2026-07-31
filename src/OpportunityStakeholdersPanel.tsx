@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import {
   ENGAGEMENT_STATUSES,
   engagementLabel,
@@ -21,18 +21,24 @@ export default function OpportunityStakeholdersPanel({
   opportunity,
   onUpdate,
 }: Props) {
-  const { activeContacts } = useDomain();
+  const { activeContacts, upsertContact } = useDomain();
   const {
     activeContactTypes,
-    activeDirections,
+    activePersonae,
     contactTypeColor,
     contactTypeLabel,
+    personaLabel,
   } = useOrgConfig();
   const { activeOpportunities } = useOpportunities();
   const [pickId, setPickId] = useState("");
   const [pickRole, setPickRole] = useState(
     activeContactTypes[0]?.id ?? "",
   );
+  const [creating, setCreating] = useState(false);
+  const [cName, setCName] = useState("");
+  const [cTitle, setCTitle] = useState("");
+  const [cPersona, setCPersona] = useState(activePersonae[0]?.id ?? "");
+  const [cRole, setCRole] = useState(activeContactTypes[0]?.id ?? "");
 
   const stakeholders = opportunity.stakeholders ?? [];
 
@@ -76,6 +82,32 @@ export default function OpportunityStakeholdersPanel({
     setPickId("");
   }
 
+  function resetCreateForm() {
+    setCName("");
+    setCTitle("");
+    setCPersona(activePersonae[0]?.id ?? "");
+    setCRole(activeContactTypes[0]?.id ?? "");
+    setCreating(false);
+  }
+
+  function handleCreateContact(e: FormEvent) {
+    e.preventDefault();
+    const name = cName.trim();
+    if (!name || !cPersona || !cRole || !opportunity.primaryAccountId) return;
+    const id = upsertContact({
+      name,
+      title: cTitle.trim(),
+      accountId: opportunity.primaryAccountId,
+      personaId: cPersona,
+    });
+    if (!id) return;
+    setStakeholders([
+      ...stakeholders.filter((s) => s.contactId !== id),
+      { contactId: id, role: cRole, status: "Identified" },
+    ]);
+    resetCreateForm();
+  }
+
   function patchStake(
     contactId: string,
     patch: Partial<Pick<OpportunityStakeholder, "status" | "notes" | "role">>,
@@ -104,7 +136,83 @@ export default function OpportunityStakeholdersPanel({
 
   return (
     <section className="entry-subsection opp-stakeholders">
-      <h2>Contacts de l’opportunité</h2>
+      <div className="opp-stake-head">
+        <h2>Contacts de l’opportunité</h2>
+        {!creating && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setCreating(true)}
+          >
+            Créer un contact
+          </button>
+        )}
+      </div>
+
+      {creating && (
+        <form className="entry-form opp-stake-create" onSubmit={handleCreateContact}>
+          <div className="data-form-grid">
+            <label>
+              Nom
+              <input
+                value={cName}
+                onChange={(e) => setCName(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
+            <label>
+              Titre
+              <input
+                value={cTitle}
+                onChange={(e) => setCTitle(e.target.value)}
+                placeholder="CFO, CTO…"
+              />
+            </label>
+            <label>
+              Persona
+              <select
+                value={cPersona}
+                onChange={(e) => setCPersona(e.target.value)}
+                required
+              >
+                <option value="">Choisir…</option>
+                {activePersonae.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Type sur ce deal
+              <select
+                value={cRole}
+                onChange={(e) => setCRole(e.target.value)}
+                required
+              >
+                {activeContactTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="plan-create-actions">
+            <button type="button" className="ghost" onClick={resetCreateForm}>
+              Annuler
+            </button>
+            <button
+              type="submit"
+              className="primary-cta"
+              disabled={!cName.trim() || !cPersona || !cRole}
+            >
+              Créer et mapper
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className="opp-stake-add">
         <label>
@@ -155,9 +263,8 @@ export default function OpportunityStakeholdersPanel({
               ? contactTypeLabel(roleId)
               : "Type non défini";
             const color = roleId ? contactTypeColor(roleId) : "#9ca3af";
-            const dirLabel = contact
-              ? (activeDirections.find((d) => d.id === contact.directionId)
-                  ?.name ?? "")
+            const personaName = contact
+              ? personaLabel(contact.personaId)
               : "";
             const elsewhere = otherOppCounts.get(stake.contactId) ?? 0;
             return (
@@ -178,7 +285,7 @@ export default function OpportunityStakeholdersPanel({
                   <strong>{contact?.name ?? "Contact introuvable"}</strong>
                   <span className="muted">
                     {contact?.title || "Sans titre"}
-                    {dirLabel ? ` · ${dirLabel}` : ""}
+                    {personaName ? ` · ${personaName}` : ""}
                     {!contact?.active ? " · désactivé" : ""}
                     {elsewhere > 0
                       ? ` · aussi sur ${elsewhere} autre(s) opp.`

@@ -4,6 +4,7 @@ import type { Opportunity } from "../opportunities/OpportunityContext";
 import {
   accountFromRow,
   contactFromRow,
+  opportunityActionFromRow,
   opportunityFromRow,
   soldSolutionFromRow,
   stakeholderFromRow,
@@ -23,7 +24,7 @@ export async function loadOrgCrm(
     return { accounts: [], contacts: [], opportunities: [], soldSolutions: [] };
   }
 
-  const [accountsRes, contactsRes, oppsRes, stakesRes, soldRes] =
+  const [accountsRes, contactsRes, oppsRes, stakesRes, actsRes, soldRes] =
     await Promise.all([
       supabase
         .from("accounts")
@@ -42,12 +43,23 @@ export async function loadOrgCrm(
         .select("*")
         .eq("organization_id", organizationId),
       supabase
+        .from("opportunity_actions")
+        .select("*")
+        .eq("organization_id", organizationId),
+      supabase
         .from("sold_solutions")
         .select("*")
         .eq("organization_id", organizationId),
     ]);
 
-  for (const r of [accountsRes, contactsRes, oppsRes, stakesRes, soldRes]) {
+  for (const r of [
+    accountsRes,
+    contactsRes,
+    oppsRes,
+    stakesRes,
+    actsRes,
+    soldRes,
+  ]) {
     if (r.error) throw new Error(r.error.message);
   }
 
@@ -67,6 +79,24 @@ export async function loadOrgCrm(
     stakesByOpp.set(oppId, list);
   }
 
+  const actsByOpp = new Map<
+    string,
+    ReturnType<typeof opportunityActionFromRow>[]
+  >();
+  for (const row of (actsRes.data ?? []).sort(
+    (a, b) =>
+      Number((a as { sort_order?: number }).sort_order ?? 0) -
+      Number((b as { sort_order?: number }).sort_order ?? 0),
+  )) {
+    const oppId = String(
+      (row as { opportunity_id?: string }).opportunity_id ?? "",
+    );
+    if (!oppId) continue;
+    const list = actsByOpp.get(oppId) ?? [];
+    list.push(opportunityActionFromRow(row as Record<string, unknown>));
+    actsByOpp.set(oppId, list);
+  }
+
   return {
     accounts: (accountsRes.data ?? []).map((row) =>
       accountFromRow(row as Record<string, unknown>),
@@ -79,7 +109,11 @@ export async function loadOrgCrm(
       const stakes = (stakesByOpp.get(id) ?? []).filter(
         (s): s is NonNullable<typeof s> => s != null,
       );
-      return opportunityFromRow(row as Record<string, unknown>, stakes);
+      return opportunityFromRow(
+        row as Record<string, unknown>,
+        stakes,
+        actsByOpp.get(id) ?? [],
+      );
     }),
     soldSolutions: (soldRes.data ?? []).map((row) =>
       soldSolutionFromRow(row as Record<string, unknown>),

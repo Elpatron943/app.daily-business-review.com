@@ -1,4 +1,4 @@
-export type AppRole = "admin" | "user";
+export type AppRole = "admin" | "manager" | "user" | "viewer";
 
 export type UserProfile = {
   id: string;
@@ -11,10 +11,16 @@ export type UserProfile = {
 };
 
 export function isAppRole(v: unknown): v is AppRole {
-  return v === "admin" || v === "user";
+  return (
+    v === "admin" || v === "manager" || v === "user" || v === "viewer"
+  );
 }
 
 export const roleLabel: Record<AppRole, string> = {
   admin: "Admin",
+  manager: "Manager",
   user: "Commercial",
+  viewer: "Lecture seule",
 };
+
+export const APP_ROLES: AppRole[] = ["admin", "manager", "user", "viewer"];

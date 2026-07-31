@@ -6,7 +6,7 @@ import {
   type OppMappingCategory,
   type OppMappingSubtypeDef,
 } from "./config/types";
-import { OPP_MAPPING_THEMES, resolveThemeLabel } from "./config/oppMappingLibrary";
+import { OPP_MAPPING_THEMES, resolveThemeLabel, COMPELLING_EVENT_MAPPING_ID } from "./config/oppMappingLibrary";
 import { useOrgConfig } from "./config/ConfigContext";
 import type { Opportunity } from "./opportunities/OpportunityContext";
 import {
@@ -37,6 +37,7 @@ export default function OpportunityMappingPanel({
   const {
     activeOppMappingSubtypes,
     activeOppMappingThemes,
+    activeCompellingEvents,
     addOppMappingSubtype,
     config,
   } = useOrgConfig();
@@ -482,18 +483,81 @@ export default function OpportunityMappingPanel({
                               </span>
                             ) : null}
                           </strong>
-                          <label className="opp-mapping-comment">
-                            <span className="sr-only">Commentaire</span>
-                            <input
-                              value={entry.comment ?? ""}
-                              placeholder="Commentaire (facultatif)"
-                              onChange={(e) =>
-                                patchCard(catId, entry.id, {
-                                  comment: e.target.value,
-                                })
-                              }
-                            />
-                          </label>
+                          {entry.id === COMPELLING_EVENT_MAPPING_ID &&
+                          entry.status === "covered" ? (
+                            <div className="opp-mapping-ce-pick">
+                              <span className="opp-mapping-ce-pick-label">
+                                Compelling events
+                              </span>
+                              {activeCompellingEvents.length === 0 ? (
+                                <p className="muted">
+                                  Aucun compelling event dans le catalogue.
+                                </p>
+                              ) : (
+                                <ul className="opp-module-checks">
+                                  {activeCompellingEvents.map((ce) => {
+                                    const selected =
+                                      opportunity.compellingEventIds?.includes(
+                                        ce.id,
+                                      ) ?? false;
+                                    return (
+                                      <li key={ce.id}>
+                                        <label title={ce.description || undefined}>
+                                          <input
+                                            type="checkbox"
+                                            checked={selected}
+                                            onChange={() => {
+                                              const cur =
+                                                opportunity.compellingEventIds ??
+                                                [];
+                                              const next = selected
+                                                ? cur.filter((id) => id !== ce.id)
+                                                : [...cur, ce.id];
+                                              onUpdate({
+                                                compellingEventIds: next,
+                                                mappingChecks: {
+                                                  ...opportunity.mappingChecks,
+                                                  [catId]: (
+                                                    opportunity.mappingChecks?.[
+                                                      catId
+                                                    ] ?? []
+                                                  ).map((e) =>
+                                                    e.id === entry.id
+                                                      ? {
+                                                          ...e,
+                                                          comment:
+                                                            next.length > 0
+                                                              ? `${next.length} CE sélectionné${next.length > 1 ? "s" : ""}`
+                                                              : e.comment,
+                                                        }
+                                                      : e,
+                                                  ),
+                                                },
+                                              });
+                                            }}
+                                          />
+                                          {ce.label}
+                                        </label>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                          ) : (
+                            <label className="opp-mapping-comment">
+                              <span className="sr-only">Commentaire</span>
+                              <input
+                                value={entry.comment ?? ""}
+                                placeholder="Commentaire (facultatif)"
+                                onChange={(e) =>
+                                  patchCard(catId, entry.id, {
+                                    comment: e.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                          )}
                         </div>
                         <div className="opp-mapping-chip-actions">
                           <button
