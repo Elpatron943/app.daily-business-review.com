@@ -16,6 +16,7 @@ import {
 } from "../data";
 import { supabase } from "../supabase/client";
 import {
+  deleteSoldSolutionRemote,
   loadOrgSoldSolutions,
   logSyncError,
   upsertSoldSolutionsRemote,
@@ -181,6 +182,12 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     setSoldSolutions((prev) => {
       const next = prev.filter((s) => s.id !== id);
       persistLocal(next);
+      const orgId = orgIdRef.current;
+      if (orgId && supabase) {
+        void deleteSoldSolutionRemote(orgId, id).catch((err) =>
+          logSyncError("deleteSoldSolution", err),
+        );
+      }
       return next;
     });
   }, []);

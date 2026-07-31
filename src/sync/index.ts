@@ -13,6 +13,7 @@ export {
   upsertOpportunityRemote,
   upsertOpportunitiesRemote,
   upsertSoldSolutionsRemote,
+  deleteSoldSolutionRemote,
   replaceOpportunityStakeholdersRemote,
   logSyncError,
 } from "./persistCrm";

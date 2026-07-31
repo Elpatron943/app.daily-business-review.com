@@ -185,6 +185,19 @@ export async function upsertSoldSolutionsRemote(
   if (error) throw new Error(error.message);
 }
 
+export async function deleteSoldSolutionRemote(
+  organizationId: string,
+  soldSolutionId: string,
+): Promise<void> {
+  const sb = requireClient();
+  const { error } = await sb
+    .from("sold_solutions")
+    .delete()
+    .eq("organization_id", organizationId)
+    .eq("id", soldSolutionId);
+  if (error) throw new Error(error.message);
+}
+
 export function logSyncError(scope: string, err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
   console.error(`[sync:${scope}]`, msg);

@@ -173,7 +173,7 @@ export async function pullHubSpotOrg(input: {
                   organization_id: input.organizationId,
                   solution_id: solutionId,
                   account_id: id,
-                  direction_ids: [],
+                  persona_ids: [],
                   module_ids: resolveModuleIds(solutionId, modulesRaw),
                   currency: "EUR",
                   billed_amount: billed,
@@ -243,7 +243,7 @@ export async function pullHubSpotOrg(input: {
 
         const { data: existing } = await input.db
           .from("contacts")
-          .select("id, x, y, direction_id, active")
+          .select("id, x, y, persona_id, active")
           .eq("organization_id", input.organizationId)
           .eq("hubspot_contact_id", patch.hubspotContactId)
           .maybeSingle();
@@ -254,7 +254,7 @@ export async function pullHubSpotOrg(input: {
             id,
             organization_id: input.organizationId,
             account_id: accountId,
-            direction_id: existing?.direction_id || "",
+            persona_id: existing?.persona_id || "",
             name: patch.name,
             first_name: patch.firstName || null,
             last_name: patch.lastName || null,
@@ -317,7 +317,7 @@ export async function pullHubSpotOrg(input: {
         const { data: existing } = await input.db
           .from("opportunities")
           .select(
-            "id, kind, solution_id, module_ids, direction_ids, compelling_event_ids, variables, business_outcomes, process_answers, mapping_checks, ai_recommendations, currency, active",
+            "id, kind, solution_id, module_ids, persona_ids, compelling_event_ids, variables, business_outcomes, process_answers, mapping_checks, ai_recommendations, currency, active",
           )
           .eq("organization_id", input.organizationId)
           .eq("hubspot_deal_id", patch.hubspotDealId)
@@ -337,7 +337,7 @@ export async function pullHubSpotOrg(input: {
             kind: (existing?.kind as string) || "prospect",
             solution_id: (existing?.solution_id as string) || "",
             module_ids: existing?.module_ids || [],
-            direction_ids: existing?.direction_ids || [],
+            persona_ids: existing?.persona_ids || [],
             compelling_event_ids: existing?.compelling_event_ids || [],
             variables: existing?.variables || {},
             business_outcomes: existing?.business_outcomes || {},

@@ -162,10 +162,18 @@ function loadLocal(): DomainState {
           accountId: raw.accountId,
           personaId: raw.personaId ?? legacy.directionId ?? "",
           name: raw.name,
+          firstName: raw.firstName ?? null,
+          lastName: raw.lastName ?? null,
           title: raw.title,
+          email: raw.email ?? null,
+          phone: raw.phone ?? null,
           x: raw.x,
           y: raw.y,
           active: raw.active !== false,
+          ownerProfileId: raw.ownerProfileId ?? null,
+          hubspotContactId: raw.hubspotContactId ?? null,
+          hubspotSyncedAt: raw.hubspotSyncedAt ?? null,
+          hubspotDirty: raw.hubspotDirty === true,
         };
       }),
       companyRelations: (

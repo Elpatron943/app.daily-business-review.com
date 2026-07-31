@@ -93,13 +93,11 @@ export function accountFromRow(row: Record<string, unknown>): Account {
 }
 
 export function contactToRow(organizationId: string, c: Contact) {
-  // Écrit `direction_id` (schéma actuel) ; lit persona_id OU direction_id en fromRow.
-  // Après migration SQL rename → persona_id, basculer la clé d’écriture.
   return {
     id: c.id,
     organization_id: organizationId,
     account_id: c.accountId,
-    direction_id: c.personaId || "",
+    persona_id: c.personaId || "",
     name: c.name,
     first_name: c.firstName ?? null,
     last_name: c.lastName ?? null,
@@ -117,7 +115,6 @@ export function contactToRow(organizationId: string, c: Contact) {
 }
 
 export function contactFromRow(row: Record<string, unknown>): Contact {
-  // Lecture legacy : `direction_id` (ou `persona_id` si migration SQL future).
   const personaId =
     row.persona_id != null && row.persona_id !== ""
       ? String(row.persona_id)
@@ -164,7 +161,7 @@ export function opportunityToRow(organizationId: string, o: Opportunity) {
     typeof o.closeDate === "string" && /^\d{4}-\d{2}-\d{2}/.test(o.closeDate)
       ? o.closeDate.slice(0, 10)
       : null;
-  // Écrit `direction_ids` tant que la migration rename n’est pas appliquée en prod.
+  // Lit persona_ids (ou direction_ids legacy).
   return {
     id: o.id,
     organization_id: organizationId,
@@ -177,7 +174,7 @@ export function opportunityToRow(organizationId: string, o: Opportunity) {
     kind: o.kind || "prospect",
     solution_id: o.solutionId || "",
     module_ids: o.moduleIds ?? [],
-    direction_ids: o.personaIds ?? [],
+    persona_ids: o.personaIds ?? [],
     compelling_event_ids: o.compellingEventIds ?? [],
     variables: o.variables ?? {},
     business_outcomes: o.businessOutcomes ?? {},
@@ -306,7 +303,7 @@ export function soldSolutionToRow(organizationId: string, s: SoldSolution) {
     organization_id: organizationId,
     solution_id: s.solutionId,
     account_id: s.accountId,
-    direction_ids: personaIds,
+    persona_ids: personaIds,
     module_ids: Array.isArray(s.moduleIds) ? s.moduleIds : [],
     currency: s.currency || "EUR",
     billed_amount: Math.max(0, Number(s.billedAmount) || 0),
