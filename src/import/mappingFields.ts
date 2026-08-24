@@ -669,7 +669,7 @@ export function mappingCoversRequired(
       mapped.add("account_key");
     }
   }
-  if (!touchesKind && kind !== "accounts") return [];
+  if (!touchesKind) return [];
   // Contact : name peut venir de firstname+lastname
   if (kind === "contacts" && (mapped.has("firstname") || mapped.has("lastname"))) {
     mapped.add("name");
