@@ -11137,6 +11137,81 @@ a {
   font-size: 0.9rem;
 }
 
+.import-quickstart {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  font-size: 0.88rem;
+}
+
+.import-quickstart ol {
+  margin: 0.45rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.import-quickstart li + li {
+  margin-top: 0.25rem;
+}
+
+.import-template-detected {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--line));
+  color: var(--ok);
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.import-mapping-gaps {
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, #ef4444 12%, var(--panel));
+  border: 1px solid color-mix(in srgb, #ef4444 35%, var(--line));
+  font-size: 0.88rem;
+}
+
+.import-mapping-gaps ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.import-mapping-gaps li + li {
+  margin-top: 0.2rem;
+}
+
+.import-mapping-ok {
+  margin: 0 0 0.85rem;
+  font-size: 0.88rem;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.import-mapping-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.import-mapping-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.import-ignored-sheets {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+}
+
 @media (max-width: 900px) {
   .import-slots {
     grid-template-columns: 1fr;
@@ -11425,6 +11500,36 @@ a {
   border-color: var(--gold);
   color: var(--ink);
   background: color-mix(in srgb, var(--gold) 12%, transparent);
+}
+
+.import-sheet-tabs button.has-gap:not(.active) {
+  border-color: color-mix(in srgb, #ef4444 45%, var(--line));
+}
+
+.import-sheet-tabs button.is-empty:not(.active) {
+  opacity: 0.72;
+}
+
+.import-tab-gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.import-sheet-empty {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  font-size: 0.88rem;
 }
 
 .import-sheet-label {

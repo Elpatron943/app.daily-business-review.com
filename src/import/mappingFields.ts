@@ -386,6 +386,82 @@ const ALIAS_TO_FIELD: Record<string, string> = {
   proprietaire: "owner_email",
 };
 
+/** En-têtes exacts du template officiel DBR par entité. */
+export const OFFICIAL_TEMPLATE_HEADERS: Record<ImportEntityKind, string[]> = {
+  accounts: [
+    "Cle",
+    "Nom",
+    "Type",
+    "Statut",
+    "Cle_groupe",
+    "Secteur",
+    "Taille",
+    "Owner_email",
+  ],
+  contacts: ["Cle", "Nom", "Titre", "Compte", "Persona"],
+  opportunities: [
+    "Cle",
+    "Nom",
+    "Compte",
+    "Montant",
+    "Date_cloture",
+    "Phase",
+    "Nature",
+    "Solution",
+  ],
+  sold_solutions: [
+    "Cle",
+    "Compte",
+    "Solution",
+    "Modules",
+    "Personae",
+    "CA_facture",
+  ],
+};
+
+export function headersMatchOfficialTemplate(
+  headers: string[],
+  kind: ImportEntityKind,
+): boolean {
+  const expected = OFFICIAL_TEMPLATE_HEADERS[kind];
+  if (headers.length !== expected.length) return false;
+  return headers.every(
+    (h, i) => normalizeHeader(h) === normalizeHeader(expected[i] ?? ""),
+  );
+}
+
+/** Mapping direct colonne → champ quand le fichier suit le template officiel. */
+export function suggestOfficialTemplateMapping(
+  headers: string[],
+  kind: ImportEntityKind,
+): ColumnMapping {
+  const mapping: ColumnMapping = {};
+  for (const header of headers) {
+    const field = ALIAS_TO_FIELD[normalizeHeader(header)];
+    if (field && DBR_IMPORT_FIELDS[kind].some((f) => f.id === field)) {
+      mapping[header] = scopedFieldId(kind, field);
+    } else {
+      mapping[header] = "";
+    }
+  }
+  return mapping;
+}
+
+export function fieldsGroupedForKind(
+  kind: ImportEntityKind,
+): Array<{
+  group: string;
+  fields: Array<DbrImportField & { scopedId: string }>;
+}> {
+  return fieldsGrouped(kind).map((g) => ({
+    group: `${IMPORT_ENTITY_LABEL[kind]} · ${g.group}`,
+    fields: g.fields.map((f) => ({
+      ...f,
+      scopedId: scopedFieldId(kind, f.id),
+    })),
+  }));
+}
+
 /** Heuristique entité pour un en-tête ambigu. */
 function guessKindForAlias(
   alias: string,

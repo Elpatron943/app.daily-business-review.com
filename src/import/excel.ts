@@ -2,7 +2,10 @@ import * as XLSX from "xlsx";
 import { parseCsv, type CsvTable } from "./csv";
 import { normalizeHeader } from "./csv";
 import { collectColumnSamples } from "./catalogGaps";
-import type { ImportEntityKind } from "./mappingFields";
+import {
+  headersMatchOfficialTemplate,
+  type ImportEntityKind,
+} from "./mappingFields";
 
 export type ExcelImportTables = {
   accounts?: CsvTable;
@@ -123,53 +126,101 @@ function sheetToRawTable(
   };
 }
 
+export type ImportWorkbookParseResult = {
+  sheets: RawImportSheet[];
+  ignoredSheetNames: string[];
+  isOfficialTemplate: boolean;
+};
+
+function isOfficialTemplateSheets(sheets: RawImportSheet[]): boolean {
+  const withData = sheets.filter((s) => s.rows.length > 0);
+  if (withData.length === 0) return false;
+  return withData.every((s) => headersMatchOfficialTemplate(s.headers, s.kind));
+}
+
 /** Lit un fichier Excel en conservant les en-têtes d’origine. */
-export async function parseImportWorkbookRaw(
+export async function parseImportWorkbookWithMeta(
   file: File,
-): Promise<RawImportSheet[]> {
+): Promise<ImportWorkbookParseResult> {
   const name = file.name.toLowerCase();
   if (name.endsWith(".csv") || name.endsWith(".txt")) {
-    const text = await file.text();
-    const table = parseCsv(text);
-    // parseCsv already canonicalizes — rebuild as single sheet with those headers
-    const kind: ImportEntityKind =
-      table.headers.includes("billed_amount") ||
-      (table.headers.includes("modules") &&
-        table.headers.includes("solution") &&
-        !table.headers.includes("phase"))
-        ? "sold_solutions"
-        : table.headers.includes("phase") ||
-            table.headers.includes("amount") ||
-            table.headers.includes("kind")
-          ? "opportunities"
-          : table.headers.includes("title") ||
-              table.headers.includes("direction")
-            ? "contacts"
-            : "accounts";
-    const sampleValues = collectColumnSamples(table.headers, table.rows, 3);
-    const samples: Record<string, string> = {};
-    for (const h of table.headers) {
-      samples[h] = sampleValues[h]?.[0] ?? "";
-    }
-    return [
-      {
-        kind,
-        sheetName: file.name,
-        headers: table.headers,
-        rows: table.rows,
-        sampleValues,
-        samples,
-      },
-    ];
+    const sheets = await parseCsvAsSingleSheet(file);
+    return {
+      sheets,
+      ignoredSheetNames: [],
+      isOfficialTemplate: isOfficialTemplateSheets(sheets),
+    };
   }
 
   const buffer = await file.arrayBuffer();
+  const { sheets, ignoredSheetNames } = parseExcelWorkbookBuffer(buffer);
+  return {
+    sheets,
+    ignoredSheetNames,
+    isOfficialTemplate: isOfficialTemplateSheets(sheets),
+  };
+}
+
+/** Onglet sans lignes de données — ignoré pour la validation et l’import. */
+export function isEmptyImportSheet(sheet: RawImportSheet): boolean {
+  return sheet.rows.length === 0;
+}
+
+export async function parseImportWorkbookRaw(
+  file: File,
+): Promise<RawImportSheet[]> {
+  const parsed = await parseImportWorkbookWithMeta(file);
+  return parsed.sheets;
+}
+
+async function parseCsvAsSingleSheet(file: File): Promise<RawImportSheet[]> {
+  const text = await file.text();
+  const table = parseCsv(text);
+  const kind: ImportEntityKind =
+    table.headers.includes("billed_amount") ||
+    (table.headers.includes("modules") &&
+      table.headers.includes("solution") &&
+      !table.headers.includes("phase"))
+      ? "sold_solutions"
+      : table.headers.includes("phase") ||
+          table.headers.includes("amount") ||
+          table.headers.includes("kind")
+        ? "opportunities"
+        : table.headers.includes("title") ||
+            table.headers.includes("direction")
+          ? "contacts"
+          : "accounts";
+  const sampleValues = collectColumnSamples(table.headers, table.rows, 3);
+  const samples: Record<string, string> = {};
+  for (const h of table.headers) {
+    samples[h] = sampleValues[h]?.[0] ?? "";
+  }
+  return [
+    {
+      kind,
+      sheetName: file.name,
+      headers: table.headers,
+      rows: table.rows,
+      sampleValues,
+      samples,
+    },
+  ];
+}
+
+function parseExcelWorkbookBuffer(buffer: ArrayBuffer): {
+  sheets: RawImportSheet[];
+  ignoredSheetNames: string[];
+} {
   const wb = XLSX.read(buffer, { type: "array", cellDates: true });
   const sheets: RawImportSheet[] = [];
+  const ignoredSheetNames: string[] = [];
 
   for (const sheetName of wb.SheetNames) {
     const kind = sheetKind(sheetName);
-    if (!kind) continue;
+    if (!kind) {
+      ignoredSheetNames.push(sheetName);
+      continue;
+    }
     const table = sheetToRawTable(wb.Sheets[sheetName], kind, sheetName);
     if (table.rows.length === 0 && table.headers.length === 0) continue;
     sheets.push(table);
@@ -181,7 +232,7 @@ export async function parseImportWorkbookRaw(
     );
   }
 
-  return sheets;
+  return { sheets, ignoredSheetNames };
 }
 
 /** @deprecated préférer parseImportWorkbookRaw + mapping. */

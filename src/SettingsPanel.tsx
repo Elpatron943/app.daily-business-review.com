@@ -221,7 +221,9 @@ export default function SettingsPanel({ onOpenTeam }: Props) {
     if (area === "org-positioning" && subId === "personae") {
       return <PersonaeManager showInactive={showInactive} />;
     }
-    if (area === "org-data" && subId === "import") return <ImportManager />;
+    if (area === "org-data" && subId === "import") {
+      return <ImportManager onOpenCrm={() => setSub("crm")} />;
+    }
     if (area === "org-data" && subId === "crm") {
       return <CrmIntegrationsPanel />;
     }
