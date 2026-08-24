@@ -17,6 +17,8 @@ import {
 } from "./opportunities/mappingScore";
 import {
   collectOpportunityUsps,
+  ensureOpportunityUspMappingChecks,
+  mappingMissingUsps,
   parseUspCardId,
   resolveUspCardLabel,
 } from "./catalogue/uspCards";
@@ -67,25 +69,6 @@ export default function OpportunityMappingPanel({
     return set;
   }, [activeOppMappingSubtypes]);
 
-  useEffect(() => {
-    if (
-      !mappingMissingRequired(
-        opportunity.mappingChecks,
-        activeOppMappingSubtypes,
-      )
-    ) {
-      return;
-    }
-    onUpdate({
-      mappingChecks: ensureRequiredMappingChecks(
-        opportunity.mappingChecks,
-        activeOppMappingSubtypes,
-      ),
-    });
-    // onUpdate est recréé à chaque render du parent ; on se base sur id + checks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opportunity.id, opportunity.mappingChecks, activeOppMappingSubtypes]);
-
   const opportunityUsps = useMemo(
     () =>
       collectOpportunityUsps(
@@ -95,6 +78,40 @@ export default function OpportunityMappingPanel({
       ),
     [opportunity, config.solutions, config.orgProfile],
   );
+
+  useEffect(() => {
+    const missingRequired = mappingMissingRequired(
+      opportunity.mappingChecks,
+      activeOppMappingSubtypes,
+    );
+    const missingUsps = mappingMissingUsps(
+      opportunity.mappingChecks,
+      opportunityUsps,
+    );
+    if (!missingRequired && !missingUsps) return;
+
+    let mappingChecks = opportunity.mappingChecks;
+    if (missingRequired) {
+      mappingChecks = ensureRequiredMappingChecks(
+        mappingChecks,
+        activeOppMappingSubtypes,
+      );
+    }
+    if (missingUsps) {
+      mappingChecks = ensureOpportunityUspMappingChecks(
+        mappingChecks,
+        opportunityUsps,
+      );
+    }
+    onUpdate({ mappingChecks });
+    // onUpdate est recréé à chaque render du parent ; on se base sur id + checks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    opportunity.id,
+    opportunity.mappingChecks,
+    activeOppMappingSubtypes,
+    opportunityUsps,
+  ]);
 
   const themeCatalog = useMemo(() => {
     const fromConfig = config.oppMappingThemes ?? activeOppMappingThemes;
@@ -182,7 +199,7 @@ export default function OpportunityMappingPanel({
   }
 
   function removeCard(category: OppMappingCategory, subtypeId: string) {
-    if (requiredIds.has(subtypeId)) return;
+    if (requiredIds.has(subtypeId) || parseUspCardId(subtypeId)) return;
     setEntries(
       category,
       entriesOf(category).filter((e) => e.id !== subtypeId),
@@ -192,7 +209,9 @@ export default function OpportunityMappingPanel({
   function clearQuadrant(category: OppMappingCategory) {
     setEntries(
       category,
-      entriesOf(category).filter((e) => requiredIds.has(e.id)),
+      entriesOf(category).filter(
+        (e) => requiredIds.has(e.id) || parseUspCardId(e.id),
+      ),
     );
   }
 
@@ -825,6 +844,7 @@ export default function OpportunityMappingPanel({
                               config.oppMappingThemes ?? [],
                             );
                           const isRequired = requiredIds.has(entry.id);
+                          const isUsp = Boolean(parseUspCardId(entry.id));
                           return (
                             <li key={`${catId}-${entry.id}`}>
                               <div className="opp-mapping-manage-item">
@@ -851,7 +871,7 @@ export default function OpportunityMappingPanel({
                                         : "À traiter"}
                                   </span>
                                 </div>
-                                {isRequired ? (
+                                {isRequired || isUsp ? (
                                   <span className="muted opp-mapping-manage-locked">
                                     Verrouillée
                                   </span>

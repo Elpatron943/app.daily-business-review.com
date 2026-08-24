@@ -1,4 +1,9 @@
-import type { OrgProfile, SolutionDef, UspDef } from "../config/types";
+import type {
+  OppMappingChecks,
+  OrgProfile,
+  SolutionDef,
+  UspDef,
+} from "../config/types";
 
 export const USP_CARD_PREFIX = "usp:";
 
@@ -80,4 +85,46 @@ export function resolveUspCardLabel(
     }
   }
   return { label: uspId, sourceLabel: "USP" };
+}
+
+/** True si le SWOT Forces (S) n’est pas aligné avec les USP catalogue actifs. */
+export function mappingMissingUsps(
+  checks: OppMappingChecks | undefined,
+  uspOptions: Pick<OpportunityUspOption, "cardId">[],
+): boolean {
+  const list = checks?.signaux_positifs ?? [];
+  const allowed = new Set(uspOptions.map((u) => u.cardId));
+  if (
+    uspOptions.some((u) => !list.some((e) => e.id === u.cardId))
+  ) {
+    return true;
+  }
+  return list.some((e) => {
+    const uspId = parseUspCardId(e.id);
+    return uspId !== null && !allowed.has(e.id);
+  });
+}
+
+/**
+ * Aligne le quadrant Forces (signaux_positifs) avec les USP catalogue actifs.
+ * Préserve statut / commentaire des cartes déjà présentes.
+ */
+export function ensureOpportunityUspMappingChecks(
+  checks: OppMappingChecks | undefined,
+  uspOptions: Pick<OpportunityUspOption, "cardId">[],
+): OppMappingChecks {
+  const allowed = new Set(uspOptions.map((u) => u.cardId));
+  const next: OppMappingChecks = { ...(checks ?? {}) };
+  const list = (next.signaux_positifs ?? []).filter((e) => {
+    const uspId = parseUspCardId(e.id);
+    if (uspId === null) return true;
+    return allowed.has(e.id);
+  });
+  for (const { cardId } of uspOptions) {
+    if (!list.some((e) => e.id === cardId)) {
+      list.push({ id: cardId, status: "open" });
+    }
+  }
+  next.signaux_positifs = list;
+  return next;
 }
