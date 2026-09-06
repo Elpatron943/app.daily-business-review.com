@@ -32,6 +32,9 @@ export type OrganizationBilling = {
   trial_ends_at: string | null;
   optional_modules: OptionalModulesState;
   plan: CommercialPlan | null;
+  /** Null = chatbot démarrage encore à présenter au 1er admin. */
+  onboarding_completed_at: string | null;
+  onboarding_completed_by: string | null;
 };
 
 export type BillingUsage = {

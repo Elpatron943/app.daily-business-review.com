@@ -59,6 +59,13 @@ type AuthContextValue = {
   passwordRecovery: boolean;
   organization: OrganizationBilling | null;
   billing: BillingState;
+  /**
+   * True si admin le plus ancien de l’org et onboarding non terminé.
+   * Les admins suivants ne voient pas le chatbot.
+   */
+  needsOrgOnboarding: boolean;
+  /** Marque l’onboarding org comme terminé (appliqué ou passé). */
+  completeOrgOnboarding: () => Promise<string | null>;
   setActiveOpportunityCount: (count: number) => void;
   refreshBilling: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<string | null>;
@@ -333,6 +340,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 row.trial_ends_at == null
                   ? null
                   : String(row.trial_ends_at),
+              onboarding_completed_at:
+                row.onboarding_completed_at == null
+                  ? null
+                  : String(row.onboarding_completed_at),
+              onboarding_completed_by:
+                row.onboarding_completed_by == null
+                  ? null
+                  : String(row.onboarding_completed_by),
             };
           });
         },
@@ -501,6 +516,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [billing.entitlements],
   );
 
+  const isPrimaryAdmin = useMemo(() => {
+    if (!profile || profile.role !== "admin") return false;
+    const admins = team
+      .filter((p) => p.role === "admin")
+      .slice()
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    if (admins.length === 0) return true;
+    return admins[0]?.id === profile.id;
+  }, [profile, team]);
+
+  const needsOrgOnboarding = Boolean(
+    isPrimaryAdmin &&
+      organization &&
+      !organization.onboarding_completed_at,
+  );
+
+  const completeOrgOnboarding = useCallback(async () => {
+    if (!supabase || !profile?.organization_id) {
+      return "Organisation indisponible.";
+    }
+    const completedAt = new Date().toISOString();
+    const { error } = await supabase
+      .from("organizations")
+      .update({
+        onboarding_completed_at: completedAt,
+        onboarding_completed_by: profile.id,
+      })
+      .eq("id", profile.organization_id);
+    if (error) return error.message;
+    setOrganization((prev) =>
+      prev
+        ? {
+            ...prev,
+            onboarding_completed_at: completedAt,
+            onboarding_completed_by: profile.id,
+          }
+        : prev,
+    );
+    return null;
+  }, [profile?.id, profile?.organization_id]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       configured: isSupabaseConfigured,
@@ -521,6 +577,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       passwordRecovery,
       organization,
       billing,
+      needsOrgOnboarding,
+      completeOrgOnboarding,
       setActiveOpportunityCount,
       refreshBilling: () => refreshBilling(profile?.organization_id ?? null),
       signIn,
@@ -549,6 +607,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       passwordRecovery,
       organization,
       billing,
+      needsOrgOnboarding,
+      completeOrgOnboarding,
       refreshBilling,
       signIn,
       resetPassword,

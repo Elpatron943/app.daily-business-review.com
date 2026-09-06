@@ -9,6 +9,14 @@ import {
   type ActionPlanGenerationInput,
   type GeneratedPlanActionDraft,
 } from "./buildActionPlanPrompt";
+import {
+  buildOnboardingEnrichmentPrompt,
+  parseOnboardingDraft,
+} from "../onboarding/buildOnboardingEnrichmentPrompt";
+import type {
+  OnboardingAnswers,
+  OnboardingDraft,
+} from "../onboarding/types";
 
 export type OpenAiStatus = {
   available: boolean;
@@ -28,6 +36,12 @@ export type OpportunityAnalysisResult = {
 export type ActionPlanGenerationResult = {
   updatedAt: string;
   actions: GeneratedPlanActionDraft[];
+  model: string;
+  raw: string;
+};
+
+export type OnboardingEnrichmentResult = {
+  draft: OnboardingDraft;
   model: string;
   raw: string;
 };
@@ -103,6 +117,19 @@ export async function runActionPlanGeneration(
   return {
     updatedAt: new Date().toISOString(),
     actions,
+    model,
+    raw: content,
+  };
+}
+
+/** Enrichit les réponses funnel onboarding → draft Settings à valider. */
+export async function runOnboardingEnrichment(
+  answers: OnboardingAnswers,
+): Promise<OnboardingEnrichmentResult> {
+  const { system, user } = buildOnboardingEnrichmentPrompt(answers);
+  const { content, model } = await postOpenAiAnalyze(system, user);
+  return {
+    draft: parseOnboardingDraft(content, answers),
     model,
     raw: content,
   };

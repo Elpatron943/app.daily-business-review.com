@@ -21,6 +21,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import SettingsPanel from "./SettingsPanel";
 import PlatformAdminPanel from "./auth/PlatformAdminPanel";
+import OrgOnboardingChatbot from "./onboarding/OrgOnboardingChatbot";
 import DataEntryPanel, { type DataSection } from "./DataEntryPanel";
 import DashboardPage from "./DashboardPage";
 import AccountPlanPage from "./AccountPlanPage";
@@ -1839,6 +1840,7 @@ export default function App() {
       {teamOpen && canTeamNav && (
         <TeamAdminPanel onClose={() => setTeamOpen(false)} />
       )}
+      <OrgOnboardingChatbot />
     </div>
   );
 }

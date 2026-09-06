@@ -1152,6 +1152,8 @@ type ConfigContextValue = {
   removeAccountSize: (id: string) => void;
   updateKpiRules: (patch: Partial<KpiRulesConfig>) => void;
   resetConfig: () => void;
+  /** Remplace toute la config (ex. onboarding chatbot). */
+  replaceConfig: (next: OrgConfig) => void;
 };
 
 const ConfigContext = createContext<ConfigContextValue | null>(null);
@@ -2099,6 +2101,13 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const resetConfig = useCallback(() => {
     commit(structuredClone(defaultConfig));
   }, [commit]);
+
+  const replaceConfig = useCallback(
+    (next: OrgConfig) => {
+      commit(hydrateOrgConfig(next));
+    },
+    [commit],
+  );
 
   const updateRiskMatrix = useCallback(
     (patch: Partial<RiskMatrixConfig>) => {
@@ -3538,6 +3547,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       removeAccountSize,
       updateKpiRules,
       resetConfig,
+      replaceConfig,
     }),
     [
       config,
@@ -3672,6 +3682,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       removeAccountSize,
       updateKpiRules,
       resetConfig,
+      replaceConfig,
     ],
   );
 
