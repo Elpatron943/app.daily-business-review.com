@@ -5,9 +5,9 @@
   functions = "netlify/functions"
 
 # RESEND_FROM_* = identité d’expéditeur (pas des secrets) ;
-# leur valeur apparaît dans le branding / docs et déclenche le scan Netlify.
+# VITE_APP_URL = URL publique de l’app (apparaît dans docs / .env.example).
 [build.environment]
-  SECRETS_SCAN_OMIT_KEYS = "RESEND_FROM_EMAIL,RESEND_FROM_NAME"
+  SECRETS_SCAN_OMIT_KEYS = "RESEND_FROM_EMAIL,RESEND_FROM_NAME,VITE_APP_URL"
 
 # API serverless avant le fallback SPA
 [[redirects]]
