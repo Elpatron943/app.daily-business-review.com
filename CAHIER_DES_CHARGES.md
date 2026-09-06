@@ -612,7 +612,7 @@ C-2,C-1,Influences,4
 | Billing | **Stripe** Checkout + Portal + Webhooks | Standard SaaS |
 | Storage | S3-compatible EU (R2 / S3 eu) | Exports PNG/JSON chiffrés at rest |
 | Email | Resend / Postmark | Transactionnel (invite, dunning, verify) |
-| Hosting app | Vercel / Fly / Render / Cloud Run | Choisir **une** cible ; staging + prod séparés |
+| Hosting app | **Netlify** | Staging + prod séparés si besoin |
 | Secrets | Provider secrets (Doppler / Infisical / cloud SM) | Jamais dans le repo |
 | Observability | OpenTelemetry + Sentry + logs structurés JSON | Trace_id + org_id sur chaque log |
 | CI/CD | GitHub Actions | lint, test, security scan, migrate, deploy |
