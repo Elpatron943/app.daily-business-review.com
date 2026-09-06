@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { PLAN_PACKAGES, type PlanCode } from "../src/billing/entitlements";
 
@@ -30,13 +29,6 @@ function adminClient(url: string, serviceKey: string) {
 
 function mapPlan(plan: SelfServePlan): PlanCode {
   return plan === "sales" ? "sales_solo" : "freemium";
-}
-
-function generatePassword(length = 16): string {
-  const chars =
-    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%";
-  const bytes = randomBytes(length);
-  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
 async function findAuthUserIdByEmail(
@@ -176,9 +168,7 @@ export async function selfServeProvision(input: {
     };
   }
 
-  const password =
-    input.body.password?.trim() ||
-    (input.body.plan === "freemium" ? "" : generatePassword());
+  const password = input.body.password?.trim() || "";
 
   if (input.body.plan === "freemium" && password.length < 8) {
     await admin.from("organizations").delete().eq("id", org.id);
@@ -189,34 +179,72 @@ export async function selfServeProvision(input: {
     };
   }
 
-  const finalPassword = password || generatePassword();
+  if (password.length >= 8) {
+    const { data: created, error: createErr } =
+      await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: name,
+          role: "admin",
+          organization_id: org.id,
+          phone: input.body.phone || null,
+          stripe_customer_id: input.body.stripeCustomerId || null,
+          stripe_subscription_id: input.body.stripeSubscriptionId || null,
+        },
+      });
 
-  const { data: created, error: createErr } =
-    await admin.auth.admin.createUser({
+    if (createErr || !created.user) {
+      await admin.from("organizations").delete().eq("id", org.id);
+      return {
+        ok: false,
+        status: 500,
+        error: createErr?.message || "Création utilisateur échouée.",
+      };
+    }
+
+    await admin.from("profiles").upsert({
+      id: created.user.id,
       email,
-      password: finalPassword,
-      email_confirm: true,
-      user_metadata: {
+      full_name: name,
+      role: "admin",
+      organization_id: org.id,
+    });
+
+    return {
+      ok: true,
+      loginUrl,
+      orgId: org.id,
+      userId: created.user.id,
+    };
+  }
+
+  // Sales sans mot de passe : invitation e-mail pour définir le MDP
+  const { data: invited, error: inviteErr } =
+    await admin.auth.admin.inviteUserByEmail(email, {
+      data: {
         full_name: name,
-        role: "admin",
         organization_id: org.id,
+        role: "admin",
         phone: input.body.phone || null,
         stripe_customer_id: input.body.stripeCustomerId || null,
         stripe_subscription_id: input.body.stripeSubscriptionId || null,
       },
+      redirectTo: loginUrl,
     });
 
-  if (createErr || !created.user) {
+  if (inviteErr || !invited.user) {
     await admin.from("organizations").delete().eq("id", org.id);
     return {
       ok: false,
       status: 500,
-      error: createErr?.message || "Création utilisateur échouée.",
+      error: inviteErr?.message || "Invitation utilisateur échouée.",
     };
   }
 
   await admin.from("profiles").upsert({
-    id: created.user.id,
+    id: invited.user.id,
     email,
     full_name: name,
     role: "admin",
@@ -227,7 +255,7 @@ export async function selfServeProvision(input: {
     ok: true,
     loginUrl,
     orgId: org.id,
-    userId: created.user.id,
+    userId: invited.user.id,
   };
 }
 
