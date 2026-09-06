@@ -68,21 +68,6 @@ export default function CompetitiveIntelManager({
     [config.compellingEvents, showInactive],
   );
 
-  const ourModules = useMemo(() => {
-    const list: { id: string; label: string }[] = [];
-    for (const s of config.solutions) {
-      if (!s.active && !showInactive) continue;
-      for (const m of s.modules ?? []) {
-        if (!m.active && !showInactive) continue;
-        list.push({
-          id: m.id,
-          label: `${s.name} · ${m.label}`,
-        });
-      }
-    }
-    return list.sort((a, b) => a.label.localeCompare(b.label, "fr"));
-  }, [config.solutions, showInactive]);
-
   return (
     <div className="intel-settings">
       {showOrg && (
@@ -243,7 +228,6 @@ export default function CompetitiveIntelManager({
               key={c.id}
               competitor={c}
               showInactive={showInactive}
-              ourModules={ourModules}
               newFeature={newFeatureByComp[c.id] ?? ""}
               onNewFeatureChange={(v) =>
                 setNewFeatureByComp((prev) => ({ ...prev, [c.id]: v }))
@@ -317,7 +301,6 @@ function UspRow({
 function CompetitorRow({
   competitor,
   showInactive,
-  ourModules,
   newFeature,
   onNewFeatureChange,
   onChange,
@@ -329,7 +312,6 @@ function CompetitorRow({
 }: {
   competitor: CompetitorDef;
   showInactive: boolean;
-  ourModules: { id: string; label: string }[];
   newFeature: string;
   onNewFeatureChange: (v: string) => void;
   onChange: (patch: Partial<CompetitorDef>) => void;
@@ -378,7 +360,7 @@ function CompetitorRow({
               placeholder="Positionnement, forces / faiblesses…"
             />
           </label>
-          <h4 className="nested-hint">Features concurrent</h4>
+          <h4 className="nested-hint">Points forts / features concurrent</h4>
           <ul className="settings-list intel-feature-list">
             {features.map((f) => (
               <li key={f.id} className={!f.active ? "inactive" : ""}>
@@ -399,25 +381,6 @@ function CompetitorRow({
                   disabled={!f.active}
                   placeholder="Description feature"
                 />
-                <label className="intel-link-label">
-                  Lié à notre feature
-                  <select
-                    value={f.ourModuleId ?? ""}
-                    onChange={(e) =>
-                      onUpdateFeature(f.id, {
-                        ourModuleId: e.target.value || null,
-                      })
-                    }
-                    disabled={!f.active}
-                  >
-                    <option value="">— Aucun —</option>
-                    {ourModules.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 {f.active ? (
                   <button
                     type="button"
@@ -460,3 +423,4 @@ function CompetitorRow({
     </li>
   );
 }
+

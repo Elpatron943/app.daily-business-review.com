@@ -17,7 +17,11 @@ export default function BillingQuotaBanner() {
       <div className="billing-quota-plan">
         {planName ?? "Sans formule"}
         {!canWrite ? (
-          <span className="billing-quota-lock"> · lecture seule</span>
+          <span className="billing-quota-lock">
+            {organization?.subscription_status === "none"
+              ? " · en attente de paiement"
+              : " · lecture seule"}
+          </span>
         ) : null}
       </div>
       <div className="billing-quota-meters">

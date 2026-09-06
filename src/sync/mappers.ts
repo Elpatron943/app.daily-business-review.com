@@ -4,6 +4,11 @@ import type {
   OpportunityActionStatus,
   OpportunityStakeholder,
 } from "../opportunities/OpportunityContext";
+import {
+  normalizeFeatureAssessments,
+  normalizeWhyNow,
+  normalizeProjectWhy,
+} from "../opportunities/OpportunityContext";
 import { ENGAGEMENT_STATUSES, normalizeSoldSolution } from "../data";
 import type {
   Account,
@@ -107,6 +112,7 @@ export function contactToRow(organizationId: string, c: Contact) {
     x: c.x,
     y: c.y,
     active: c.active !== false,
+    motivation_ids: c.motivationIds ?? [],
     owner_profile_id: c.ownerProfileId ?? null,
     hubspot_contact_id: c.hubspotContactId ?? null,
     hubspot_synced_at: c.hubspotSyncedAt ?? null,
@@ -140,6 +146,9 @@ export function contactFromRow(row: Record<string, unknown>): Contact {
     x: Number(row.x) || 0,
     y: Number(row.y) || 0,
     active: row.active !== false,
+    motivationIds: Array.isArray(row.motivation_ids)
+      ? row.motivation_ids.filter((x): x is string => typeof x === "string")
+      : [],
     ownerProfileId:
       row.owner_profile_id == null || row.owner_profile_id === ""
         ? null
@@ -176,6 +185,12 @@ export function opportunityToRow(organizationId: string, o: Opportunity) {
     module_ids: o.moduleIds ?? [],
     persona_ids: o.personaIds ?? [],
     compelling_event_ids: o.compellingEventIds ?? [],
+    competitor_ids: o.competitorIds ?? [],
+    feature_assessments: o.featureAssessments ?? {},
+    project_lever_ids: o.projectLeverIds ?? [],
+    project_problem_ids: o.projectProblemIds ?? [],
+    project_why: o.projectWhy ?? {},
+    why_now: o.whyNow ?? {},
     variables: o.variables ?? {},
     business_outcomes: o.businessOutcomes ?? {},
     process_answers: o.processAnswers ?? {},
@@ -221,6 +236,18 @@ export function opportunityFromRow(
           (x): x is string => typeof x === "string",
         )
       : [],
+    competitorIds: Array.isArray(row.competitor_ids)
+      ? row.competitor_ids.filter((x): x is string => typeof x === "string")
+      : [],
+    featureAssessments: normalizeFeatureAssessments(row.feature_assessments),
+    projectLeverIds: Array.isArray(row.project_lever_ids)
+      ? row.project_lever_ids.filter((x): x is string => typeof x === "string")
+      : [],
+    projectProblemIds: Array.isArray(row.project_problem_ids)
+      ? row.project_problem_ids.filter((x): x is string => typeof x === "string")
+      : [],
+    projectWhy: normalizeProjectWhy(row.project_why),
+    whyNow: normalizeWhyNow(row.why_now),
     variables:
       row.variables && typeof row.variables === "object"
         ? (row.variables as Opportunity["variables"])

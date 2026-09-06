@@ -174,6 +174,11 @@ function loadLocal(): DomainState {
           hubspotContactId: raw.hubspotContactId ?? null,
           hubspotSyncedAt: raw.hubspotSyncedAt ?? null,
           hubspotDirty: raw.hubspotDirty === true,
+          motivationIds: Array.isArray(raw.motivationIds)
+            ? raw.motivationIds.filter(
+                (id): id is string => typeof id === "string",
+              )
+            : [],
         };
       }),
       companyRelations: (
@@ -720,6 +725,10 @@ export function DomainProvider({ children }: { children: ReactNode }) {
                     input.ownerProfileId !== undefined
                       ? input.ownerProfileId
                       : c.ownerProfileId,
+                  motivationIds:
+                    input.motivationIds !== undefined
+                      ? input.motivationIds
+                      : (c.motivationIds ?? []),
                   active: input.active ?? c.active,
                   x: input.x ?? c.x,
                   y: input.y ?? c.y,
@@ -752,6 +761,7 @@ export function DomainProvider({ children }: { children: ReactNode }) {
             input.ownerProfileId !== undefined
               ? input.ownerProfileId
               : (account?.ownerProfileId ?? null),
+          motivationIds: input.motivationIds ?? [],
           x: input.x ?? pos.x,
           y: input.y ?? pos.y,
           active: true,

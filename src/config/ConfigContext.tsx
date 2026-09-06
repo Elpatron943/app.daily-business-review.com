@@ -11,6 +11,9 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { supabase } from "../supabase/client";
 import {
+  normalizeInactionFormula,
+} from "../inaction/formula";
+import {
   isRemoteOrgConfigEmpty,
   loadOrgConfigRemote,
   logSyncError,
@@ -42,12 +45,30 @@ import {
   type OrgConfig,
   type OrgProfile,
   type CompellingEventDef,
+  type ProjectLeverFamilyDef,
+  type ProjectLeverDef,
+  type ProjectProblemFamilyDef,
+  type ProjectProblemDef,
+  type PersonalMotivationDef,
+  type PersonalMotivationPolarity,
+  type WhyNowObjectiveDef,
+  type WhyNowObjectiveKind,
+  type WhyNowValueUnit,
+  WHY_NOW_VALUE_UNITS,
+  type InactionLeverFamilyDef,
+  type InactionLeverDef,
+  type InactionValueKind,
+  normalizeInactionValueKind,
   type RiskMatrixConfig,
   type SectorDef,
   type ProcessDomainDef,
   type ProcessQuestionDef,
   type SolutionDef,
   type SolutionModuleDef,
+  type SolutionFeatureGroupDef,
+  type SolutionBattleFeatureDef,
+  type SolutionCompetitorDef,
+  type FeatureCoverage,
   type UspDef,
   type OppPhaseDef,
   type OppPhaseKpiRole,
@@ -61,6 +82,7 @@ import {
   DEFAULT_OPP_KINDS,
   isBuiltInOppPhaseId,
 } from "./types";
+import { INACTION_KIND_GROUPS } from "../inaction/kinds";
 import {
   salesTaxonomyFromConfig,
   buildKpiClassifier,
@@ -173,6 +195,60 @@ function normalizeModule(
   };
 }
 
+function normalizeFeatureCoverage(raw: unknown): FeatureCoverage {
+  if (raw === "full" || raw === "partial" || raw === "none") return raw;
+  return "none";
+}
+
+function normalizeFeatureGroup(
+  g: Partial<SolutionFeatureGroupDef>,
+  i: number,
+): SolutionFeatureGroupDef {
+  return {
+    id: g.id || `sfg-${i + 1}`,
+    label: g.label ?? "",
+    active: g.active !== false,
+    order: g.order ?? i + 1,
+  };
+}
+
+function normalizeBattleFeature(
+  f: Partial<SolutionBattleFeatureDef>,
+  i: number,
+): SolutionBattleFeatureDef {
+  return {
+    id: f.id || `sbf-${i + 1}`,
+    label: f.label ?? "",
+    description: f.description ?? "",
+    groupId: f.groupId ?? null,
+    ourCoverage: normalizeFeatureCoverage(f.ourCoverage),
+    active: f.active !== false,
+    order: f.order ?? i + 1,
+  };
+}
+
+function normalizeSolutionCompetitor(
+  c: Partial<SolutionCompetitorDef>,
+  i: number,
+): SolutionCompetitorDef {
+  const coverageRaw =
+    c.featureCoverage && typeof c.featureCoverage === "object"
+      ? c.featureCoverage
+      : {};
+  const featureCoverage: Record<string, FeatureCoverage> = {};
+  for (const [k, v] of Object.entries(coverageRaw)) {
+    featureCoverage[k] = normalizeFeatureCoverage(v);
+  }
+  return {
+    id: c.id || `scomp-${i + 1}`,
+    name: c.name ?? "",
+    description: c.description ?? "",
+    featureCoverage,
+    active: c.active !== false,
+    order: c.order ?? i + 1,
+  };
+}
+
 function normalizeSolution(
   s: SolutionDef,
   i: number,
@@ -182,12 +258,24 @@ function normalizeSolution(
   const modules = Array.isArray(s.modules)
     ? s.modules.map((m, mi) => normalizeModule(m, mi, seedById.get(m.id)))
     : structuredClone(defaultModules ?? []);
+  const featureGroups = Array.isArray(s.featureGroups)
+    ? s.featureGroups.map((g, gi) => normalizeFeatureGroup(g, gi))
+    : [];
+  const features = Array.isArray(s.features)
+    ? s.features.map((f, fi) => normalizeBattleFeature(f, fi))
+    : [];
+  const competitors = Array.isArray(s.competitors)
+    ? s.competitors.map((c, ci) => normalizeSolutionCompetitor(c, ci))
+    : [];
   return {
     ...s,
     description: s.description ?? "",
     active: s.active !== false,
     order: s.order ?? i + 1,
     modules,
+    featureGroups,
+    features,
+    competitors,
   };
 }
 
@@ -254,6 +342,145 @@ function normalizeCompellingEvents(
     description: c.description ?? "",
     active: c.active !== false,
     order: c.order ?? i + 1,
+  }));
+}
+
+function normalizeProjectLeverFamilies(
+  raw: ProjectLeverFamilyDef[] | undefined,
+): ProjectLeverFamilyDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return structuredClone(defaultConfig.projectLeverFamilies);
+  }
+  return raw.map((f, i) => ({
+    id: f.id || `plf-${i + 1}`,
+    label: f.label ?? "",
+    description: f.description ?? "",
+    active: f.active !== false,
+    order: f.order ?? i + 1,
+  }));
+}
+
+function normalizeProjectLevers(
+  raw: ProjectLeverDef[] | undefined,
+): ProjectLeverDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return structuredClone(defaultConfig.projectLevers);
+  }
+  return raw.map((l, i) => ({
+    id: l.id || `pl-${i + 1}`,
+    familyId: l.familyId || "",
+    label: l.label ?? "",
+    description: l.description ?? "",
+    active: l.active !== false,
+    order: l.order ?? i + 1,
+  }));
+}
+
+function normalizeProjectProblemFamilies(
+  raw: ProjectProblemFamilyDef[] | undefined,
+): ProjectProblemFamilyDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return structuredClone(defaultConfig.projectProblemFamilies);
+  }
+  return raw.map((f, i) => ({
+    id: f.id || `ppf-${i + 1}`,
+    label: f.label ?? "",
+    description: f.description ?? "",
+    active: f.active !== false,
+    order: f.order ?? i + 1,
+  }));
+}
+
+function normalizeProjectProblems(
+  raw: ProjectProblemDef[] | undefined,
+): ProjectProblemDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return structuredClone(defaultConfig.projectProblems);
+  }
+  return raw.map((p, i) => ({
+    id: p.id || `pp-${i + 1}`,
+    familyId: p.familyId || "",
+    label: p.label ?? "",
+    description: p.description ?? "",
+    active: p.active !== false,
+    order: p.order ?? i + 1,
+  }));
+}
+
+function normalizePersonalMotivations(
+  raw: PersonalMotivationDef[] | undefined,
+): PersonalMotivationDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return structuredClone(defaultConfig.personalMotivations);
+  }
+  return raw.map((m, i) => ({
+    id: m.id || `pm-${i + 1}`,
+    label: m.label ?? "",
+    description: m.description ?? "",
+    polarity:
+      m.polarity === "retreat" || m.polarity === "advance"
+        ? m.polarity
+        : "advance",
+    active: m.active !== false,
+    order: m.order ?? i + 1,
+  }));
+}
+
+function normalizeWhyNowObjectives(
+  raw: WhyNowObjectiveDef[] | undefined,
+): WhyNowObjectiveDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return structuredClone(defaultConfig.whyNowObjectives);
+  }
+  const units = new Set(WHY_NOW_VALUE_UNITS.map((u) => u.id));
+  return raw.map((o, i) => ({
+    id: o.id || `wno-${i + 1}`,
+    label: o.label ?? "",
+    description: o.description ?? "",
+    kind:
+      o.kind === "qualitative" || o.kind === "quantitative"
+        ? o.kind
+        : "quantitative",
+    valueUnit: units.has(o.valueUnit as WhyNowValueUnit)
+      ? (o.valueUnit as WhyNowValueUnit)
+      : "number",
+    active: o.active !== false,
+    order: o.order ?? i + 1,
+  }));
+}
+
+function normalizeInactionLeverFamilies(
+  raw: InactionLeverFamilyDef[] | undefined,
+): InactionLeverFamilyDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return structuredClone(defaultConfig.inactionLeverFamilies);
+  }
+  return raw.map((f, i) => ({
+    id: f.id || `ilf-${i + 1}`,
+    label: f.label ?? "",
+    description: f.description ?? "",
+    active: f.active !== false,
+    order: f.order ?? i + 1,
+  }));
+}
+
+function normalizeInactionLevers(
+  raw: InactionLeverDef[] | undefined,
+): InactionLeverDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return structuredClone(defaultConfig.inactionLevers);
+  }
+  return raw.map((l, i) => ({
+    id: l.id || `il-${i + 1}`,
+    familyId: l.familyId || "",
+    label: l.label ?? "",
+    description: l.description ?? "",
+    valueKind: normalizeInactionValueKind(l.valueKind, l.familyId),
+    formula: normalizeInactionFormula(
+      (l as InactionLeverDef & { formula?: unknown }).formula,
+    ),
+    active: l.active !== false,
+    order: l.order ?? i + 1,
   }));
 }
 
@@ -476,22 +703,28 @@ export function hydrateOrgConfig(parsed: OrgConfig | null | undefined): OrgConfi
             order: s.order ?? i + 1,
           }))
         : structuredClone(defaultConfig.sectors),
-      boCategories: Array.isArray(parsed.boCategories)
-        ? parsed.boCategories.map((c, i) => ({
-            ...c,
-            active: c.active !== false,
-            order: c.order ?? i + 1,
-          }))
-        : structuredClone(defaultConfig.boCategories),
-      boFields: Array.isArray(parsed.boFields)
-        ? parsed.boFields.map((f, i) => ({
-            ...f,
-            active: f.active !== false,
-            order: f.order ?? i + 1,
-            kind: f.kind ?? "annual_benefit",
-            categoryId: f.categoryId ?? null,
-          }))
-        : structuredClone(defaultConfig.boFields),
+      boCategories: (() => {
+        const cats = Array.isArray(parsed.boCategories)
+          ? parsed.boCategories.map((c, i) => ({
+              ...c,
+              active: c.active !== false,
+              order: c.order ?? i + 1,
+            }))
+          : structuredClone(defaultConfig.boCategories);
+        return stripLegacyInactionBoCategories(cats);
+      })(),
+      boFields: (() => {
+        const fields = Array.isArray(parsed.boFields)
+          ? parsed.boFields.map((f, i) => ({
+              ...f,
+              active: f.active !== false,
+              order: f.order ?? i + 1,
+              kind: f.kind ?? "annual_benefit",
+              categoryId: f.categoryId ?? null,
+            }))
+          : structuredClone(defaultConfig.boFields);
+        return stripLegacyInactionBoFields(fields);
+      })(),
       processDomains: (() => {
         const domains = parsed.processDomains?.length
           ? parsed.processDomains.map((d, i) => ({
@@ -532,6 +765,51 @@ export function hydrateOrgConfig(parsed: OrgConfig | null | undefined): OrgConfi
         (parsed as OrgConfig & { compellingEvents?: CompellingEventDef[] })
           .compellingEvents,
       ),
+      projectLeverFamilies: normalizeProjectLeverFamilies(
+        (
+          parsed as OrgConfig & {
+            projectLeverFamilies?: ProjectLeverFamilyDef[];
+          }
+        ).projectLeverFamilies,
+      ),
+      projectLevers: normalizeProjectLevers(
+        (parsed as OrgConfig & { projectLevers?: ProjectLeverDef[] })
+          .projectLevers,
+      ),
+      projectProblemFamilies: normalizeProjectProblemFamilies(
+        (
+          parsed as OrgConfig & {
+            projectProblemFamilies?: ProjectProblemFamilyDef[];
+          }
+        ).projectProblemFamilies,
+      ),
+      projectProblems: normalizeProjectProblems(
+        (parsed as OrgConfig & { projectProblems?: ProjectProblemDef[] })
+          .projectProblems,
+      ),
+      personalMotivations: normalizePersonalMotivations(
+        (
+          parsed as OrgConfig & {
+            personalMotivations?: PersonalMotivationDef[];
+          }
+        ).personalMotivations,
+      ),
+      whyNowObjectives: normalizeWhyNowObjectives(
+        (
+          parsed as OrgConfig & { whyNowObjectives?: WhyNowObjectiveDef[] }
+        ).whyNowObjectives,
+      ),
+      inactionLeverFamilies: normalizeInactionLeverFamilies(
+        (
+          parsed as OrgConfig & {
+            inactionLeverFamilies?: InactionLeverFamilyDef[];
+          }
+        ).inactionLeverFamilies,
+      ),
+      inactionLevers: normalizeInactionLevers(
+        (parsed as OrgConfig & { inactionLevers?: InactionLeverDef[] })
+          .inactionLevers,
+      ),
       oppPhases: normalizeOppPhases(
         (parsed as OrgConfig & { oppPhases?: OppPhaseDef[] }).oppPhases,
       ),
@@ -565,6 +843,37 @@ export function hydrateOrgConfig(parsed: OrgConfig | null | undefined): OrgConfi
   } catch {
     return structuredClone(defaultConfig);
   }
+}
+
+/** Purge anciennes catégories / champs BO thématiques (doublon des leviers d’inaction). */
+const LEGACY_THEMATIC_BO_CATS = new Set([
+  "bocat-inaction",
+  "bocat-cost",
+  "bocat-risk",
+  "bocat-growth",
+  "bocat-ops",
+  "bocat-compliance",
+  "bocat-ux",
+]);
+
+function stripLegacyInactionBoCategories(
+  categories: BoCategoryDef[],
+): BoCategoryDef[] {
+  return categories.filter((c) => !LEGACY_THEMATIC_BO_CATS.has(c.id));
+}
+
+function stripLegacyInactionBoFields(fields: BoFieldDef[]): BoFieldDef[] {
+  return fields.filter(
+    (f) =>
+      !LEGACY_THEMATIC_BO_CATS.has(f.categoryId ?? "") &&
+      !f.id.startsWith("bo-inaction-") &&
+      !f.id.startsWith("bo-cost-") &&
+      !f.id.startsWith("bo-risk-") &&
+      !f.id.startsWith("bo-growth-") &&
+      !f.id.startsWith("bo-ops-") &&
+      !f.id.startsWith("bo-comp-") &&
+      !f.id.startsWith("bo-ux-"),
+  );
 }
 
 /** Injecte la question Compelling Event dans Qualification si absente. */
@@ -744,6 +1053,77 @@ type ConfigContextValue = {
     patch: Partial<CompellingEventDef>,
   ) => void;
   removeCompellingEvent: (id: string) => void;
+  activeProjectLeverFamilies: ProjectLeverFamilyDef[];
+  activeProjectLevers: ProjectLeverDef[];
+  addProjectLeverFamily: (label: string, description?: string) => void;
+  updateProjectLeverFamily: (
+    id: string,
+    patch: Partial<ProjectLeverFamilyDef>,
+  ) => void;
+  removeProjectLeverFamily: (id: string) => void;
+  addProjectLever: (
+    familyId: string,
+    label: string,
+    description?: string,
+  ) => void;
+  updateProjectLever: (id: string, patch: Partial<ProjectLeverDef>) => void;
+  removeProjectLever: (id: string) => void;
+  activeProjectProblemFamilies: ProjectProblemFamilyDef[];
+  activeProjectProblems: ProjectProblemDef[];
+  addProjectProblemFamily: (label: string, description?: string) => void;
+  updateProjectProblemFamily: (
+    id: string,
+    patch: Partial<ProjectProblemFamilyDef>,
+  ) => void;
+  removeProjectProblemFamily: (id: string) => void;
+  addProjectProblem: (
+    familyId: string,
+    label: string,
+    description?: string,
+  ) => void;
+  updateProjectProblem: (
+    id: string,
+    patch: Partial<ProjectProblemDef>,
+  ) => void;
+  removeProjectProblem: (id: string) => void;
+  activePersonalMotivations: PersonalMotivationDef[];
+  addPersonalMotivation: (
+    label: string,
+    polarity: PersonalMotivationPolarity,
+    description?: string,
+  ) => void;
+  updatePersonalMotivation: (
+    id: string,
+    patch: Partial<PersonalMotivationDef>,
+  ) => void;
+  removePersonalMotivation: (id: string) => void;
+  activeWhyNowObjectives: WhyNowObjectiveDef[];
+  addWhyNowObjective: (
+    label: string,
+    kind: WhyNowObjectiveKind,
+    opts?: { description?: string; valueUnit?: WhyNowValueUnit },
+  ) => void;
+  updateWhyNowObjective: (
+    id: string,
+    patch: Partial<WhyNowObjectiveDef>,
+  ) => void;
+  removeWhyNowObjective: (id: string) => void;
+  activeInactionLeverFamilies: InactionLeverFamilyDef[];
+  activeInactionLevers: InactionLeverDef[];
+  addInactionLeverFamily: (label: string, description?: string) => void;
+  updateInactionLeverFamily: (
+    id: string,
+    patch: Partial<InactionLeverFamilyDef>,
+  ) => void;
+  removeInactionLeverFamily: (id: string) => void;
+  addInactionLever: (
+    familyId: string,
+    label: string,
+    description?: string,
+    valueKind?: InactionValueKind,
+  ) => void;
+  updateInactionLever: (id: string, patch: Partial<InactionLeverDef>) => void;
+  removeInactionLever: (id: string) => void;
   salesTaxonomy: SalesTaxonomy;
   kpiClassifier: KpiClassifier;
   activeOppPhases: OppPhaseDef[];
@@ -978,6 +1358,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
             active: true,
             order: config.solutions.length + 1,
             modules: [],
+            featureGroups: [],
+            features: [],
+            competitors: [],
           },
         ],
       });
@@ -996,6 +1379,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
                 ...patch,
                 id: s.id,
                 modules: patch.modules ?? s.modules ?? [],
+                featureGroups: patch.featureGroups ?? s.featureGroups ?? [],
+                features: patch.features ?? s.features ?? [],
+                competitors: patch.competitors ?? s.competitors ?? [],
               }
             : s,
         ),
@@ -2063,6 +2449,539 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     [commit, config],
   );
 
+  const activeProjectLeverFamilies = useMemo(
+    () =>
+      [...(config.projectLeverFamilies ?? [])]
+        .filter((f) => f.active)
+        .sort((a, b) => a.order - b.order),
+    [config.projectLeverFamilies],
+  );
+
+  const activeProjectLevers = useMemo(
+    () =>
+      [...(config.projectLevers ?? [])]
+        .filter((l) => l.active)
+        .sort((a, b) => a.order - b.order),
+    [config.projectLevers],
+  );
+
+  const addProjectLeverFamily = useCallback(
+    (label: string, description?: string) => {
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      const list = config.projectLeverFamilies ?? [];
+      commit({
+        ...config,
+        projectLeverFamilies: [
+          ...list,
+          {
+            id: uid("plf"),
+            label: trimmed,
+            description: description?.trim() ?? "",
+            active: true,
+            order: list.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const updateProjectLeverFamily = useCallback(
+    (id: string, patch: Partial<ProjectLeverFamilyDef>) => {
+      commit({
+        ...config,
+        projectLeverFamilies: (config.projectLeverFamilies ?? []).map((f) =>
+          f.id === id ? { ...f, ...patch, id: f.id } : f,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const removeProjectLeverFamily = useCallback(
+    (id: string) => {
+      commit({
+        ...config,
+        projectLeverFamilies: (config.projectLeverFamilies ?? []).map((f) =>
+          f.id === id ? { ...f, active: false } : f,
+        ),
+        projectLevers: (config.projectLevers ?? []).map((l) =>
+          l.familyId === id ? { ...l, active: false } : l,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const addProjectLever = useCallback(
+    (familyId: string, label: string, description?: string) => {
+      const trimmed = label.trim();
+      if (!trimmed || !familyId) return;
+      const list = config.projectLevers ?? [];
+      const inFamily = list.filter((l) => l.familyId === familyId);
+      commit({
+        ...config,
+        projectLevers: [
+          ...list,
+          {
+            id: uid("pl"),
+            familyId,
+            label: trimmed,
+            description: description?.trim() ?? "",
+            active: true,
+            order: inFamily.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const updateProjectLever = useCallback(
+    (id: string, patch: Partial<ProjectLeverDef>) => {
+      commit({
+        ...config,
+        projectLevers: (config.projectLevers ?? []).map((l) =>
+          l.id === id ? { ...l, ...patch, id: l.id } : l,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const removeProjectLever = useCallback(
+    (id: string) => {
+      commit({
+        ...config,
+        projectLevers: (config.projectLevers ?? []).map((l) =>
+          l.id === id ? { ...l, active: false } : l,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const activeProjectProblemFamilies = useMemo(
+    () =>
+      [...(config.projectProblemFamilies ?? [])]
+        .filter((f) => f.active)
+        .sort((a, b) => a.order - b.order),
+    [config.projectProblemFamilies],
+  );
+
+  const activeProjectProblems = useMemo(
+    () =>
+      [...(config.projectProblems ?? [])]
+        .filter((p) => p.active)
+        .sort((a, b) => a.order - b.order),
+    [config.projectProblems],
+  );
+
+  const addProjectProblemFamily = useCallback(
+    (label: string, description?: string) => {
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      const list = config.projectProblemFamilies ?? [];
+      commit({
+        ...config,
+        projectProblemFamilies: [
+          ...list,
+          {
+            id: uid("ppf"),
+            label: trimmed,
+            description: description?.trim() ?? "",
+            active: true,
+            order: list.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const updateProjectProblemFamily = useCallback(
+    (id: string, patch: Partial<ProjectProblemFamilyDef>) => {
+      commit({
+        ...config,
+        projectProblemFamilies: (config.projectProblemFamilies ?? []).map(
+          (f) => (f.id === id ? { ...f, ...patch, id: f.id } : f),
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const removeProjectProblemFamily = useCallback(
+    (id: string) => {
+      commit({
+        ...config,
+        projectProblemFamilies: (config.projectProblemFamilies ?? []).map(
+          (f) => (f.id === id ? { ...f, active: false } : f),
+        ),
+        projectProblems: (config.projectProblems ?? []).map((p) =>
+          p.familyId === id ? { ...p, active: false } : p,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const addProjectProblem = useCallback(
+    (familyId: string, label: string, description?: string) => {
+      const trimmed = label.trim();
+      if (!trimmed || !familyId) return;
+      const list = config.projectProblems ?? [];
+      const inFamily = list.filter((p) => p.familyId === familyId);
+      commit({
+        ...config,
+        projectProblems: [
+          ...list,
+          {
+            id: uid("pp"),
+            familyId,
+            label: trimmed,
+            description: description?.trim() ?? "",
+            active: true,
+            order: inFamily.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const updateProjectProblem = useCallback(
+    (id: string, patch: Partial<ProjectProblemDef>) => {
+      commit({
+        ...config,
+        projectProblems: (config.projectProblems ?? []).map((p) =>
+          p.id === id ? { ...p, ...patch, id: p.id } : p,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const removeProjectProblem = useCallback(
+    (id: string) => {
+      commit({
+        ...config,
+        projectProblems: (config.projectProblems ?? []).map((p) =>
+          p.id === id ? { ...p, active: false } : p,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const activePersonalMotivations = useMemo(
+    () =>
+      [...(config.personalMotivations ?? [])]
+        .filter((m) => m.active)
+        .sort((a, b) => a.order - b.order),
+    [config.personalMotivations],
+  );
+
+  const addPersonalMotivation = useCallback(
+    (
+      label: string,
+      polarity: PersonalMotivationPolarity,
+      description?: string,
+    ) => {
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      const list = config.personalMotivations ?? [];
+      const samePolarity = list.filter((m) => m.polarity === polarity);
+      commit({
+        ...config,
+        personalMotivations: [
+          ...list,
+          {
+            id: uid("pm"),
+            label: trimmed,
+            description: description?.trim() ?? "",
+            polarity,
+            active: true,
+            order: samePolarity.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const updatePersonalMotivation = useCallback(
+    (id: string, patch: Partial<PersonalMotivationDef>) => {
+      commit({
+        ...config,
+        personalMotivations: (config.personalMotivations ?? []).map((m) =>
+          m.id === id ? { ...m, ...patch, id: m.id } : m,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const removePersonalMotivation = useCallback(
+    (id: string) => {
+      commit({
+        ...config,
+        personalMotivations: (config.personalMotivations ?? []).map((m) =>
+          m.id === id ? { ...m, active: false } : m,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const activeWhyNowObjectives = useMemo(
+    () =>
+      [...(config.whyNowObjectives ?? [])]
+        .filter((o) => o.active)
+        .sort((a, b) => a.order - b.order),
+    [config.whyNowObjectives],
+  );
+
+  const addWhyNowObjective = useCallback(
+    (
+      label: string,
+      kind: WhyNowObjectiveKind,
+      opts?: { description?: string; valueUnit?: WhyNowValueUnit },
+    ) => {
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      const list = config.whyNowObjectives ?? [];
+      const sameKind = list.filter((o) => o.kind === kind);
+      commit({
+        ...config,
+        whyNowObjectives: [
+          ...list,
+          {
+            id: uid("wno"),
+            label: trimmed,
+            description: opts?.description?.trim() ?? "",
+            kind,
+            valueUnit:
+              kind === "quantitative"
+                ? (opts?.valueUnit ?? "number")
+                : "number",
+            active: true,
+            order: sameKind.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const updateWhyNowObjective = useCallback(
+    (id: string, patch: Partial<WhyNowObjectiveDef>) => {
+      commit({
+        ...config,
+        whyNowObjectives: (config.whyNowObjectives ?? []).map((o) =>
+          o.id === id ? { ...o, ...patch, id: o.id } : o,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const removeWhyNowObjective = useCallback(
+    (id: string) => {
+      commit({
+        ...config,
+        whyNowObjectives: (config.whyNowObjectives ?? []).map((o) =>
+          o.id === id ? { ...o, active: false } : o,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const activeInactionLeverFamilies = useMemo(
+    () =>
+      [...(config.inactionLeverFamilies ?? [])]
+        .filter((f) => f.active)
+        .sort((a, b) => a.order - b.order),
+    [config.inactionLeverFamilies],
+  );
+
+  const activeInactionKinds = useMemo(() => {
+    const families = config.inactionLeverFamilies ?? [];
+    return new Set(
+      INACTION_KIND_GROUPS.filter((g) => {
+        const f = families.find((x) => x.id === g.familyId);
+        return f?.active === true;
+      }).map((g) => g.kind),
+    );
+  }, [config.inactionLeverFamilies]);
+
+  const activeInactionLevers = useMemo(
+    () =>
+      [...(config.inactionLevers ?? [])]
+        .filter((l) => l.active && activeInactionKinds.has(l.valueKind))
+        .sort((a, b) => a.order - b.order),
+    [config.inactionLevers, activeInactionKinds],
+  );
+
+  const addInactionLeverFamily = useCallback(
+    (label: string, description?: string) => {
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      const list = config.inactionLeverFamilies ?? [];
+      commit({
+        ...config,
+        inactionLeverFamilies: [
+          ...list,
+          {
+            id: uid("ilf"),
+            label: trimmed,
+            description: description?.trim() ?? "",
+            active: true,
+            order: list.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const updateInactionLeverFamily = useCallback(
+    (id: string, patch: Partial<InactionLeverFamilyDef>) => {
+      const list = config.inactionLeverFamilies ?? [];
+      const exists = list.some((f) => f.id === id);
+      if (exists) {
+        commit({
+          ...config,
+          inactionLeverFamilies: list.map((f) =>
+            f.id === id ? { ...f, ...patch, id: f.id } : f,
+          ),
+        });
+        return;
+      }
+      commit({
+        ...config,
+        inactionLeverFamilies: [
+          ...list,
+          {
+            id,
+            label: patch.label?.trim() || id,
+            description: patch.description?.trim() ?? "",
+            active: patch.active !== false,
+            order: patch.order ?? list.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const removeInactionLeverFamily = useCallback(
+    (id: string) => {
+      commit({
+        ...config,
+        inactionLeverFamilies: (config.inactionLeverFamilies ?? []).map((f) =>
+          f.id === id ? { ...f, active: false } : f,
+        ),
+        inactionLevers: (config.inactionLevers ?? []).map((l) =>
+          l.familyId === id ? { ...l, active: false } : l,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const addInactionLever = useCallback(
+    (
+      familyId: string,
+      label: string,
+      description?: string,
+      valueKind: InactionValueKind = "productivity",
+    ) => {
+      const trimmed = label.trim();
+      if (!trimmed || !familyId) return;
+      const list = config.inactionLevers ?? [];
+      const families = config.inactionLeverFamilies ?? [];
+      const inFamily = list.filter((l) => l.familyId === familyId);
+      const hasFamily = families.some((f) => f.id === familyId);
+      const groupMeta = [
+        {
+          id: "ilf-productivity",
+          label: "Gain productivité",
+          description:
+            "Temps homme perdu — matérialisé en € via le coût ETP.",
+        },
+        {
+          id: "ilf-gain",
+          label: "Gain CA",
+          description:
+            "Chiffre d’affaires en plus (ou non réalisé) si on agit.",
+        },
+        {
+          id: "ilf-avoided",
+          label: "Coût évité",
+          description: "Risques et pertes qu’on évite en agissant.",
+        },
+      ].find((g) => g.id === familyId);
+      commit({
+        ...config,
+        inactionLeverFamilies: hasFamily
+          ? families.map((f) =>
+              f.id === familyId ? { ...f, active: true } : f,
+            )
+          : [
+              ...families,
+              {
+                id: familyId,
+                label: groupMeta?.label ?? trimmed,
+                description: groupMeta?.description ?? "",
+                active: true,
+                order: families.length + 1,
+              },
+            ],
+        inactionLevers: [
+          ...list,
+          {
+            id: uid("il"),
+            familyId,
+            label: trimmed,
+            description: description?.trim() ?? "",
+            valueKind,
+            formula: null,
+            active: true,
+            order: inFamily.length + 1,
+          },
+        ],
+      });
+    },
+    [commit, config],
+  );
+
+  const updateInactionLever = useCallback(
+    (id: string, patch: Partial<InactionLeverDef>) => {
+      commit({
+        ...config,
+        inactionLevers: (config.inactionLevers ?? []).map((l) =>
+          l.id === id ? { ...l, ...patch, id: l.id } : l,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
+  const removeInactionLever = useCallback(
+    (id: string) => {
+      commit({
+        ...config,
+        inactionLevers: (config.inactionLevers ?? []).map((l) =>
+          l.id === id ? { ...l, active: false } : l,
+        ),
+      });
+    },
+    [commit, config],
+  );
+
   const salesTaxonomy = useMemo(
     () => salesTaxonomyFromConfig(config),
     [config],
@@ -2562,6 +3481,38 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addCompellingEvent,
       updateCompellingEvent,
       removeCompellingEvent,
+      activeProjectLeverFamilies,
+      activeProjectLevers,
+      addProjectLeverFamily,
+      updateProjectLeverFamily,
+      removeProjectLeverFamily,
+      addProjectLever,
+      updateProjectLever,
+      removeProjectLever,
+      activeProjectProblemFamilies,
+      activeProjectProblems,
+      addProjectProblemFamily,
+      updateProjectProblemFamily,
+      removeProjectProblemFamily,
+      addProjectProblem,
+      updateProjectProblem,
+      removeProjectProblem,
+      activePersonalMotivations,
+      addPersonalMotivation,
+      updatePersonalMotivation,
+      removePersonalMotivation,
+      activeWhyNowObjectives,
+      addWhyNowObjective,
+      updateWhyNowObjective,
+      removeWhyNowObjective,
+      activeInactionLeverFamilies,
+      activeInactionLevers,
+      addInactionLeverFamily,
+      updateInactionLeverFamily,
+      removeInactionLeverFamily,
+      addInactionLever,
+      updateInactionLever,
+      removeInactionLever,
       salesTaxonomy,
       kpiClassifier,
       activeOppPhases,
@@ -2664,6 +3615,38 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addCompellingEvent,
       updateCompellingEvent,
       removeCompellingEvent,
+      activeProjectLeverFamilies,
+      activeProjectLevers,
+      addProjectLeverFamily,
+      updateProjectLeverFamily,
+      removeProjectLeverFamily,
+      addProjectLever,
+      updateProjectLever,
+      removeProjectLever,
+      activeProjectProblemFamilies,
+      activeProjectProblems,
+      addProjectProblemFamily,
+      updateProjectProblemFamily,
+      removeProjectProblemFamily,
+      addProjectProblem,
+      updateProjectProblem,
+      removeProjectProblem,
+      activePersonalMotivations,
+      addPersonalMotivation,
+      updatePersonalMotivation,
+      removePersonalMotivation,
+      activeWhyNowObjectives,
+      addWhyNowObjective,
+      updateWhyNowObjective,
+      removeWhyNowObjective,
+      activeInactionLeverFamilies,
+      activeInactionLevers,
+      addInactionLeverFamily,
+      updateInactionLeverFamily,
+      removeInactionLeverFamily,
+      addInactionLever,
+      updateInactionLever,
+      removeInactionLever,
       salesTaxonomy,
       kpiClassifier,
       activeOppPhases,

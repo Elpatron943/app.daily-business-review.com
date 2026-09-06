@@ -213,16 +213,32 @@ function DomainQuestions({
                                 onChange={() => {
                                   const cur =
                                     opportunity.compellingEventIds ?? [];
-                                  const next = selected
+                                  const nextIds = selected
                                     ? cur.filter((id) => id !== ce.id)
                                     : [...cur, ce.id];
-                                  onUpdate?.({ compellingEventIds: next });
-                                  onAnswer(q.id, {
-                                    status: "Yes",
-                                    note:
-                                      next.length > 0
-                                        ? `${next.length} CE sélectionné${next.length > 1 ? "s" : ""}`
-                                        : undefined,
+                                  const today = new Date()
+                                    .toISOString()
+                                    .slice(0, 10);
+                                  const prevAnswer =
+                                    opportunity.processAnswers?.[q.id] ?? {
+                                      status: "None" as const,
+                                    };
+                                  // Un seul patch : éviter la course entre
+                                  // updateOpportunity et setProcessAnswer.
+                                  onUpdate?.({
+                                    compellingEventIds: nextIds,
+                                    processAnswers: {
+                                      ...opportunity.processAnswers,
+                                      [q.id]: {
+                                        ...prevAnswer,
+                                        status: "Yes",
+                                        note:
+                                          nextIds.length > 0
+                                            ? `${nextIds.length} CE sélectionné${nextIds.length > 1 ? "s" : ""}`
+                                            : undefined,
+                                        updatedAt: today,
+                                      },
+                                    },
                                   });
                                 }}
                               />

@@ -14,46 +14,51 @@ export function buildCompetitiveIntelSnapshot(
   const solutions = config.solutions
     .filter((s) => s.active)
     .sort((a, b) => a.order - b.order)
-    .map((s) => ({
-      id: s.id,
-      name: s.name,
-      code: s.code,
-      description: s.description,
-      features: (s.modules ?? [])
-        .filter((m) => m.active)
-        .sort((a, b) => a.order - b.order)
-        .map((m) => ({
-          id: m.id,
-          label: m.label,
-          description: m.description,
-          usps: (m.usps ?? [])
-            .filter((u) => u.active)
-            .sort((a, b) => a.order - b.order)
-            .map((u) => ({
-              id: u.id,
-              label: u.label,
-              description: u.description,
-            })),
-        })),
-    }));
-
-  const competitors = (config.competitors ?? [])
-    .filter((c) => c.active)
-    .sort((a, b) => a.order - b.order)
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      description: c.description,
-      features: (c.features ?? [])
+    .map((s) => {
+      const features = (s.features ?? [])
         .filter((f) => f.active)
         .sort((a, b) => a.order - b.order)
         .map((f) => ({
           id: f.id,
           label: f.label,
           description: f.description,
-          ourModuleId: f.ourModuleId,
+          groupId: f.groupId,
+          ourCoverage: f.ourCoverage,
+        }));
+      const competitorsAll = (s.competitors ?? [])
+        .filter((c) => c.active)
+        .sort((a, b) => a.order - b.order);
+      const dealIds = opportunity?.competitorIds ?? [];
+      const competitors =
+        opportunity?.solutionId === s.id && dealIds.length > 0
+          ? competitorsAll.filter((c) => dealIds.includes(c.id))
+          : competitorsAll;
+      return {
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        description: s.description,
+        featureGroups: (s.featureGroups ?? [])
+          .filter((g) => g.active)
+          .sort((a, b) => a.order - b.order)
+          .map((g) => ({ id: g.id, label: g.label })),
+        features,
+        competitors: competitors.map((c) => ({
+          id: c.id,
+          name: c.name,
+          description: c.description,
+          featureCoverage: c.featureCoverage ?? {},
         })),
-    }));
+      };
+    });
+
+  const competitorsMapped = solutions.flatMap((s) =>
+    s.competitors.map((c) => ({
+      ...c,
+      solutionId: s.id,
+      solutionName: s.name,
+    })),
+  );
 
   const process = opportunity
     ? computeProcessProgress(
@@ -76,7 +81,7 @@ export function buildCompetitiveIntelSnapshot(
         })),
     },
     solutions,
-    competitors,
+    competitors: competitorsMapped,
     opportunity: opportunity
       ? {
           id: opportunity.id,
@@ -85,7 +90,7 @@ export function buildCompetitiveIntelSnapshot(
           kind: opportunity.kind,
           phase: opportunity.phase,
           solutionId: opportunity.solutionId,
-          moduleIds: opportunity.moduleIds,
+          competitorIds: opportunity.competitorIds ?? [],
           mappingChecks: opportunity.mappingChecks,
           stakeholders: opportunity.stakeholders ?? [],
           processOverallPct: process?.overallPct ?? 0,

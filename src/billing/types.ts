@@ -1,4 +1,5 @@
 import type { OptionalModulesState } from "./optionalModules";
+import { entitlementsForPlanCode, type Entitlement } from "./entitlements";
 
 export type SubscriptionStatus =
   | "none"
@@ -46,6 +47,9 @@ export type BillingState = {
   canWrite: boolean;
   seatsFull: boolean;
   opportunitiesFull: boolean;
+  /** true si freemium/essai expiré ou paiement en attente. */
+  subscriptionBlocked: boolean;
+  entitlements: readonly Entitlement[];
 };
 
 export function effectiveSeatLimit(org: OrganizationBilling | null): number | null {
@@ -58,11 +62,38 @@ export function effectiveOppLimit(org: OrganizationBilling | null): number | nul
   return org?.plan?.max_active_opportunities ?? null;
 }
 
-export function isWriteLocked(status: SubscriptionStatus | undefined): boolean {
-  return status === "past_due" || status === "canceled";
+export function isTrialExpired(org: OrganizationBilling | null): boolean {
+  if (!org?.trial_ends_at) return false;
+  if (org.subscription_status === "active") return false;
+  const end = Date.parse(org.trial_ends_at);
+  return Number.isFinite(end) && end < Date.now();
+}
+
+export function isWriteLocked(
+  status: SubscriptionStatus | undefined,
+  org?: OrganizationBilling | null,
+): boolean {
+  if (status === "past_due" || status === "canceled" || status === "none") {
+    return true;
+  }
+  if (org && isTrialExpired(org)) return true;
+  return false;
 }
 
 export function formatQuotaLabel(used: number, limit: number | null): string {
   if (limit == null) return `${used}/∞`;
   return `${used}/${limit}`;
+}
+
+export function planEntitlements(
+  org: OrganizationBilling | null,
+): readonly Entitlement[] {
+  return entitlementsForPlanCode(org?.plan?.code);
+}
+
+export function orgHasEntitlement(
+  org: OrganizationBilling | null,
+  entitlement: Entitlement,
+): boolean {
+  return planEntitlements(org).includes(entitlement);
 }

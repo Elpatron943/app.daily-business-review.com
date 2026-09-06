@@ -11,6 +11,7 @@ import {
   type Opportunity,
   type OpportunityStakeholder,
 } from "./opportunities/OpportunityContext";
+import PersonalMotivationsChecks from "./PersonalMotivationsChecks";
 
 type Props = {
   opportunity: Opportunity;
@@ -75,9 +76,15 @@ export default function OpportunityStakeholdersPanel({
 
   function addStakeholder() {
     if (!pickId || mappedIds.has(pickId) || !pickRole) return;
+    const contact = activeContacts.find((c) => c.id === pickId);
     setStakeholders([
       ...stakeholders,
-      { contactId: pickId, role: pickRole, status: "Identified" },
+      {
+        contactId: pickId,
+        role: pickRole,
+        status: "Identified",
+        motivationIds: [...(contact?.motivationIds ?? [])],
+      },
     ]);
     setPickId("");
   }
@@ -103,14 +110,16 @@ export default function OpportunityStakeholdersPanel({
     if (!id) return;
     setStakeholders([
       ...stakeholders.filter((s) => s.contactId !== id),
-      { contactId: id, role: cRole, status: "Identified" },
+      { contactId: id, role: cRole, status: "Identified", motivationIds: [] },
     ]);
     resetCreateForm();
   }
 
   function patchStake(
     contactId: string,
-    patch: Partial<Pick<OpportunityStakeholder, "status" | "notes" | "role">>,
+    patch: Partial<
+      Pick<OpportunityStakeholder, "status" | "notes" | "role" | "motivationIds">
+    >,
   ) {
     setStakeholders(
       stakeholders.map((s) =>
@@ -347,6 +356,18 @@ export default function OpportunityStakeholdersPanel({
                   >
                     Retirer
                   </button>
+                </div>
+                <div className="opp-stake-motivations">
+                  <strong className="opp-stake-motivations-label">
+                    Motivations sur ce deal
+                  </strong>
+                  <PersonalMotivationsChecks
+                    selectedIds={stake.motivationIds ?? []}
+                    hint=""
+                    onChange={(motivationIds) =>
+                      patchStake(stake.contactId, { motivationIds })
+                    }
+                  />
                 </div>
               </li>
             );

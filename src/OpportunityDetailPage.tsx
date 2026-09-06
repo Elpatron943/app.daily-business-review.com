@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { formatEur } from "./data";
+import { useAuth } from "./auth/AuthContext";
 import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
 import OpportunityProcessPanel from "./OpportunityProcessPanel";
 import OpportunityMappingPanel from "./OpportunityMappingPanel";
+import OpportunityCompetitivePanel from "./OpportunityCompetitivePanel";
+import OpportunityProjectPanel from "./OpportunityProjectPanel";
+import OpportunityWhyNowPanel from "./OpportunityWhyNowPanel";
+import OpportunityCompellingEventsPanel from "./OpportunityCompellingEventsPanel";
+import OpportunityBusinessOutcomesPanel from "./OpportunityBusinessOutcomesPanel";
 import OpportunityStakeholdersPanel from "./OpportunityStakeholdersPanel";
 import OpportunityRecommendPanel from "./OpportunityRecommendPanel";
 import GenerateActionPlanPanel from "./GenerateActionPlanPanel";
-import OpportunityAiScriptPanel from "./research/OpportunityAiScriptPanel";
-import { useAuth } from "./auth/AuthContext";
-import { isModuleEnabled } from "./billing/optionalModules";
 import {
-  computeBusinessOutcomes,
+  computeWhyNowValue,
   defaultOpportunityVariables,
   useOpportunities,
   type Opportunity,
@@ -27,7 +30,7 @@ import {
   type AccountPlan,
 } from "./accountPlans/AccountPlanContext";
 import { useConfirm } from "./ui/ConfirmDialog";
-import type { AiScriptKind } from "./research/buildAiScriptContext";
+import { useAuth } from "./auth/AuthContext";
 
 function showsDealVariables(kind: OpportunityKind) {
   return kind === "up";
@@ -35,13 +38,16 @@ function showsDealVariables(kind: OpportunityKind) {
 
 type Tab =
   | "fiche"
+  | "projet"
   | "mapping"
+  | "concurrence"
+  | "business-outcomes"
   | "process"
+  | "compelling-events"
   | "outcomes"
   | "contacts"
   | "recos"
-  | "plans"
-  | "scripts";
+  | "plans";
 
 type Props = {
   opportunityId: string;
@@ -59,23 +65,11 @@ export default function OpportunityDetailPage({
     opportunities,
     updateOpportunity,
     removeOpportunity,
-    setBusinessOutcomeValue,
     setProcessAnswer,
   } = useOpportunities();
   const askConfirm = useConfirm();
-  const { organization } = useAuth();
   const { activeAccounts } = useDomain();
-  const showPhoneScript = isModuleEnabled(
-    organization?.optional_modules,
-    "ai_phone_script",
-  );
-  const showEmailScript = isModuleEnabled(
-    organization?.optional_modules,
-    "ai_email_script",
-  );
   const {
-    activeBoFields,
-    activeBoCategories,
     activeSolutions,
     activeOppVariables,
     activeProcessDomains,
@@ -84,6 +78,10 @@ export default function OpportunityDetailPage({
     phaseLabel,
     kpiClassifier,
   } = useOrgConfig();
+  const { hasEntitlement } = useAuth();
+  const canOppProcess = hasEntitlement("opp.process");
+  const canOppMapping = hasEntitlement("opp.mapping");
+  const canOppActionPlan = hasEntitlement("opp.action_plan");
 
   const opportunity =
     opportunities.find((o) => o.id === opportunityId) ?? null;
@@ -91,37 +89,22 @@ export default function OpportunityDetailPage({
     const pending = sessionStorage.getItem("powermap.openOppTab");
     if (
       pending === "fiche" ||
+      pending === "projet" ||
       pending === "mapping" ||
+      pending === "concurrence" ||
+      pending === "business-outcomes" ||
       pending === "process" ||
+      pending === "compelling-events" ||
       pending === "outcomes" ||
       pending === "contacts" ||
       pending === "recos" ||
-      pending === "plans" ||
-      pending === "scripts"
+      pending === "plans"
     ) {
       sessionStorage.removeItem("powermap.openOppTab");
       return pending;
     }
     return "fiche";
   });
-  const [scriptTab, setScriptTab] = useState<AiScriptKind>(
-    showPhoneScript ? "phone" : "email",
-  );
-
-  useEffect(() => {
-    if (tab === "scripts" && !showPhoneScript && !showEmailScript) {
-      setTab("fiche");
-    }
-  }, [tab, showPhoneScript, showEmailScript]);
-
-  useEffect(() => {
-    if (scriptTab === "phone" && !showPhoneScript && showEmailScript) {
-      setScriptTab("email");
-    }
-    if (scriptTab === "email" && !showEmailScript && showPhoneScript) {
-      setScriptTab("phone");
-    }
-  }, [scriptTab, showPhoneScript, showEmailScript]);
 
   const entreprises = activeAccounts.filter((a) => a.type === "Entreprise");
   const holdings = activeAccounts.filter((a) => a.type === "Holding");
@@ -132,11 +115,8 @@ export default function OpportunityDetailPage({
 
   const results = useMemo(() => {
     if (!opportunity) return null;
-    return computeBusinessOutcomes(
-      opportunity.businessOutcomes,
-      config.boFields,
-    );
-  }, [opportunity, config.boFields]);
+    return computeWhyNowValue(opportunity.whyNow);
+  }, [opportunity]);
 
   const proc = useMemo(() => {
     if (!opportunity) return null;
@@ -161,6 +141,8 @@ export default function OpportunityDetailPage({
 
   const stakeCount = opportunity?.stakeholders?.length ?? 0;
   const ceCount = opportunity?.compellingEventIds?.length ?? 0;
+  const competitorCount = opportunity?.competitorIds?.length ?? 0;
+  const projectLeverCount = opportunity?.projectLeverIds?.length ?? 0;
   const hasAiReview = Boolean(opportunity?.aiRecommendations?.content);
 
   const catalogueSummary = useMemo(
@@ -180,27 +162,35 @@ export default function OpportunityDetailPage({
         value: `${dealScore}%`,
         tab: "fiche" as Tab,
       },
-      {
-        id: "process" as const,
-        label: "Process",
-        ok: (proc?.overallPct ?? 0) >= 35,
-        value: `${proc?.overallPct ?? 0}%`,
-        tab: "process" as Tab,
-      },
-      {
-        id: "mapping" as const,
-        label: "Mapping",
-        ok:
-          mappingScore.total > 0 &&
-          (mappingScore.masteryPct === null
-            ? false
-            : mappingScore.masteryPct >= 30),
-        value:
-          mappingScore.masteryPct === null
-            ? "—"
-            : `${mappingScore.masteryPct}%`,
-        tab: "mapping" as Tab,
-      },
+      ...(canOppProcess
+        ? [
+            {
+              id: "process" as const,
+              label: "Process",
+              ok: (proc?.overallPct ?? 0) >= 35,
+              value: `${proc?.overallPct ?? 0}%`,
+              tab: "process" as Tab,
+            },
+          ]
+        : []),
+      ...(canOppMapping
+        ? [
+            {
+              id: "mapping" as const,
+              label: "Mapping",
+              ok:
+                mappingScore.total > 0 &&
+                (mappingScore.masteryPct === null
+                  ? false
+                  : mappingScore.masteryPct >= 30),
+              value:
+                mappingScore.masteryPct === null
+                  ? "—"
+                  : `${mappingScore.masteryPct}%`,
+              tab: "mapping" as Tab,
+            },
+          ]
+        : []),
       {
         id: "contacts" as const,
         label: "Contacts",
@@ -221,7 +211,15 @@ export default function OpportunityDetailPage({
       readyCount: items.filter((i) => i.ok).length,
       total: items.length,
     };
-  }, [proc?.overallPct, mappingScore, stakeCount, ceCount, dealScore]);
+  }, [
+    proc?.overallPct,
+    mappingScore,
+    stakeCount,
+    ceCount,
+    dealScore,
+    canOppProcess,
+    canOppMapping,
+  ]);
 
   if (!opportunity) {
     return (
@@ -523,26 +521,6 @@ export default function OpportunityDetailPage({
             >
               Fiche
             </button>
-          </div>
-        </div>
-        <div className="opp-nav-group" role="group" aria-label="Qualification">
-          <span className="opp-nav-label">Qualification</span>
-          <div className="opp-nav-tabs">
-            <button
-              type="button"
-              className={tab === "process" ? "active" : ""}
-              onClick={() => setTab("process")}
-            >
-              Process
-            </button>
-            <button
-              type="button"
-              className={tab === "mapping" ? "active" : ""}
-              onClick={() => setTab("mapping")}
-            >
-              Mapping
-              {mappingScore.total > 0 ? ` · ${mappingScore.total}` : ""}
-            </button>
             <button
               type="button"
               className={tab === "contacts" ? "active" : ""}
@@ -551,15 +529,103 @@ export default function OpportunityDetailPage({
               Contacts
               {stakeCount > 0 ? ` · ${stakeCount}` : ""}
             </button>
+          </div>
+        </div>
+        <div
+          className="opp-nav-group opp-nav-qualify"
+          role="group"
+          aria-label="Pourquoi"
+        >
+          <span className="opp-nav-label">Pourquoi</span>
+          <div className="opp-nav-tabs">
+            <button
+              type="button"
+              className={tab === "projet" ? "active" : ""}
+              onClick={() => setTab("projet")}
+            >
+              Projet
+              {projectLeverCount > 0 ? ` · ${projectLeverCount}` : ""}
+            </button>
+          </div>
+        </div>
+        <div
+          className="opp-nav-group opp-nav-qualify"
+          role="group"
+          aria-label="Pourquoi maintenant"
+        >
+          <span className="opp-nav-label">Pourquoi maintenant</span>
+          <div className="opp-nav-tabs">
+            <button
+              type="button"
+              className={tab === "compelling-events" ? "active" : ""}
+              onClick={() => setTab("compelling-events")}
+            >
+              Compelling events
+              {ceCount > 0 ? ` · ${ceCount}` : ""}
+            </button>
             <button
               type="button"
               className={tab === "outcomes" ? "active" : ""}
               onClick={() => setTab("outcomes")}
             >
-              Outcomes
+              Coût d’inaction
             </button>
           </div>
         </div>
+        <div
+          className="opp-nav-group opp-nav-qualify"
+          role="group"
+          aria-label="Pourquoi nous"
+        >
+          <span className="opp-nav-label">Pourquoi nous</span>
+          <div className="opp-nav-tabs">
+            <button
+              type="button"
+              className={tab === "concurrence" ? "active" : ""}
+              onClick={() => setTab("concurrence")}
+            >
+              Concurrence
+              {competitorCount > 0 ? ` · ${competitorCount}` : ""}
+            </button>
+            <button
+              type="button"
+              className={tab === "business-outcomes" ? "active" : ""}
+              onClick={() => setTab("business-outcomes")}
+            >
+              Business Outcomes
+            </button>
+          </div>
+        </div>
+        {(canOppProcess || canOppMapping) && (
+          <div
+            className="opp-nav-group"
+            role="group"
+            aria-label="Gestion de l'opportunité"
+          >
+            <span className="opp-nav-label">Gestion de l’opportunité</span>
+            <div className="opp-nav-tabs">
+              {canOppProcess && (
+                <button
+                  type="button"
+                  className={tab === "process" ? "active" : ""}
+                  onClick={() => setTab("process")}
+                >
+                  Process
+                </button>
+              )}
+              {canOppMapping && (
+                <button
+                  type="button"
+                  className={tab === "mapping" ? "active" : ""}
+                  onClick={() => setTab("mapping")}
+                >
+                  Mapping
+                  {mappingScore.total > 0 ? ` · ${mappingScore.total}` : ""}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <div className="opp-nav-group" role="group" aria-label="Pilotage">
           <span className="opp-nav-label">Pilotage</span>
           <div className="opp-nav-tabs">
@@ -571,20 +637,13 @@ export default function OpportunityDetailPage({
               Analyse IA
               {hasAiReview ? " · ✓" : ""}
             </button>
-            <button
-              type="button"
-              className={tab === "plans" ? "active" : ""}
-              onClick={() => setTab("plans")}
-            >
-              Plan d’actions
-            </button>
-            {(showPhoneScript || showEmailScript) && (
+            {canOppActionPlan && (
               <button
                 type="button"
-                className={tab === "scripts" ? "active" : ""}
-                onClick={() => setTab("scripts")}
+                className={tab === "plans" ? "active" : ""}
+                onClick={() => setTab("plans")}
               >
-                Scripts
+                Plan d’actions
               </button>
             )}
           </div>
@@ -609,14 +668,36 @@ export default function OpportunityDetailPage({
         />
       )}
 
-      {tab === "mapping" && (
+      {tab === "projet" && (
+        <OpportunityProjectPanel
+          opportunity={opportunity}
+          onUpdate={onUpdate}
+        />
+      )}
+
+      {tab === "mapping" && canOppMapping && (
         <OpportunityMappingPanel
           opportunity={opportunity}
           onUpdate={onUpdate}
         />
       )}
 
-      {tab === "process" && (
+      {tab === "concurrence" && (
+        <OpportunityCompetitivePanel
+          opportunity={opportunity}
+          onUpdate={onUpdate}
+          onNavigateTab={(t) => setTab(t)}
+        />
+      )}
+
+      {tab === "business-outcomes" && (
+        <OpportunityBusinessOutcomesPanel
+          opportunity={opportunity}
+          onUpdate={onUpdate}
+        />
+      )}
+
+      {tab === "process" && canOppProcess && (
         <OpportunityProcessPanel
           opportunity={opportunity}
           onAnswer={(questionId, patch) =>
@@ -626,47 +707,24 @@ export default function OpportunityDetailPage({
         />
       )}
 
-      {tab === "outcomes" && (
-        <OpportunityOutcomesTab
+      {tab === "compelling-events" && (
+        <OpportunityCompellingEventsPanel
           opportunity={opportunity}
-          fields={activeBoFields}
-          categories={activeBoCategories}
-          allFields={config.boFields}
-          onFieldValue={(fieldId, value) =>
-            setBusinessOutcomeValue(opportunity.id, fieldId, value)
-          }
+          onUpdate={onUpdate}
+        />
+      )}
+
+      {tab === "outcomes" && (
+        <OpportunityWhyNowPanel
+          opportunity={opportunity}
+          onUpdate={onUpdate}
         />
       )}
 
       {tab === "recos" && <OpportunityRecommendPanel opportunity={opportunity} />}
 
-      {tab === "plans" && <OpportunityActionPlanGen opportunity={opportunity} />}
-
-      {tab === "scripts" && (showPhoneScript || showEmailScript) && (
-        <section className="entry-subsection">
-          <h2>Scripts IA</h2>
-          <nav className="plan-tabs" aria-label="Type de script">
-            {showPhoneScript && (
-              <button
-                type="button"
-                className={scriptTab === "phone" ? "active" : ""}
-                onClick={() => setScriptTab("phone")}
-              >
-                Téléphone
-              </button>
-            )}
-            {showEmailScript && (
-              <button
-                type="button"
-                className={scriptTab === "email" ? "active" : ""}
-                onClick={() => setScriptTab("email")}
-              >
-                E-mail
-              </button>
-            )}
-          </nav>
-          <OpportunityAiScriptPanel opportunity={opportunity} kind={scriptTab} />
-        </section>
+      {tab === "plans" && canOppActionPlan && (
+        <OpportunityActionPlanGen opportunity={opportunity} />
       )}
     </div>
   );
@@ -713,8 +771,8 @@ function OpportunityFicheTab({
     getPlanForOpportunity,
     assignOpportunityToPlan,
   } = useAccountPlans();
-  const { activeOpportunities: allOpps, setProcessAnswer } = useOpportunities();
-  const { activeCompellingEvents, activeOppKinds, activeOppPhases, kindLabel, phaseLabel } =
+  const { activeOpportunities: allOpps } = useOpportunities();
+  const { activeOppKinds, activeOppPhases, kindLabel, phaseLabel } =
     useOrgConfig();
   const { team, canAssignOwner } = useAuth();
 
@@ -899,20 +957,7 @@ function OpportunityFicheTab({
       <OpportunityCatalogueFields
         opportunity={opportunity}
         solutions={solutions}
-        compellingEvents={activeCompellingEvents}
         onUpdate={onUpdate}
-        onCompellingEventsChange={(ids) => {
-          if (ids.length === 0) return;
-          const current =
-            opportunity.processAnswers?.["q-tq-ce"]?.status;
-          if (current === "Yes") return;
-          setProcessAnswer(opportunity.id, "q-tq-ce", {
-            status: "Yes",
-            note:
-              opportunity.processAnswers?.["q-tq-ce"]?.note ||
-              `${ids.length} Compelling Event${ids.length > 1 ? "s" : ""} sélectionné${ids.length > 1 ? "s" : ""} sur la fiche.`,
-          });
-        }}
       />
 
       {showsDealVariables(opportunity.kind) && variables.length > 0 && (
@@ -981,128 +1026,5 @@ function OpportunityFicheTab({
         </section>
       )}
     </>
-  );
-}
-
-function OpportunityOutcomesTab({
-  opportunity,
-  fields,
-  categories,
-  allFields,
-  onFieldValue,
-}: {
-  opportunity: Opportunity;
-  fields: import("./config/types").BoFieldDef[];
-  categories: import("./config/types").BoCategoryDef[];
-  allFields: import("./config/types").BoFieldDef[];
-  onFieldValue: (fieldId: string, value: number) => void;
-}) {
-  const results = useMemo(
-    () => computeBusinessOutcomes(opportunity.businessOutcomes, allFields),
-    [opportunity.businessOutcomes, allFields],
-  );
-
-  const grouped = useMemo(() => {
-    const catMap = new Map(categories.map((c) => [c.id, c]));
-    const groups: {
-      id: string;
-      label: string;
-      fields: typeof fields;
-    }[] = [];
-    const byCat = new Map<string, typeof fields>();
-    const orphan: typeof fields = [];
-    for (const f of fields) {
-      if (f.categoryId && catMap.has(f.categoryId)) {
-        const list = byCat.get(f.categoryId) ?? [];
-        list.push(f);
-        byCat.set(f.categoryId, list);
-      } else {
-        orphan.push(f);
-      }
-    }
-    for (const c of categories) {
-      const list = byCat.get(c.id);
-      if (list?.length) {
-        groups.push({ id: c.id, label: c.label, fields: list });
-      }
-    }
-    if (orphan.length) {
-      groups.push({ id: "_other", label: "Autres", fields: orphan });
-    }
-    return groups;
-  }, [fields, categories]);
-
-  return (
-    <section className="bo-calculator" aria-label="Business outcomes">
-      <h3>Calculateur Business Outcomes</h3>
-
-      {fields.length === 0 ? (
-        <p className="muted">Aucun champ actif.</p>
-      ) : (
-        grouped.map((g) => (
-          <div key={g.id} className="bo-category-block">
-            <h4>{g.label}</h4>
-            <div className="data-form-grid">
-              {g.fields.map((f) => (
-                <label key={f.id}>
-                  {f.label}
-                  <input
-                    type="number"
-                    min={f.kind === "horizon" ? 1 : 0}
-                    max={f.kind === "horizon" ? 20 : undefined}
-                    value={
-                      opportunity.businessOutcomes[f.id] ??
-                      f.defaultValue ??
-                      0
-                    }
-                    onChange={(e) =>
-                      onFieldValue(
-                        f.id,
-                        f.kind === "horizon"
-                          ? Math.max(1, Number(e.target.value) || 1)
-                          : Number(e.target.value) || 0,
-                      )
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        ))
-      )}
-
-      <div className="bo-results">
-        <article>
-          <span>Économies / an</span>
-          <strong>{formatEur(results.annualSavings)}</strong>
-        </article>
-        <article>
-          <span>Bénéfice annuel</span>
-          <strong>{formatEur(results.annualBenefit)}</strong>
-        </article>
-        <article>
-          <span>Bénéfice × {results.horizonYears} ans</span>
-          <strong>{formatEur(results.totalBenefit)}</strong>
-        </article>
-        <article className={results.netValue >= 0 ? "positive" : "negative"}>
-          <span>Valeur nette</span>
-          <strong>{formatEur(results.netValue)}</strong>
-        </article>
-        <article>
-          <span>ROI</span>
-          <strong>
-            {results.roiPct == null ? "—" : `${results.roiPct} %`}
-          </strong>
-        </article>
-        <article>
-          <span>Payback</span>
-          <strong>
-            {results.paybackMonths == null
-              ? "—"
-              : `${results.paybackMonths} mois`}
-          </strong>
-        </article>
-      </div>
-    </section>
   );
 }

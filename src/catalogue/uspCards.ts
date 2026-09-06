@@ -24,10 +24,10 @@ export function parseUspCardId(cardId: string): string | null {
   return id || null;
 }
 
-/** USP actifs rattachés à l’opp (modules sélectionnés + USP org). */
+/** USP actifs rattachés à l’opp (USP org uniquement — catalogue = solutions). */
 export function collectOpportunityUsps(
-  opportunity: { solutionId?: string; moduleIds?: string[] },
-  solutions: SolutionDef[],
+  _opportunity: { solutionId?: string; moduleIds?: string[] },
+  _solutions: SolutionDef[],
   orgProfile?: OrgProfile | null,
 ): OpportunityUspOption[] {
   const out: OpportunityUspOption[] = [];
@@ -41,16 +41,6 @@ export function collectOpportunityUsps(
 
   for (const u of orgProfile?.usps ?? []) {
     push(u, "Organisation");
-  }
-
-  const sol =
-    solutions.find((s) => s.id === opportunity.solutionId) ?? null;
-  const moduleIds = new Set(opportunity.moduleIds ?? []);
-  for (const m of sol?.modules ?? []) {
-    if (!m.active || !moduleIds.has(m.id)) continue;
-    for (const u of m.usps ?? []) {
-      push(u, m.label);
-    }
   }
 
   return out.sort(

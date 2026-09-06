@@ -208,6 +208,11 @@ export type Contact = {
   x: number;
   y: number;
   active: boolean;
+  /**
+   * Motivations personnelles (catalogue org) — drivers pour avancer / ralentir
+   * les projets en général.
+   */
+  motivationIds?: string[];
   /** Gestionnaire DBR (profiles.id). */
   ownerProfileId?: string | null;
   hubspotContactId?: string | null;

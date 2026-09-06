@@ -603,10 +603,12 @@ export default function AccountPlanPage({
                   return (
                     <tr
                       key={plan.id}
-                      className={`account-plan-row${
+                      className={`account-plan-row opp-list-row${
                         overdue ? " is-overdue" : ""
                       }`}
                       tabIndex={0}
+                      role="link"
+                      aria-label={`Ouvrir le plan ${holding?.name ?? ""}`}
                       onClick={() => setDetailId(plan.id)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {

@@ -6,6 +6,8 @@ export type UserProfile = {
   full_name: string | null;
   role: AppRole;
   organization_id: string | null;
+  /** Console admin DBR (création comptes / activation paiement). */
+  is_platform_admin: boolean;
   created_at: string;
   updated_at: string;
 };

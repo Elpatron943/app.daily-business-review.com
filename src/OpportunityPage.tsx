@@ -5,7 +5,7 @@ import { useDomain } from "./domain/DomainContext";
 import OpportunityDetailPage from "./OpportunityDetailPage";
 import SearchFilterBar, { matchesQuery } from "./SearchFilterBar";
 import {
-  computeBusinessOutcomes,
+  computeWhyNowValue,
   defaultBusinessOutcomeValues,
   defaultOpportunityVariables,
   useOpportunities,
@@ -335,22 +335,36 @@ export default function OpportunityPage({
                   <th>Solution</th>
                   <th>Montant</th>
                   <th>Score</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
                 {filteredOpportunities.map((o) => {
-                  const results = computeBusinessOutcomes(
-                    o.businessOutcomes,
-                    config.boFields,
-                  );
+                  const results = computeWhyNowValue(o.whyNow);
                   const account = activeAccounts.find(
                     (a) => a.id === o.primaryAccountId,
                   );
                   const cat = summarizeCatalogue(o, activeSolutions);
                   const plan = getPlanForOpportunity(o.id);
+                  const openOpp = () => {
+                    setActiveOpportunityId(o.id);
+                    setBackTarget({ type: "list" });
+                    setDetailId(o.id);
+                  };
                   return (
-                    <tr key={o.id}>
+                    <tr
+                      key={o.id}
+                      className="opp-list-row"
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`Ouvrir ${o.name}`}
+                      onClick={openOpp}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openOpp();
+                        }
+                      }}
+                    >
                       <td>
                         <strong>
                           {o.name}
@@ -389,19 +403,6 @@ export default function OpportunityPage({
                         ) : (
                           <span className="muted">—</span>
                         )}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={() => {
-                            setActiveOpportunityId(o.id);
-                            setBackTarget({ type: "list" });
-                            setDetailId(o.id);
-                          }}
-                        >
-                          Ouvrir
-                        </button>
                       </td>
                     </tr>
                   );

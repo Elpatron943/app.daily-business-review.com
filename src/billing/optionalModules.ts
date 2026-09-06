@@ -1,13 +1,10 @@
 /** Catalogue des modules optionnels (activés par org via la console plateforme). */
 
-export const OPTIONAL_MODULE_IDS = [
-  "ai_phone_script",
-  "ai_email_script",
-] as const;
+export const OPTIONAL_MODULE_IDS = [] as const;
 
 export type OptionalModuleId = (typeof OPTIONAL_MODULE_IDS)[number];
 
-export type OptionalModulesState = Partial<Record<OptionalModuleId, boolean>>;
+export type OptionalModulesState = Partial<Record<string, boolean>>;
 
 export function normalizeOptionalModules(
   raw: unknown,
@@ -23,7 +20,7 @@ export function normalizeOptionalModules(
 
 export function isModuleEnabled(
   modules: OptionalModulesState | null | undefined,
-  id: OptionalModuleId,
+  id: string,
 ): boolean {
   return modules?.[id] === true;
 }

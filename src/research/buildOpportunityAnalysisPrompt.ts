@@ -265,6 +265,17 @@ export function buildEnsembleDealReviewPrompt(
   const stakeholders = includes.stakeholders
     ? (input.opportunity.stakeholders ?? []).map((s) => {
         const c = input.contacts.find((x) => x.id === s.contactId);
+        const motivationIds = s.motivationIds?.length
+          ? s.motivationIds
+          : (c?.motivationIds ?? []);
+        const motivations = motivationIds.map((id) => {
+          const m = (input.config.personalMotivations ?? []).find(
+            (x) => x.id === id,
+          );
+          return m
+            ? { id: m.id, label: m.label, polarity: m.polarity }
+            : { id, label: id, polarity: "advance" as const };
+        });
         return {
           name: c?.name ?? s.contactId,
           title: c?.title ?? "",
@@ -272,6 +283,7 @@ export function buildEnsembleDealReviewPrompt(
           persona: c ? personaLabel(input.personae, c.personaId) : "?",
           engagement: engagementLabel[s.status as Status] ?? s.status,
           notes: s.notes ?? "",
+          motivations,
           active: c?.active !== false,
         };
       })
@@ -386,6 +398,9 @@ export function buildEnsembleDealReviewPrompt(
       solutionId: input.opportunity.solutionId,
       moduleIds: input.opportunity.moduleIds,
       personaIds: input.opportunity.personaIds,
+      projectWhy: input.opportunity.projectWhy,
+      projectProblemIds: input.opportunity.projectProblemIds,
+      projectLeverIds: input.opportunity.projectLeverIds,
     },
     account: input.account
       ? {

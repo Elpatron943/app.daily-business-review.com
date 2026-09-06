@@ -30,9 +30,11 @@ import {
   effectiveOppLimit,
   effectiveSeatLimit,
   isWriteLocked,
+  planEntitlements,
   type BillingState,
   type OrganizationBilling,
 } from "../billing/types";
+import type { Entitlement } from "../billing/entitlements";
 import { normalizeOptionalModules } from "../billing/optionalModules";
 
 type AuthContextValue = {
@@ -43,8 +45,11 @@ type AuthContextValue = {
   profile: UserProfile | null;
   role: AppRole | null;
   isAdmin: boolean;
+  isPlatformAdmin: boolean;
   /** Capacité RBAC (hors verrou billing). */
   can: (permission: Permission) => boolean;
+  /** Entitlement formule (Freemium / Solo / Entreprise). */
+  hasEntitlement: (entitlement: Entitlement) => boolean;
   canWriteDomain: boolean;
   canViewAllAccounts: boolean;
   canAssignOwner: boolean;
@@ -89,6 +94,7 @@ function mapProfile(row: Record<string, unknown>): UserProfile | null {
     role,
     organization_id:
       typeof row.organization_id === "string" ? row.organization_id : null,
+    is_platform_admin: row.is_platform_admin === true,
     created_at: typeof row.created_at === "string" ? row.created_at : "",
     updated_at: typeof row.updated_at === "string" ? row.updated_at : "",
   };
@@ -154,6 +160,10 @@ function buildBilling(
   const seatsFull = seatsLimit != null && seatsUsed >= seatsLimit;
   const opportunitiesFull =
     opportunitiesLimit != null && activeOpportunities >= opportunitiesLimit;
+  const subscriptionBlocked = isWriteLocked(
+    organization?.subscription_status,
+    organization,
+  );
   return {
     organization,
     usage: {
@@ -162,9 +172,11 @@ function buildBilling(
       activeOpportunities,
       opportunitiesLimit,
     },
-    canWrite: !isWriteLocked(organization?.subscription_status),
+    canWrite: !subscriptionBlocked,
     seatsFull,
     opportunitiesFull,
+    subscriptionBlocked,
+    entitlements: planEntitlements(organization),
   };
 }
 
@@ -474,6 +486,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const role = profile?.role ?? null;
   const isAdmin = role === "admin";
+  const isPlatformAdmin = profile?.is_platform_admin === true;
   const canWriteDomainFlag = canWriteDomain(role);
   const canViewAllAccountsFlag = canViewAllAccounts(role);
   const canAssignOwnerFlag = canAssignOwner(role);
@@ -481,6 +494,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const billing = useMemo(
     () => buildBilling(organization, seatsUsed, activeOpportunityCount),
     [organization, seatsUsed, activeOpportunityCount],
+  );
+
+  const hasEntitlement = useCallback(
+    (entitlement: Entitlement) => billing.entitlements.includes(entitlement),
+    [billing.entitlements],
   );
 
   const value = useMemo<AuthContextValue>(
@@ -492,7 +510,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       role,
       isAdmin,
+      isPlatformAdmin,
       can: (permission: Permission) => can(role, permission),
+      hasEntitlement,
       canWriteDomain: canWriteDomainFlag,
       canViewAllAccounts: canViewAllAccountsFlag,
       canAssignOwner: canAssignOwnerFlag,
@@ -519,6 +539,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       role,
       isAdmin,
+      isPlatformAdmin,
+      hasEntitlement,
       canWriteDomainFlag,
       canViewAllAccountsFlag,
       canAssignOwnerFlag,

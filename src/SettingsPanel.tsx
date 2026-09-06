@@ -1,7 +1,12 @@
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useOrgConfig } from "./config/ConfigContext";
 import CatalogueManager from "./CatalogueManager";
 import CompetitiveIntelManager from "./CompetitiveIntelManager";
+import ProjectLeversManager from "./ProjectLeversManager";
+import ProjectProblemsManager from "./ProjectProblemsManager";
+import PersonalMotivationsManager from "./PersonalMotivationsManager";
+import WhyNowObjectivesManager from "./WhyNowObjectivesManager";
+import InactionLeversManager from "./InactionLeversManager";
 import PersonaeManager from "./PersonaeManager";
 import RiskMatrixManager from "./RiskMatrixManager";
 import SectorsManager from "./SectorsManager";
@@ -24,6 +29,8 @@ import {
   type SettingsSubId,
 } from "./settings/settingsNav";
 import { useT } from "./i18n/LocaleContext";
+import { useAuth } from "./auth/AuthContext";
+import { SETTINGS_SUBS_REQUIRING_FULL } from "./billing/entitlements";
 import {
   BO_FIELD_KINDS,
   OPP_VARIABLE_KINDS,
@@ -43,6 +50,16 @@ type Props = {
 
 export default function SettingsPanel({ onOpenTeam }: Props) {
   const t = useT();
+  const { hasEntitlement } = useAuth();
+  const canFullSettings =
+    hasEntitlement("opp.process") && hasEntitlement("opp.mapping");
+
+  function visibleSubs<T extends { id: string }>(subs: T[] | undefined): T[] {
+    if (!subs) return [];
+    if (canFullSettings) return subs;
+    return subs.filter((s) => !SETTINGS_SUBS_REQUIRING_FULL.has(s.id));
+  }
+
   const {
     config,
     addOppVariable,
@@ -73,6 +90,17 @@ export default function SettingsPanel({ onOpenTeam }: Props) {
   const [sub, setSub] = useState<SettingsSubId | null>(() =>
     defaultSubForArea(DEFAULT_SETTINGS_AREA),
   );
+  /** Aire dépliée dans la nav (accordéon). */
+  const [navExpanded, setNavExpanded] = useState<SettingsAreaId | null>(
+    DEFAULT_SETTINGS_AREA,
+  );
+
+  useEffect(() => {
+    if (!canFullSettings && (sub === "process" || sub === "mapping")) {
+      setSub(defaultSubForArea(area) ?? "funnel");
+    }
+  }, [canFullSettings, sub, area]);
+
   const [newContactLabel, setNewContactLabel] = useState("");
   const [newContactColor, setNewContactColor] = useState("#0f766e");
   const [newCatLabel, setNewCatLabel] = useState("");
@@ -105,8 +133,35 @@ export default function SettingsPanel({ onOpenTeam }: Props) {
     }
     setArea(target);
     setSub(defaultSubForArea(target));
+    setNavExpanded(target);
     setInfoOpen(false);
     setInfoSubId(null);
+  };
+
+  const goToSub = (targetArea: SettingsAreaId, targetSub: SettingsSubId) => {
+    const item = findSettingsArea(targetArea);
+    if (item?.openTeam) {
+      onOpenTeam?.();
+      return;
+    }
+    setArea(targetArea);
+    setSub(targetSub);
+    setNavExpanded(targetArea);
+    setInfoOpen(false);
+    setInfoSubId(null);
+  };
+
+  const toggleNavArea = (target: SettingsAreaId) => {
+    const item = findSettingsArea(target);
+    if (item?.openTeam) {
+      onOpenTeam?.();
+      return;
+    }
+    if (navExpanded === target && area === target) {
+      setNavExpanded(null);
+      return;
+    }
+    goToArea(target);
   };
 
   const openInfo = (subId: string | null, e?: MouseEvent) => {
@@ -152,6 +207,9 @@ export default function SettingsPanel({ onOpenTeam }: Props) {
     if (area === "contacts" && subId === "contact-types") {
       return <section className="settings-block">{contactTypesBlock}</section>;
     }
+    if (area === "contacts" && subId === "personal-motivations") {
+      return <PersonalMotivationsManager showInactive={showInactive} />;
+    }
     if (area === "entreprises" && subId === "sectors") {
       return <SectorsManager showInactive={showInactive} />;
     }
@@ -186,8 +244,20 @@ export default function SettingsPanel({ onOpenTeam }: Props) {
     if (area === "opportunites" && subId === "outcomes") {
       return <section className="settings-block">{outcomesBlock}</section>;
     }
+    if (area === "opportunites" && subId === "why-now-objectives") {
+      return <WhyNowObjectivesManager showInactive={showInactive} />;
+    }
+    if (area === "opportunites" && subId === "inaction-levers") {
+      return <InactionLeversManager showInactive={showInactive} />;
+    }
     if (area === "opportunites" && subId === "variables") {
       return <section className="settings-block">{variablesBlock}</section>;
+    }
+    if (area === "opportunites" && subId === "project-problems") {
+      return <ProjectProblemsManager showInactive={showInactive} />;
+    }
+    if (area === "opportunites" && subId === "project-levers") {
+      return <ProjectLeversManager showInactive={showInactive} />;
     }
     if (area === "opportunites" && subId === "deal-intel") {
       return (
@@ -617,17 +687,64 @@ export default function SettingsPanel({ onOpenTeam }: Props) {
               </p>
               {group.items.map((item) => {
                 const label = item.labelKey ? t(item.labelKey) : item.label;
+                const itemSubs = visibleSubs(item.subs);
+                const hasSubs = itemSubs.length > 0;
+                const expanded =
+                  !item.openTeam && navExpanded === item.id && hasSubs;
+                const areaActive = area === item.id && !item.openTeam;
+
+                if (!hasSubs || item.openTeam) {
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={areaActive ? "active" : ""}
+                      onClick={() => goToArea(item.id)}
+                    >
+                      {label}
+                    </button>
+                  );
+                }
+
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
-                    className={
-                      area === item.id && !item.openTeam ? "active" : ""
-                    }
-                    onClick={() => goToArea(item.id)}
+                    className={`settings-side-accordion${expanded ? " is-open" : ""}${areaActive ? " is-active-area" : ""}`}
                   >
-                    {label}
-                  </button>
+                    <button
+                      type="button"
+                      className={`settings-side-accordion-trigger${areaActive ? " active" : ""}`}
+                      aria-expanded={expanded}
+                      onClick={() => toggleNavArea(item.id)}
+                    >
+                      <span>{label}</span>
+                      <span className="settings-side-accordion-chevron" aria-hidden>
+                        {expanded ? "▾" : "▸"}
+                      </span>
+                    </button>
+                    {expanded && (
+                      <div
+                        className="settings-side-subs"
+                        role="group"
+                        aria-label={`Sous-menus ${label}`}
+                      >
+                        {itemSubs.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            className={
+                              area === item.id && sub === s.id
+                                ? "active"
+                                : ""
+                            }
+                            onClick={() => goToSub(item.id, s.id)}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -655,48 +772,42 @@ export default function SettingsPanel({ onOpenTeam }: Props) {
             <>
               {current && (
                 <header className="settings-area-head">
-                  <h2>{areaTitle}</h2>
-                  <p className="muted">{current.blurb}</p>
+                  <div className="settings-area-title-row">
+                    <div>
+                      <h2>
+                        {areaTitle}
+                        {activeSub ? (
+                          <span className="settings-area-subcrumb">
+                            {" "}
+                            · {activeSub.label}
+                          </span>
+                        ) : null}
+                      </h2>
+                      <p className="muted">{current.blurb}</p>
+                    </div>
+                    {activeSub ? (
+                      <SettingsInfoButton
+                        onClick={(e) => openInfo(activeSub.id, e)}
+                        label={`Où « ${activeSub.label} » est utilisé`}
+                      />
+                    ) : (
+                      <SettingsInfoButton onClick={(e) => openInfo(null, e)} />
+                    )}
+                  </div>
                 </header>
               )}
 
-              {current?.subs && current.subs.length > 0 ? (
-                <div className="settings-accordions">
-                  {current.subs.map((s) => {
-                    const isOpen = (sub ?? current.subs![0].id) === s.id;
-                    return (
-                      <details
-                        key={s.id}
-                        className="settings-accordion"
-                        open={isOpen}
-                        onToggle={(e) => {
-                          const el = e.currentTarget;
-                          if (el.open) setSub(s.id);
-                        }}
-                      >
-                        <summary>
-                          <span className="settings-accordion-summary-row">
-                            <span>{s.label}</span>
-                            <SettingsInfoButton
-                              onClick={(e) => openInfo(s.id, e)}
-                              label={`Où « ${s.label} » est utilisé`}
-                            />
-                          </span>
-                        </summary>
-                        <div className="settings-accordion-body">
-                          <SettingsPurposeCard
-                            where={s.where}
-                            purpose={s.purpose}
-                            visual={purposeVisual(s.id)}
-                          />
-                          {renderSubBody(s.id)}
-                        </div>
-                      </details>
-                    );
-                  })}
+              {activeSub ? (
+                <div className="settings-sub-panel">
+                  <SettingsPurposeCard
+                    where={activeSub.where}
+                    purpose={activeSub.purpose}
+                    visual={purposeVisual(activeSub.id)}
+                  />
+                  {renderSubBody(activeSub.id)}
                 </div>
               ) : (
-                renderSubBody(activeSub?.id ?? "")
+                renderSubBody("")
               )}
             </>
           )}

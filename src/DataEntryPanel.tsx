@@ -75,11 +75,7 @@ function DataEntryPanelInner({
     contacts,
     activeContacts,
     contactRelations,
-    removeAccount,
-    restoreAccount,
     upsertContact,
-    removeContact,
-    restoreContact,
     setContactParent,
   } = useDomain();
   const {
@@ -417,7 +413,6 @@ function DataEntryPanelInner({
                       <th>Account plan</th>
                       <th>Montant opportunités</th>
                       <th>CA actuel</th>
-                      <th />
                     </tr>
                   </thead>
                   <tbody>
@@ -429,8 +424,22 @@ function DataEntryPanelInner({
                       const currentRevenue = soldSolutions
                         .filter((s) => s.accountId === a.id)
                         .reduce((sum, s) => sum + (s.billedAmount || 0), 0);
+                      const openAccount = () => setDetailId(a.id);
                       return (
-                        <tr key={a.id} className={!a.active ? "inactive" : ""}>
+                        <tr
+                          key={a.id}
+                          className={`opp-list-row${!a.active ? " inactive" : ""}`}
+                          tabIndex={0}
+                          role="link"
+                          aria-label={`Ouvrir ${a.name}`}
+                          onClick={openAccount}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openAccount();
+                            }
+                          }}
+                        >
                           <td>
                             <strong>{a.name}</strong>
                             {(() => {
@@ -462,34 +471,6 @@ function DataEntryPanelInner({
                           </td>
                           <td className="num">
                             {currentRevenue > 0 ? formatEur(currentRevenue) : "—"}
-                          </td>
-                          <td>
-                            <div className="entry-actions">
-                              <button
-                                type="button"
-                                className="ghost"
-                                onClick={() => setDetailId(a.id)}
-                              >
-                                Ouvrir
-                              </button>
-                              {a.active ? (
-                                <button
-                                  type="button"
-                                  className="ghost"
-                                  onClick={() => removeAccount(a.id)}
-                                >
-                                  Désactiver
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="ghost"
-                                  onClick={() => restoreAccount(a.id)}
-                                >
-                                  Réactiver
-                                </button>
-                              )}
-                            </div>
                           </td>
                         </tr>
                       );
@@ -591,13 +572,23 @@ function DataEntryPanelInner({
                     : null;
                   const account = accounts.find((a) => a.id === c.accountId);
                   const personaLbl = personaLabel(c.personaId);
+                  const openContact = () => setContactDetailId(c.id);
                   return (
-                    <li key={c.id} className={!c.active ? "inactive" : ""}>
-                      <button
-                        type="button"
-                        className="entry-list-main"
-                        onClick={() => setContactDetailId(c.id)}
-                      >
+                    <li
+                      key={c.id}
+                      className={`entry-list-row${!c.active ? " inactive" : ""}`}
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`Ouvrir ${c.name}`}
+                      onClick={openContact}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openContact();
+                        }
+                      }}
+                    >
+                      <div className="entry-list-main">
                         <strong>{c.name}</strong>
                         <span className="meta">
                           {c.title ? `${c.title} · ` : ""}
@@ -607,32 +598,6 @@ function DataEntryPanelInner({
                           {account ? ` · ${account.name}` : ""}
                           {parent ? ` · parent : ${parent.name}` : ""}
                         </span>
-                      </button>
-                      <div className="entry-actions">
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={() => setContactDetailId(c.id)}
-                        >
-                          Ouvrir
-                        </button>
-                        {c.active ? (
-                          <button
-                            type="button"
-                            className="ghost"
-                            onClick={() => removeContact(c.id)}
-                          >
-                            Désactiver
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="ghost"
-                            onClick={() => restoreContact(c.id)}
-                          >
-                            Réactiver
-                          </button>
-                        )}
                       </div>
                     </li>
                   );

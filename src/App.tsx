@@ -20,10 +20,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import SettingsPanel from "./SettingsPanel";
+import PlatformAdminPanel from "./auth/PlatformAdminPanel";
 import DataEntryPanel, { type DataSection } from "./DataEntryPanel";
 import DashboardPage from "./DashboardPage";
 import AccountPlanPage from "./AccountPlanPage";
-import OptionalModulePage from "./OptionalModulePage";
 import SoldSolutionEditor from "./SoldSolutionEditor";
 import SameSectorPanel, {
   buildPeerGroups,
@@ -33,10 +33,8 @@ import AccountOpportunitiesInfluenceOverview from "./AccountOpportunitiesInfluen
 import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
 import { useSales } from "./sales/SalesContext";
-import { isModuleEnabled } from "./billing/optionalModules";
 import {
   isDataSection,
-  isOptionalModulePage,
   NAV_DATA,
   NAV_MAIN,
   NAV_PILOTAGE,
@@ -390,6 +388,8 @@ export default function App() {
     user,
     profile,
     can: canPerm,
+    hasEntitlement,
+    isPlatformAdmin,
     profileError,
     passwordRecovery,
     signOut,
@@ -402,11 +402,7 @@ export default function App() {
     const key =
       id === "account-plans"
         ? "nav.accountPlans"
-        : id === "ai_phone_script"
-          ? "nav.ai_phone_script"
-          : id === "ai_email_script"
-            ? "nav.ai_email_script"
-            : (`nav.${id}` as MessageKey);
+        : (`nav.${id}` as MessageKey);
     return t(key);
   }
 
@@ -456,8 +452,19 @@ export default function App() {
     [activeContacts],
   );
 
-  const [page, setPage] = useState<AppPage>("dashboard");
+  const [page, setPage] = useState<AppPage>(() =>
+    // Solo / Freemium : pas de Vue → atterrir sur Saisie
+    "entreprises",
+  );
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
+
+  const canViewNav = hasEntitlement("nav.view");
+  const canSaisieNav = hasEntitlement("nav.saisie");
+  const canPilotageNav = hasEntitlement("nav.pilotage");
+  const canSettingsNav =
+    canPerm("settings.access") && hasEntitlement("nav.settings");
+  const canTeamNav =
+    canPerm("team.manage") && hasEntitlement("team.invite");
 
   const navigate = useCallback((next: AppPage) => {
     if (next === "account-plans") {
@@ -471,19 +478,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (page === "settings" && !canSettingsNav) {
+      setPage(canSaisieNav ? "entreprises" : "dashboard");
+      return;
+    }
     if (
-      isOptionalModulePage(page) &&
-      !isModuleEnabled(billing.organization?.optional_modules, page)
+      (page === "dashboard" || page === "map") &&
+      !canViewNav
     ) {
-      setPage("dashboard");
+      setPage(canSaisieNav ? "entreprises" : "settings");
+      return;
     }
-  }, [page, billing.organization?.optional_modules]);
-
-  useEffect(() => {
-    if (page === "settings" && !canPerm("settings.access")) {
-      setPage("dashboard");
+    if (page === "account-plans" && !canPilotageNav) {
+      setPage(canSaisieNav ? "entreprises" : "dashboard");
+      return;
     }
-  }, [page, profile?.role, canPerm]);
+    if (page === "platform-admin" && !isPlatformAdmin) {
+      setPage(canSaisieNav ? "entreprises" : "dashboard");
+    }
+  }, [
+    page,
+    canSettingsNav,
+    canViewNav,
+    canPilotageNav,
+    canSaisieNav,
+    isPlatformAdmin,
+  ]);
 
   const [visibleCommercialStatuses, setVisibleCommercialStatuses] = useState<
     Record<string, boolean>
@@ -1326,42 +1346,53 @@ export default function App() {
         ) : null}
 
         <nav className="sidebar-nav" aria-label={t("nav.aria")}>
-          <p className="sidebar-group">{t("nav.group.view")}</p>
-          {NAV_MAIN.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={page === item.id ? "active" : ""}
-              onClick={() => navigate(item.id)}
-            >
-              {navLabel(item.id)}
-            </button>
-          ))}
+          {canViewNav ? (
+            <>
+              <p className="sidebar-group">{t("nav.group.view")}</p>
+              {NAV_MAIN.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={page === item.id ? "active" : ""}
+                  onClick={() => navigate(item.id)}
+                >
+                  {navLabel(item.id)}
+                </button>
+              ))}
+            </>
+          ) : null}
 
-          <p className="sidebar-group">{t("nav.group.data")}</p>
-          {NAV_DATA.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={page === item.id ? "active" : ""}
-              onClick={() => navigate(item.id)}
-            >
-              {navLabel(item.id)}
-            </button>
-          ))}
+          {canSaisieNav ? (
+            <>
+              <p className="sidebar-group">{t("nav.group.data")}</p>
+              {NAV_DATA.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={page === item.id ? "active" : ""}
+                  onClick={() => navigate(item.id)}
+                >
+                  {navLabel(item.id)}
+                </button>
+              ))}
+            </>
+          ) : null}
 
-          <p className="sidebar-group">{t("nav.group.pilotage")}</p>
-          {NAV_PILOTAGE.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={page === item.id ? "active" : ""}
-              onClick={() => navigate(item.id)}
-            >
-              {navLabel(item.id)}
-            </button>
-          ))}
-
+          {canPilotageNav ? (
+            <>
+              <p className="sidebar-group">{t("nav.group.pilotage")}</p>
+              {NAV_PILOTAGE.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={page === item.id ? "active" : ""}
+                  onClick={() => navigate(item.id)}
+                >
+                  {navLabel(item.id)}
+                </button>
+              ))}
+            </>
+          ) : null}
         </nav>
       </aside>
 
@@ -1384,7 +1415,7 @@ export default function App() {
             >
               {t("sidebar.signOut")}
             </button>
-            {canPerm("team.manage") && (
+            {canTeamNav && (
               <button
                 type="button"
                 className="ghost tiny"
@@ -1393,7 +1424,7 @@ export default function App() {
                 {t("sidebar.team")}
               </button>
             )}
-            {canPerm("settings.access") && (
+            {canSettingsNav && (
               <button
                 type="button"
                 className={`ghost tiny${page === "settings" ? " active" : ""}`}
@@ -1402,37 +1433,46 @@ export default function App() {
                 {t("sidebar.settings")}
               </button>
             )}
+            {isPlatformAdmin && (
+              <button
+                type="button"
+                className={`ghost tiny${page === "platform-admin" ? " active" : ""}`}
+                onClick={() => navigate("platform-admin")}
+              >
+                Console admin
+              </button>
+            )}
           </div>
         </header>
 
         <div className="app-main-body">
-        {page === "dashboard" && (
+        {page === "dashboard" && canViewNav && (
           <DashboardPage onNavigate={navigate} />
         )}
 
-        {page === "settings" && canPerm("settings.access") ? (
+        {page === "settings" && canSettingsNav ? (
           <SettingsPanel onOpenTeam={() => setTeamOpen(true)} />
         ) : null}
 
-        {page === "account-plans" && (
+        {page === "platform-admin" && isPlatformAdmin ? (
+          <PlatformAdminPanel />
+        ) : null}
+
+        {page === "account-plans" && canPilotageNav && (
           <AccountPlanPage
             openPlanId={openPlanId}
             onOpenPlanConsumed={() => setOpenPlanId(null)}
           />
         )}
 
-        {isDataSection(page) && (
+        {isDataSection(page) && canSaisieNav && (
           <DataEntryPanel
             section={page as DataSection}
             onNavigate={navigate}
           />
         )}
 
-        {isOptionalModulePage(page) && (
-          <OptionalModulePage moduleId={page} />
-        )}
-
-        {page === "map" && (
+        {page === "map" && canViewNav && (
           <div className="app map-app">
             <header className="topbar">
               <div className="brand">
@@ -1796,7 +1836,7 @@ export default function App() {
         </div>
       </div>
 
-      {teamOpen && canPerm("team.manage") && (
+      {teamOpen && canTeamNav && (
         <TeamAdminPanel onClose={() => setTeamOpen(false)} />
       )}
     </div>

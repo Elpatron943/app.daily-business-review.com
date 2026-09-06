@@ -106,7 +106,7 @@ export const SETTINGS_NAV: SettingsNavGroup[] = [
             id: "catalogue",
             label: "Catalogue solutions",
             where: "Whitespace, ventes, opportunités",
-            purpose: "Solutions, modules et USP produit.",
+            purpose: "Solutions, features regroupées et couverture vs concurrents.",
           },
         ],
       },
@@ -122,6 +122,13 @@ export const SETTINGS_NAV: SettingsNavGroup[] = [
             where: "Contacts + Cartographie",
             purpose:
               "Rôles (Economic Buyer, Champion…) et couleurs — un catalogue pour la carte et les fiches.",
+          },
+          {
+            id: "personal-motivations",
+            label: "Motivations personnelles",
+            where: "Fiche contact + Opportunité → Contacts",
+            purpose:
+              "Drivers individuels pour avancer ou freiner un projet (carrière, objectif manager…).",
           },
         ],
       },
@@ -140,20 +147,42 @@ export const SETTINGS_NAV: SettingsNavGroup[] = [
           {
             id: "process",
             label: "Process de vente",
-            where: "Fiche opportunité → Process",
-            purpose: "Domaines et questions de qualification.",
+            where: "Fiche opportunité → Gestion → Process",
+            purpose: "Domaines et questions de qualification commerciale.",
           },
           {
             id: "mapping",
             label: "Cartes SWOT / mapping",
-            where: "Fiche opportunité → Mapping",
+            where: "Fiche opportunité → Gestion → Mapping",
             purpose: "Bibliothèque de cartes SWOT, signaux et risques.",
           },
           {
-            id: "outcomes",
-            label: "Business Outcomes",
-            where: "Fiche opportunité → valeur / ROI",
-            purpose: "Champs de bénéfice pour le calculateur.",
+            id: "inaction-levers",
+            label: "Coût d’inaction",
+            where: "Fiche opportunité → Pourquoi maintenant → Coût d’inaction",
+            purpose:
+              "Familles (gains, productivité, risques…) et lignes chiffrables affichées sur le deal.",
+          },
+          {
+            id: "deal-intel",
+            label: "Intel deal",
+            where:
+              "Pourquoi maintenant (CE + CoI) + Pourquoi nous (concurrents → BO)",
+            purpose: "Compelling Events, coût d’inaction et concurrents.",
+          },
+          {
+            id: "project-problems",
+            label: "Problèmes projet",
+            where: "Fiche opportunité → Pourquoi → Projet",
+            purpose:
+              "Familles et cases à cocher : quel problème le client veut résoudre.",
+          },
+          {
+            id: "project-levers",
+            label: "Leviers projet",
+            where: "Fiche opportunité → Pourquoi → Projet",
+            purpose:
+              "Familles et critères pour juger s’il y a un vrai projet (Pourquoi).",
           },
           {
             id: "variables",
@@ -162,10 +191,18 @@ export const SETTINGS_NAV: SettingsNavGroup[] = [
             purpose: "Licences, users… (upsell / expansion).",
           },
           {
-            id: "deal-intel",
-            label: "Intel deal",
-            where: "Analyse IA + scripts",
-            purpose: "Compelling Events et concurrents.",
+            id: "outcomes",
+            label: "Business Outcomes (legacy)",
+            where: "Pourquoi nous → Business Outcomes (saisie sur le deal)",
+            purpose:
+              "Ancien catalogue ROI — coûts / horizon se saisissent sur le deal.",
+          },
+          {
+            id: "why-now-objectives",
+            label: "Objectifs quali / quanti (obsolète)",
+            where: "Retiré de Pourquoi maintenant",
+            purpose:
+              "Ancien catalogue — CE = date/priorisation, CoI = ampleur.",
           },
         ],
       },
@@ -205,7 +242,7 @@ export const SETTINGS_NAV: SettingsNavGroup[] = [
           {
             id: "profile",
             label: "Profil & USP",
-            where: "Analyse IA, scripts, mapping USP",
+            where: "Analyse IA, mapping USP",
             purpose: "Nom, description et Unique Selling Points.",
           },
           {

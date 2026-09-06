@@ -26,8 +26,56 @@ export type SolutionDef = {
   description: string;
   active: boolean;
   order: number;
-  /** Modules / features vendables avec cette solution. */
+  /** Modules / features vendables (legacy — catalogue aplati). */
   modules: SolutionModuleDef[];
+  /** Regroupements de features pour la grille concurrentielle. */
+  featureGroups: SolutionFeatureGroupDef[];
+  /** Features comparées (nous vs concurrents). */
+  features: SolutionBattleFeatureDef[];
+  /** Produits concurrents de cette solution. */
+  competitors: SolutionCompetitorDef[];
+};
+
+/** Couverture d’une feature : totale, partielle ou absente. */
+export type FeatureCoverage = "full" | "partial" | "none";
+
+export const FEATURE_COVERAGES: {
+  id: FeatureCoverage;
+  label: string;
+}[] = [
+  { id: "full", label: "Totalement" },
+  { id: "partial", label: "Partiellement" },
+  { id: "none", label: "Pas du tout" },
+];
+
+export type SolutionFeatureGroupDef = {
+  id: string;
+  label: string;
+  active: boolean;
+  order: number;
+};
+
+/** Feature du marché à comparer (notre solution vs concurrents). */
+export type SolutionBattleFeatureDef = {
+  id: string;
+  label: string;
+  description: string;
+  /** Groupe (null = hors regroupement). */
+  groupId: string | null;
+  /** Notre couverture de cette feature. */
+  ourCoverage: FeatureCoverage;
+  active: boolean;
+  order: number;
+};
+
+export type SolutionCompetitorDef = {
+  id: string;
+  name: string;
+  description: string;
+  /** Couverture par featureId. */
+  featureCoverage: Record<string, FeatureCoverage>;
+  active: boolean;
+  order: number;
 };
 
 /** Argument différenciant (entreprise ou feature). */
@@ -369,11 +417,166 @@ export type CompellingEventDef = {
   order: number;
 };
 
+/** Famille de leviers « Pourquoi y a-t-il un projet ? ». */
+export type ProjectLeverFamilyDef = {
+  id: string;
+  label: string;
+  description: string;
+  active: boolean;
+  order: number;
+};
+
+/** Critère / case à cocher rattachée à une famille de leviers projet. */
+export type ProjectLeverDef = {
+  id: string;
+  familyId: string;
+  label: string;
+  description: string;
+  active: boolean;
+  order: number;
+};
+
+/** Famille de problèmes à résoudre (« Pourquoi un projet ? »). */
+export type ProjectProblemFamilyDef = {
+  id: string;
+  label: string;
+  description: string;
+  active: boolean;
+  order: number;
+};
+
+/** Problème client configurable (case à cocher sur l’opportunité). */
+export type ProjectProblemDef = {
+  id: string;
+  familyId: string;
+  label: string;
+  description: string;
+  active: boolean;
+  order: number;
+};
+
+/** Polarité d’une motivation personnelle sur un projet. */
+export type PersonalMotivationPolarity = "advance" | "retreat";
+
+/**
+ * Motivation personnelle à faire avancer / ralentir un projet
+ * (carrière, objectif manager…).
+ */
+export type PersonalMotivationDef = {
+  id: string;
+  label: string;
+  description: string;
+  polarity: PersonalMotivationPolarity;
+  active: boolean;
+  order: number;
+};
+
+/** Nature d’un objectif « Pourquoi maintenant ». */
+export type WhyNowObjectiveKind = "quantitative" | "qualitative";
+
+/** Unité de saisie pour un objectif quantitatif. */
+export type WhyNowValueUnit =
+  | "percent"
+  | "euro"
+  | "days"
+  | "number"
+  | "fte";
+
+export const WHY_NOW_VALUE_UNITS: {
+  id: WhyNowValueUnit;
+  label: string;
+  suffix: string;
+}[] = [
+  { id: "percent", label: "Pourcentage (%)", suffix: "%" },
+  { id: "euro", label: "Montant (€)", suffix: "€" },
+  { id: "days", label: "Jours", suffix: "j" },
+  { id: "fte", label: "ETP / FTE", suffix: "ETP" },
+  { id: "number", label: "Nombre", suffix: "" },
+];
+
+/**
+ * Objectif structuré (quanti / quali) — cases à cocher sur Outcomes.
+ * Quanti : saisie d’une valeur typée (%, €, jours…).
+ */
+export type WhyNowObjectiveDef = {
+  id: string;
+  label: string;
+  description: string;
+  kind: WhyNowObjectiveKind;
+  /** Unité de la valeur saisie (objectifs quantitatifs uniquement). */
+  valueUnit: WhyNowValueUnit;
+  active: boolean;
+  order: number;
+};
+
+/**
+ * Famille de lignes pour le coût d’inaction sur le deal
+ * (gains, productivité, risques…).
+ */
+export type InactionLeverFamilyDef = {
+  id: string;
+  label: string;
+  description: string;
+  active: boolean;
+  order: number;
+};
+
+/** Nature de chiffrage d’une ligne CoI (pas linéaire : 3 logiques). */
+export type InactionValueKind =
+  | "productivity"
+  | "revenue"
+  | "avoided";
+
+/** Opérateur de formule CoI. */
+export type InactionFormulaOp = "*" | "+" | "-" | "/" | "%";
+
+/** Calcul paramétrable (Settings + deal). */
+export type InactionFormulaDef = {
+  enabled: boolean;
+  inputs: { id: string; label?: string }[];
+  operators: InactionFormulaOp[];
+};
+
+/** Ligne chiffrable du coût d’inaction (paramétrable Settings). */
+export type InactionLeverDef = {
+  id: string;
+  familyId: string;
+  label: string;
+  description: string;
+  /**
+   * productivity = temps homme → € (nb ETP × h × freq × coût horaire)
+   * revenue = gain de CA (€ / an ou formule)
+   * avoided = coût évité / risque (impact × fréquence ou formule)
+   */
+  valueKind: InactionValueKind;
+  /** Si enabled : le € / an = évaluation de la formule. */
+  formula?: InactionFormulaDef | null;
+  active: boolean;
+  order: number;
+};
+
+export function normalizeInactionValueKind(
+  raw: unknown,
+  familyId?: string,
+): InactionValueKind {
+  if (raw === "productivity" || raw === "revenue" || raw === "avoided") {
+    return raw;
+  }
+  // Legacy
+  if (raw === "time") return "productivity";
+  if (raw === "cash") {
+    return familyId === "ilf-loss" || familyId === "ilf-avoided"
+      ? "avoided"
+      : "revenue";
+  }
+  return "productivity";
+}
+
 /** Dimensions du catalogue offre activées pour l’organisation. */
 export type CatalogFeatures = {
   /** Utiliser des solutions (catalogue produits). */
   solutions: boolean;
-  /** Décomposer les solutions en modules / features. */
+  /** Décomposer les solutions en modules / features (désactivé — solutions seules). */
   modules: boolean;
   /** Rattacher les ventes / l’équipement aux personae. */
   personae: boolean;
@@ -381,7 +584,8 @@ export type CatalogFeatures = {
 
 export const DEFAULT_CATALOG_FEATURES: CatalogFeatures = {
   solutions: true,
-  modules: true,
+  /** Modules désactivés — catalogue aplati sur les solutions. */
+  modules: false,
   personae: true,
 };
 
@@ -389,7 +593,8 @@ export function normalizeCatalogFeatures(
   raw: Partial<CatalogFeatures> | null | undefined,
 ): CatalogFeatures {
   const solutions = raw?.solutions !== false;
-  const modules = solutions && raw?.modules !== false;
+  // Catalogue = solutions uniquement (plus de modules / USP produit).
+  const modules = false;
   // Legacy : catalogFeatures.directions
   const legacy = raw as (Partial<CatalogFeatures> & { directions?: boolean }) | null | undefined;
   const personae =
@@ -404,9 +609,9 @@ export type OrgConfig = {
   /** Notre entreprise : description + USP globaux. */
   orgProfile: OrgProfile;
   contactTypes: ContactTypeDef[];
-  /** Quelles dimensions d’offre sont actives (solutions / modules / personae). */
+  /** Quelles dimensions d’offre sont actives (solutions / personae). */
   catalogFeatures: CatalogFeatures;
-  /** Catalogue produits global : solutions + modules rattachés. */
+  /** Catalogue produits global : solutions. */
   solutions: SolutionDef[];
   /** Personae cibles (Qui vous êtes) — ventes, contacts, opportunités. */
   personae: PersonaDef[];
@@ -426,6 +631,22 @@ export type OrgConfig = {
   competitors: CompetitorDef[];
   /** Compelling Events paramétrables (référentiel admin). */
   compellingEvents: CompellingEventDef[];
+  /** Familles de leviers projet (« Pourquoi un projet ? »). */
+  projectLeverFamilies: ProjectLeverFamilyDef[];
+  /** Leviers projet (cases à cocher) rattachés aux familles. */
+  projectLevers: ProjectLeverDef[];
+  /** Familles de problèmes à résoudre. */
+  projectProblemFamilies: ProjectProblemFamilyDef[];
+  /** Problèmes client (cases à cocher sur Pourquoi → Projet). */
+  projectProblems: ProjectProblemDef[];
+  /** Motivations personnelles (avancer / reculer le projet). */
+  personalMotivations: PersonalMotivationDef[];
+  /** Objectifs quali / quanti (« Pourquoi maintenant »). */
+  whyNowObjectives: WhyNowObjectiveDef[];
+  /** Familles de leviers coût d’inaction / décision d’achat. */
+  inactionLeverFamilies: InactionLeverFamilyDef[];
+  /** Leviers coût d’inaction (cases + valeur €). */
+  inactionLevers: InactionLeverDef[];
   /** Phases d’opportunité (funnel). */
   oppPhases: OppPhaseDef[];
   /** Types / natures d’opportunité. */

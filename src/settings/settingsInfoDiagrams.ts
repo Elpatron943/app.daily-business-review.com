@@ -193,16 +193,16 @@ export const SETTINGS_INFO: Record<string, SettingsInfoDiagram> = {
   "entreprises:catalogue": info(
     "Catalogue solutions",
     [
-      "Créer solutions, modules et USP ici",
+      "Créer les solutions ici",
       "Choisir l’offre sur l’opportunité",
-      "Le whitespace compte et le Mapping USP s’appuient dessus",
+      "Les USP entreprise (Profil & USP) alimentent le Mapping",
     ],
-    "Référentiel offre : deal, couverture compte, arguments USP.",
+    "Référentiel offre : solutions sur deals et couverture compte.",
     [
       {
         screen: "opp-header",
         highlight: "offer",
-        label: "Opportunité — solution / modules",
+        label: "Opportunité — solution",
       },
       {
         screen: "whitespace",
@@ -291,21 +291,33 @@ export const SETTINGS_INFO: Record<string, SettingsInfoDiagram> = {
   "opportunites:outcomes": info(
     "Business Outcomes",
     [
-      "Définir les champs de valeur ici",
-      "Les saisir dans le calculateur ROI du deal",
-      "Repris dans le discours Account plan",
+      "Saisie sur le deal : Pourquoi nous → Business Outcomes",
+      "Valorise l’atteinte après notre solution (vs inaction)",
+      "Après Concurrence — impact dépend des fonctionnalités",
     ],
-    "Champs du calculateur de bénéfices.",
+    "Coût d’inaction = Pourquoi maintenant (fournisseur-agnostique).",
     [
       {
         screen: "opp-roi",
         highlight: "fields+total",
-        label: "Opportunité — ROI (champs + total calculé)",
+        label: "Opportunité — Pourquoi nous (Business Outcomes)",
       },
+    ],
+  ),
+
+  "opportunites:inaction-levers": info(
+    "Coût d’inaction",
+    [
+      "Créer des familles (gains, productivité, risques…)",
+      "Ajouter les lignes chiffrables sous chaque famille",
+      "Activer / désactiver ce qui s’affiche sur le deal",
+    ],
+    "Les lignes actives apparaissent dans Pourquoi maintenant → Coût d’inaction.",
+    [
       {
-        screen: "account-plan",
-        highlight: "value",
-        label: "Account plan — valeur chiffrée",
+        screen: "opp-roi",
+        highlight: "fields+total",
+        label: "Opportunité — Pourquoi maintenant (Coût d’inaction)",
       },
     ],
   ),
@@ -330,7 +342,7 @@ export const SETTINGS_INFO: Record<string, SettingsInfoDiagram> = {
     "Intel deal",
     [
       "Configurer CE et concurrents ici",
-      "Injectés dans Analyse IA et scripts",
+      "Injectés dans Analyse IA",
       "Disponibles comme contexte sur le deal",
     ],
     "Référentiel « pourquoi maintenant » et paysage concurrentiel.",
@@ -365,7 +377,7 @@ export const SETTINGS_INFO: Record<string, SettingsInfoDiagram> = {
     [
       "Renseigner nom, description et USP ici",
       "Contexte injecté dans l’IA",
-      "USP org disponibles sur le Mapping et les scripts",
+      "USP org disponibles sur le Mapping",
     ],
     "Identité vendeur partagée à toute l’équipe.",
     [

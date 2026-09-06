@@ -9,6 +9,7 @@ import {
 import { useAuth } from "./auth/AuthContext";
 import { useOrgConfig } from "./config/ConfigContext";
 import { useDomain } from "./domain/DomainContext";
+import PersonalMotivationsChecks from "./PersonalMotivationsChecks";
 
 type Props = {
   contactId: string;
@@ -99,6 +100,7 @@ export default function ContactDetailPage({
       accountId: string;
       personaId: string;
       ownerProfileId: string | null;
+      motivationIds: string[];
     }>,
   ) {
     upsertContact({
@@ -113,6 +115,10 @@ export default function ContactDetailPage({
         next.ownerProfileId !== undefined
           ? next.ownerProfileId
           : contact!.ownerProfileId,
+      motivationIds:
+        next.motivationIds !== undefined
+          ? next.motivationIds
+          : (contact!.motivationIds ?? []),
     });
   }
 
@@ -300,6 +306,16 @@ export default function ContactDetailPage({
             </button>
           </p>
         )}
+      </section>
+
+      <section className="entry-subsection" aria-label="Motivations personnelles">
+        <h2>Motivations personnelles</h2>
+        <PersonalMotivationsChecks
+          selectedIds={contact.motivationIds ?? []}
+          disabled={readOnly}
+          hint="Drivers généraux de cette personne — préremplissent les contacts d’opportunité."
+          onChange={(motivationIds) => patch({ motivationIds })}
+        />
       </section>
 
       <section className="entry-subsection">
