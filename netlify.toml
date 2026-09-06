@@ -11,6 +11,11 @@
 
 # API serverless avant le fallback SPA
 [[redirects]]
+  from = "/accounts/provision"
+  to = "/.netlify/functions/accounts-provision"
+  status = 200
+
+[[redirects]]
   from = "/api/invite-user"
   to = "/.netlify/functions/invite-user"
   status = 200

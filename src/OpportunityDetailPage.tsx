@@ -30,7 +30,6 @@ import {
   type AccountPlan,
 } from "./accountPlans/AccountPlanContext";
 import { useConfirm } from "./ui/ConfirmDialog";
-import { useAuth } from "./auth/AuthContext";
 
 function showsDealVariables(kind: OpportunityKind) {
   return kind === "up";

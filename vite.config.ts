@@ -4,6 +4,7 @@ import { perplexityResearchProxy } from "./scripts/perplexityProxy";
 import { openaiRecommendProxy } from "./scripts/openaiProxy";
 import { inviteUserProxy } from "./scripts/inviteUserProxy";
 import { hubspotProxy } from "./scripts/hubspotProxy";
+import { accountsProvisionProxy } from "./scripts/accountsProvisionProxy";
 
 export default defineConfig(({ mode }) => {
   // Expose API keys to the Vite Node process (proxies only).
@@ -62,6 +63,9 @@ export default defineConfig(({ mode }) => {
   if (env.HUBSPOT_WEBHOOK_SKIP_VERIFY) {
     process.env.HUBSPOT_WEBHOOK_SKIP_VERIFY = env.HUBSPOT_WEBHOOK_SKIP_VERIFY;
   }
+  if (env.DBR_PROVISION_API_KEY) {
+    process.env.DBR_PROVISION_API_KEY = env.DBR_PROVISION_API_KEY;
+  }
 
   return {
     plugins: [
@@ -70,6 +74,7 @@ export default defineConfig(({ mode }) => {
       openaiRecommendProxy(),
       inviteUserProxy(),
       hubspotProxy(),
+      accountsProvisionProxy(),
     ],
     server: {
       port: 5173,

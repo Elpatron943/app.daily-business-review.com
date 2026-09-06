@@ -14,14 +14,14 @@ insert into public.commercial_plans (
 (
   'freemium',
   'Freemium',
-  'Même périmètre que Sales Solo — limité en opportunités et dans le temps (14 jours).',
+  'Même périmètre que Sales Solo — 1 opportunité, 3 jours.',
   'Essayer DBR gratuitement',
   0,
   'EUR',
   1,
-  5,
+  1,
   null,
-  '["nav.saisie","nav.settings","1 utilisateur","5 opportunités","14 jours"]'::jsonb,
+  '["nav.saisie","nav.settings","1 utilisateur","1 opportunité","3 jours"]'::jsonb,
   true,
   5
 ),
