@@ -89,13 +89,14 @@ export const EMPTY_ANSWERS: OnboardingAnswers = {
 export const ONBOARDING_FUNNEL: FunnelStep[] = [
   {
     id: "companyName",
-    botMessage: "Bonjour ! Pour démarrer, quel est le **nom de votre entreprise** ?",
+    botMessage:
+      "On y va ! Premier niveau : quel est le **nom de votre entreprise** ?",
     placeholder: "Ex. Acme Solutions",
   },
   {
     id: "activity",
     botMessage:
-      "Que vendez-vous, et à qui ? Décrivez en quelques phrases votre activité, votre marché et votre proposition de valeur.",
+      "Pitch express : que vendez-vous, et à qui ? 3–5 phrases suffisent (activité, marché, promesse).",
     placeholder: "Ex. Nous vendons un logiciel de… à des DSI dans l’industrie…",
     multiline: true,
   },
@@ -107,62 +108,63 @@ export const ONBOARDING_FUNNEL: FunnelStep[] = [
   },
   {
     id: "productCount",
-    botMessage: "Combien de produits ou prestations principales commercialisez-vous ?",
+    botMessage:
+      "Combien de produits ou prestations principales avez-vous vraiment dans le catalogue (les piliers) ?",
     placeholder: "Ex. 3",
   },
   {
     id: "productNames",
     botMessage:
-      "Quels sont leurs **noms** (et une courte description si possible) ? Séparez-les par des retours à la ligne ou des virgules.",
+      "Listez-les : **noms** + une courte description. Un par ligne, c’est parfait.",
     placeholder: "Ex.\nPlateforme X — pilotage…\nAudit Y — …",
     multiline: true,
   },
   {
     id: "differentiators",
     botMessage:
-      "Qu’est-ce qui vous différencie vraiment ? Listez vos **arguments clés / USP** (un par ligne).",
+      "Ce qui fait gagner face aux autres : vos **arguments clés / USP** (un par ligne).",
     placeholder: "Ex.\nExpertise métier\nTime-to-value < 30 j",
     multiline: true,
   },
   {
     id: "targetCustomers",
     botMessage:
-      "Qui sont vos **clients types** ? Secteurs, tailles d’entreprise, et personae décideurs (DG, CFO, DSI…).",
+      "Vos clients types ? Secteurs, tailles, et personae qui décident (DG, CFO, DSI…).",
     placeholder: "Ex. ETI industrielles, DSI + Directeur ops",
     multiline: true,
   },
   {
     id: "competitors",
     botMessage:
-      "Qui sont vos **principaux concurrents** (noms) ? Un par ligne si possible.",
+      "Contre qui jouez-vous le plus souvent ? **Noms des concurrents**, un par ligne.",
     placeholder: "Ex.\nConcurrent A\nConcurrent B",
     multiline: true,
   },
   {
     id: "clientProblems",
     botMessage:
-      "**Pourquoi y a-t-il un projet chez le client ?** Quels problèmes, enjeux ou leviers déclenchent typiquement un achat chez vous ?",
+      "**Pourquoi un projet démarre chez eux ?** Problèmes / enjeux qui déclenchent un achat chez vous.",
     placeholder: "Ex. Process manuels, manque de visibilité, dette technique…",
     multiline: true,
   },
   {
     id: "urgencyTriggers",
     botMessage:
-      "**Pourquoi maintenant ?** Quels événements, échéances ou urgences font avancer (ou bloquent) la décision ?",
+      "**Pourquoi maintenant ?** Événements ou échéances qui font avancer (ou bloquent) la décision.",
     placeholder: "Ex. Fin d’exercice, audit, départ concurrent, nouvelle régulation…",
     multiline: true,
   },
   {
     id: "inactionCosts",
     botMessage:
-      "Si le client **n’agit pas**, que perd-il ? (temps, CA, risques, coûts évités…) — éléments utiles pour le coût d’inaction.",
+      "Et s’ils **n’agissent pas** : que perdent-ils ? (temps, CA, risques, coûts…) — pour le coût d’inaction.",
     placeholder: "Ex. 2 ETP perdus / an, retards livraison, amendes…",
     multiline: true,
   },
   {
     id: "freeNotes",
     botMessage:
-      "Autre chose d’important pour paramétrer DBR (méthode de vente, jargon métier, cas clients…) ? Sinon répondez « non ».",
+      "Dernier bonus : jargon métier, méthode de vente, cas clients… ? Sinon répondez « non ».",
     placeholder: "Optionnel",
     multiline: true,
     optional: true,

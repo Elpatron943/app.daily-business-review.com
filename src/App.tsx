@@ -509,7 +509,7 @@ export default function App() {
       (page === "dashboard" || page === "map") &&
       !canViewNav
     ) {
-      setPage(canSaisieNav ? "entreprises" : "settings");
+      setPage(canSaisieNav ? "entreprises" : "dashboard");
       return;
     }
     if (page === "account-plans" && !canPilotageNav) {

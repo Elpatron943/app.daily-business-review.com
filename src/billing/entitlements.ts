@@ -28,16 +28,16 @@ export type Entitlement =
   | "opp.action_plan"
   | "team.invite";
 
-/** Exécution deal — produit Sales (+ socle Pilotage). */
+/** Exécution deal — produit Sales (+ socle Pilotage). Pas de Settings : config via chatbot. */
 export const SALES_CORE: readonly Entitlement[] = [
   "nav.saisie",
-  "nav.settings",
 ] as const;
 
 /** Cockpit direction commerciale (en plus de SALES_CORE). */
 export const PILOTAGE: readonly Entitlement[] = [
   "nav.view",
   "nav.pilotage",
+  "nav.settings",
   "opp.process",
   "opp.mapping",
   "opp.action_plan",

@@ -13089,7 +13089,34 @@ a {
   color: var(--ink);
 }
 
-/* —— Onboarding chatbot (1er admin) —— */
+/* —— Onboarding chatbot (1er admin / Sales config) —— */
+.onboard-fab-root {
+  position: fixed;
+  left: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 55;
+}
+
+.onboard-fab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.65rem 1.05rem;
+  border: 1px solid color-mix(in srgb, #0f766e 40%, var(--line));
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.onboard-fab:hover {
+  background: color-mix(in srgb, #0f766e 88%, #000);
+}
+
 .onboard-overlay {
   position: fixed;
   inset: 0;
@@ -13099,6 +13126,16 @@ a {
   padding: 1rem;
   background: color-mix(in srgb, var(--ink) 45%, transparent);
   backdrop-filter: blur(2px);
+}
+
+.onboard-overlay-soft {
+  background: color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+.onboard-sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 400;
 }
 
 .onboard-dialog {
