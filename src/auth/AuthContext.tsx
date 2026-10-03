@@ -30,6 +30,7 @@ import {
   effectiveOppLimit,
   effectiveSeatLimit,
   isWriteLocked,
+  orgProductLine,
   planEntitlements,
   type BillingState,
   type OrganizationBilling,
@@ -161,6 +162,7 @@ function buildBilling(
   organization: OrganizationBilling | null,
   seatsUsed: number,
   activeOpportunities: number,
+  role: AppRole | null,
 ): BillingState {
   const seatsLimit = effectiveSeatLimit(organization);
   const opportunitiesLimit = effectiveOppLimit(organization);
@@ -183,7 +185,8 @@ function buildBilling(
     seatsFull,
     opportunitiesFull,
     subscriptionBlocked,
-    entitlements: planEntitlements(organization),
+    productLine: orgProductLine(organization),
+    entitlements: planEntitlements(organization, role),
   };
 }
 
@@ -507,8 +510,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const canAssignOwnerFlag = canAssignOwner(role);
 
   const billing = useMemo(
-    () => buildBilling(organization, seatsUsed, activeOpportunityCount),
-    [organization, seatsUsed, activeOpportunityCount],
+    () =>
+      buildBilling(
+        organization,
+        seatsUsed,
+        activeOpportunityCount,
+        role,
+      ),
+    [organization, seatsUsed, activeOpportunityCount, role],
   );
 
   const hasEntitlement = useCallback(

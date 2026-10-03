@@ -1,5 +1,10 @@
 import type { OptionalModulesState } from "./optionalModules";
-import { entitlementsForPlanCode, type Entitlement } from "./entitlements";
+import {
+  entitlementsForPlanAndRole,
+  productLineForPlanCode,
+  type Entitlement,
+  type ProductLine,
+} from "./entitlements";
 
 export type SubscriptionStatus =
   | "none"
@@ -52,6 +57,9 @@ export type BillingState = {
   opportunitiesFull: boolean;
   /** true si freemium/essai expiré ou paiement en attente. */
   subscriptionBlocked: boolean;
+  /** Ligne produit org (sales | pilotage). */
+  productLine: ProductLine;
+  /** Entitlements effectifs (plan × rôle). */
   entitlements: readonly Entitlement[];
 };
 
@@ -90,13 +98,21 @@ export function formatQuotaLabel(used: number, limit: number | null): string {
 
 export function planEntitlements(
   org: OrganizationBilling | null,
+  role?: string | null,
 ): readonly Entitlement[] {
-  return entitlementsForPlanCode(org?.plan?.code);
+  return entitlementsForPlanAndRole(org?.plan?.code, role ?? null);
+}
+
+export function orgProductLine(
+  org: OrganizationBilling | null,
+): ProductLine {
+  return productLineForPlanCode(org?.plan?.code);
 }
 
 export function orgHasEntitlement(
   org: OrganizationBilling | null,
   entitlement: Entitlement,
+  role?: string | null,
 ): boolean {
-  return planEntitlements(org).includes(entitlement);
+  return planEntitlements(org, role).includes(entitlement);
 }

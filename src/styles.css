@@ -148,6 +148,19 @@ body {
   color: var(--ink);
 }
 
+.billing-quota-product {
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.68rem;
+}
+
+.billing-quota-trial {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .billing-quota-lock {
   color: var(--amber);
   font-weight: 600;

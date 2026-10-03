@@ -1,6 +1,9 @@
 /**
- * Entitlements par formule commerciale (Freemium / Sales Solo / Entreprise).
- * Source de vérité côté app — le seed SQL reprend les mêmes codes / quotas.
+ * Deux produits sur une base commune :
+ * - DBR Sales (freemium / sales_solo) → pack SALES_CORE
+ * - DBR Pilotage (enterprise + legacy) → SALES_CORE + PILOTAGE
+ *
+ * Codes SQL inchangés. Source de vérité app — le seed SQL reprend codes / quotas.
  */
 
 export type PlanCode =
@@ -12,6 +15,9 @@ export type PlanCode =
   | "team"
   | "business";
 
+/** Ligne produit commerciale (indépendante du code SQL). */
+export type ProductLine = "sales" | "pilotage";
+
 export type Entitlement =
   | "nav.view"
   | "nav.saisie"
@@ -22,27 +28,38 @@ export type Entitlement =
   | "opp.action_plan"
   | "team.invite";
 
-/** Périmètre Sales Solo (= Freemium fonctionnalités). */
-export const SOLO_ENTITLEMENTS: readonly Entitlement[] = [
+/** Exécution deal — produit Sales (+ socle Pilotage). */
+export const SALES_CORE: readonly Entitlement[] = [
   "nav.saisie",
   "nav.settings",
 ] as const;
 
-/** Périmètre Entreprise (produit complet). */
-export const FULL_ENTITLEMENTS: readonly Entitlement[] = [
+/** Cockpit direction commerciale (en plus de SALES_CORE). */
+export const PILOTAGE: readonly Entitlement[] = [
   "nav.view",
-  "nav.saisie",
   "nav.pilotage",
-  "nav.settings",
   "opp.process",
   "opp.mapping",
   "opp.action_plan",
   "team.invite",
 ] as const;
 
+/** Pack org Pilotage (et legacy full). */
+export const PILOTAGE_ENTITLEMENTS: readonly Entitlement[] = [
+  ...SALES_CORE,
+  ...PILOTAGE,
+] as const;
+
+/** @deprecated alias — utiliser SALES_CORE */
+export const SOLO_ENTITLEMENTS = SALES_CORE;
+
+/** @deprecated alias — utiliser PILOTAGE_ENTITLEMENTS */
+export const FULL_ENTITLEMENTS = PILOTAGE_ENTITLEMENTS;
+
 export type PlanPackage = {
   code: PlanCode;
   name: string;
+  productLine: ProductLine;
   /** Sièges max (1 = solo). null = illimité. */
   maxSeats: number | null;
   /** Opportunités actives max. null = illimité. */
@@ -63,34 +80,42 @@ export const PLAN_PACKAGES: Record<
 > = {
   freemium: {
     code: "freemium",
-    name: "Freemium",
+    name: "DBR Sales (essai)",
+    productLine: "sales",
     maxSeats: 1,
     maxActiveOpportunities: 1,
     trialDays: 3,
-    entitlements: SOLO_ENTITLEMENTS,
+    entitlements: SALES_CORE,
     activateOnCreate: "trialing",
   },
   sales_solo: {
     code: "sales_solo",
-    name: "Sales Solo",
+    name: "DBR Sales",
+    productLine: "sales",
     maxSeats: 1,
     maxActiveOpportunities: 20,
     trialDays: null,
-    entitlements: SOLO_ENTITLEMENTS,
+    entitlements: SALES_CORE,
     activateOnCreate: "none",
   },
   enterprise: {
     code: "enterprise",
-    name: "Entreprise",
+    name: "DBR Pilotage",
+    productLine: "pilotage",
     maxSeats: null,
     maxActiveOpportunities: null,
     trialDays: null,
-    entitlements: FULL_ENTITLEMENTS,
+    entitlements: PILOTAGE_ENTITLEMENTS,
     activateOnCreate: "none",
   },
 };
 
-const LEGACY_FULL: PlanCode[] = ["trial", "team", "business", "enterprise"];
+const PILOTAGE_PLAN_CODES: PlanCode[] = [
+  "trial",
+  "team",
+  "business",
+  "enterprise",
+];
 
 export function normalizePlanCode(raw: string | null | undefined): PlanCode | null {
   if (!raw) return null;
@@ -108,27 +133,51 @@ export function normalizePlanCode(raw: string | null | undefined): PlanCode | nu
   return null;
 }
 
+export function productLineForPlanCode(
+  code: string | null | undefined,
+): ProductLine {
+  const normalized = normalizePlanCode(code);
+  if (!normalized) return "pilotage";
+  if (normalized === "freemium" || normalized === "sales_solo") return "sales";
+  if (PILOTAGE_PLAN_CODES.includes(normalized)) return "pilotage";
+  return "pilotage";
+}
+
 export function entitlementsForPlanCode(
   code: string | null | undefined,
 ): readonly Entitlement[] {
-  const normalized = normalizePlanCode(code);
-  if (!normalized) return FULL_ENTITLEMENTS;
-  if (normalized === "freemium" || normalized === "sales_solo") {
-    return SOLO_ENTITLEMENTS;
+  const line = productLineForPlanCode(code);
+  return line === "sales" ? SALES_CORE : PILOTAGE_ENTITLEMENTS;
+}
+
+/**
+ * Entitlements effectifs : dans une org Pilotage, le commercial (`user`)
+ * reste en UX Sales (pas de cockpit manager).
+ */
+export function entitlementsForPlanAndRole(
+  code: string | null | undefined,
+  role: string | null | undefined,
+): readonly Entitlement[] {
+  const planEnts = entitlementsForPlanCode(code);
+  if (productLineForPlanCode(code) === "pilotage" && role === "user") {
+    return SALES_CORE;
   }
-  if (LEGACY_FULL.includes(normalized)) return FULL_ENTITLEMENTS;
-  return FULL_ENTITLEMENTS;
+  return planEnts;
 }
 
 export function hasEntitlement(
   code: string | null | undefined,
   entitlement: Entitlement,
+  role?: string | null,
 ): boolean {
-  return entitlementsForPlanCode(code).includes(entitlement);
+  return entitlementsForPlanAndRole(code, role ?? null).includes(entitlement);
 }
 
-/** Settings sous-sections réservées au pack complet. */
-export const SETTINGS_SUBS_REQUIRING_FULL: ReadonlySet<string> = new Set([
+/** Settings sous-sections réservées au produit Pilotage. */
+export const SETTINGS_SUBS_REQUIRING_PILOTAGE: ReadonlySet<string> = new Set([
   "process",
   "mapping",
 ]);
+
+/** @deprecated alias — utiliser SETTINGS_SUBS_REQUIRING_PILOTAGE */
+export const SETTINGS_SUBS_REQUIRING_FULL = SETTINGS_SUBS_REQUIRING_PILOTAGE;

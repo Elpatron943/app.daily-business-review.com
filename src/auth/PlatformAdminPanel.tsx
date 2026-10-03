@@ -22,7 +22,7 @@ type PlanOption = {
 };
 
 /**
- * Console plateforme : créer comptes Freemium / Sales Solo / Entreprise
+ * Console plateforme : créer comptes DBR Sales / DBR Pilotage
  * et activer après paiement.
  */
 export default function PlatformAdminPanel() {
@@ -129,7 +129,7 @@ export default function PlatformAdminPanel() {
       }
       setInfo(
         data.activated
-          ? `Compte créé et actif (Freemium). Org ${data.orgId ?? ""}.`
+          ? `Compte créé et actif (DBR Sales essai). Org ${data.orgId ?? ""}.`
           : `Compte créé — en attente de paiement. Active-le après règlement. Org ${data.orgId ?? ""}.`,
       );
       setOrgName("");
@@ -187,9 +187,9 @@ export default function PlatformAdminPanel() {
         <div>
           <h1>Console admin</h1>
           <p className="muted">
-            Créer des comptes Freemium / Sales Solo / Entreprise. Sales Solo et
-            Entreprise passent live après paiement (bouton Activer). Freemium
-            démarre en essai {PLAN_PACKAGES.freemium.trialDays} jours.
+            Créer des comptes DBR Sales / DBR Pilotage. Sales et Pilotage
+            passent live après paiement (bouton Activer). L’essai Sales
+            démarre {PLAN_PACKAGES.freemium.trialDays} jours.
           </p>
         </div>
       </header>

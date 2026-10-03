@@ -30,7 +30,7 @@ import {
 } from "./settings/settingsNav";
 import { useT } from "./i18n/LocaleContext";
 import { useAuth } from "./auth/AuthContext";
-import { SETTINGS_SUBS_REQUIRING_FULL } from "./billing/entitlements";
+import { SETTINGS_SUBS_REQUIRING_PILOTAGE } from "./billing/entitlements";
 import {
   BO_FIELD_KINDS,
   OPP_VARIABLE_KINDS,
@@ -57,7 +57,7 @@ export default function SettingsPanel({ onOpenTeam }: Props) {
   function visibleSubs<T extends { id: string }>(subs: T[] | undefined): T[] {
     if (!subs) return [];
     if (canFullSettings) return subs;
-    return subs.filter((s) => !SETTINGS_SUBS_REQUIRING_FULL.has(s.id));
+    return subs.filter((s) => !SETTINGS_SUBS_REQUIRING_PILOTAGE.has(s.id));
   }
 
   const {

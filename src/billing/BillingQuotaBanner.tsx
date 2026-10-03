@@ -1,5 +1,12 @@
-import { formatQuotaLabel } from "./types";
+import { formatQuotaLabel, isTrialExpired } from "./types";
 import { useAuth } from "../auth/AuthContext";
+
+function trialDaysLeft(trialEndsAt: string | null): number | null {
+  if (!trialEndsAt) return null;
+  const end = Date.parse(trialEndsAt);
+  if (!Number.isFinite(end)) return null;
+  return Math.max(0, Math.ceil((end - Date.now()) / 86400000));
+}
 
 /** Bannière quotas formule — sidebar / shell. */
 export default function BillingQuotaBanner() {
@@ -7,7 +14,23 @@ export default function BillingQuotaBanner() {
   const planName = organization?.plan?.name;
   if (!planName && !organization) return null;
 
-  const { usage, canWrite, seatsFull, opportunitiesFull } = billing;
+  const { usage, canWrite, seatsFull, opportunitiesFull, productLine } =
+    billing;
+  const daysLeft = trialDaysLeft(organization?.trial_ends_at ?? null);
+  const trialExpired = isTrialExpired(organization);
+  const productLabel =
+    productLine === "pilotage" ? "Pilotage" : "Sales";
+
+  let lockLabel: string | null = null;
+  if (!canWrite) {
+    if (organization?.subscription_status === "none") {
+      lockLabel = " · en attente de paiement";
+    } else if (trialExpired) {
+      lockLabel = " · essai terminé";
+    } else {
+      lockLabel = " · lecture seule";
+    }
+  }
 
   return (
     <div
@@ -15,13 +38,16 @@ export default function BillingQuotaBanner() {
       title={organization?.plan?.tagline || undefined}
     >
       <div className="billing-quota-plan">
+        <span className="billing-quota-product">{productLabel}</span>
+        {" · "}
         {planName ?? "Sans formule"}
-        {!canWrite ? (
-          <span className="billing-quota-lock">
-            {organization?.subscription_status === "none"
-              ? " · en attente de paiement"
-              : " · lecture seule"}
-          </span>
+        {organization?.subscription_status === "trialing" &&
+        daysLeft != null &&
+        canWrite ? (
+          <span className="billing-quota-trial"> · {daysLeft} j restants</span>
+        ) : null}
+        {lockLabel ? (
+          <span className="billing-quota-lock">{lockLabel}</span>
         ) : null}
       </div>
       <div className="billing-quota-meters">

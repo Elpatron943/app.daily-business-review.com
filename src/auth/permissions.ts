@@ -2,8 +2,9 @@ import type { AppRole } from "./types";
 
 /**
  * Matrice des droits DBR (rôles × capacités).
- * Les formules (Freemium / Sales Solo / Entreprise) ajoutent des entitlements
- * séparés — voir src/billing/entitlements.ts (nav.view, opp.process…).
+ * Les produits (DBR Sales / DBR Pilotage) ajoutent des entitlements
+ * séparés — voir src/billing/entitlements.ts (SALES_CORE / PILOTAGE).
+ * Dans une org Pilotage, le rôle commercial (user) est restreint à SALES_CORE.
  *
  * | Capacité                         | Admin | Manager | Commercial | Lecture |
  * |----------------------------------|:-----:|:-------:|:----------:|:-------:|

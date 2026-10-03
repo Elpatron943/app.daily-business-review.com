@@ -453,11 +453,9 @@ export default function App() {
     [activeContacts],
   );
 
-  const [page, setPage] = useState<AppPage>(() =>
-    // Solo / Freemium : pas de Vue → atterrir sur Saisie
-    "entreprises",
-  );
+  const [page, setPage] = useState<AppPage>("entreprises");
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
+  const homeLandedRef = useRef(false);
 
   const canViewNav = hasEntitlement("nav.view");
   const canSaisieNav = hasEntitlement("nav.saisie");
@@ -477,6 +475,30 @@ export default function App() {
     }
     setPage(next);
   }, []);
+
+  /** Sales → Saisie ; Pilotage (admin/manager/viewer) → Vue. */
+  useEffect(() => {
+    if (authLoading || !user || homeLandedRef.current) return;
+    if (!billing.organization) return;
+    homeLandedRef.current = true;
+    if (billing.productLine === "pilotage" && canViewNav) {
+      setPage("dashboard");
+    } else if (canSaisieNav) {
+      setPage("entreprises");
+    } else if (canViewNav) {
+      setPage("dashboard");
+    } else if (canSettingsNav) {
+      setPage("settings");
+    }
+  }, [
+    authLoading,
+    user,
+    billing.organization,
+    billing.productLine,
+    canViewNav,
+    canSaisieNav,
+    canSettingsNav,
+  ]);
 
   useEffect(() => {
     if (page === "settings" && !canSettingsNav) {

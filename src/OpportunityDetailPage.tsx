@@ -347,7 +347,9 @@ export default function OpportunityDetailPage({
         </div>
       </section>
 
+      {canOppProcess || canOppMapping ? (
       <section className="opp-global-scores" aria-label="Scores détaillés">
+        {canOppProcess && canOppMapping ? (
         <button
           type="button"
           className={`opp-global-card deal tone-${
@@ -375,6 +377,8 @@ export default function OpportunityDetailPage({
             )
           </p>
         </button>
+        ) : null}
+        {canOppProcess ? (
         <button
           type="button"
           className={`opp-global-card process tone-${
@@ -430,7 +434,9 @@ export default function OpportunityDetailPage({
           )}
           <span className="opp-global-cta">Ouvrir le Process →</span>
         </button>
+        ) : null}
 
+        {canOppMapping ? (
         <button
           type="button"
           className={`opp-global-card mapping tone-${
@@ -507,7 +513,9 @@ export default function OpportunityDetailPage({
           </ul>
           <span className="opp-global-cta">Ouvrir le Mapping →</span>
         </button>
+        ) : null}
       </section>
+      ) : null}
 
       <nav className="opp-nav" aria-label="Sections opportunité">
         <div className="opp-nav-group" role="group" aria-label="Contexte">
