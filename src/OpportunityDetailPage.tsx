@@ -13,6 +13,8 @@ import OpportunityBusinessOutcomesPanel from "./OpportunityBusinessOutcomesPanel
 import OpportunityStakeholdersPanel from "./OpportunityStakeholdersPanel";
 import OpportunityRecommendPanel from "./OpportunityRecommendPanel";
 import GenerateActionPlanPanel from "./GenerateActionPlanPanel";
+import DealReviewPanel from "./DealReviewPanel";
+import DealBlockersPanel from "./DealBlockersPanel";
 import {
   computeWhyNowValue,
   defaultOpportunityVariables,
@@ -46,6 +48,7 @@ type Tab =
   | "outcomes"
   | "contacts"
   | "recos"
+  | "revue"
   | "plans";
 
 type Props = {
@@ -97,6 +100,7 @@ export default function OpportunityDetailPage({
       pending === "outcomes" ||
       pending === "contacts" ||
       pending === "recos" ||
+      pending === "revue" ||
       pending === "plans"
     ) {
       sessionStorage.removeItem("powermap.openOppTab");
@@ -638,6 +642,13 @@ export default function OpportunityDetailPage({
           <div className="opp-nav-tabs">
             <button
               type="button"
+              className={tab === "revue" ? "active" : ""}
+              onClick={() => setTab("revue")}
+            >
+              Revue deal
+            </button>
+            <button
+              type="button"
               className={tab === "recos" ? "active" : ""}
               onClick={() => setTab("recos")}
             >
@@ -658,14 +669,20 @@ export default function OpportunityDetailPage({
       </nav>
 
       {tab === "fiche" && (
-        <OpportunityFicheTab
-          opportunity={opportunity}
-          entreprises={entreprises}
-          holdings={holdings}
-          solutions={activeSolutions}
-          variables={activeOppVariables}
-          onUpdate={onUpdate}
-        />
+        <>
+          <DealBlockersPanel
+            opportunity={opportunity}
+            onStartReview={() => setTab("revue")}
+          />
+          <OpportunityFicheTab
+            opportunity={opportunity}
+            entreprises={entreprises}
+            holdings={holdings}
+            solutions={activeSolutions}
+            variables={activeOppVariables}
+            onUpdate={onUpdate}
+          />
+        </>
       )}
 
       {tab === "contacts" && (
@@ -727,6 +744,8 @@ export default function OpportunityDetailPage({
           onUpdate={onUpdate}
         />
       )}
+
+      {tab === "revue" && <DealReviewPanel opportunity={opportunity} />}
 
       {tab === "recos" && <OpportunityRecommendPanel opportunity={opportunity} />}
 

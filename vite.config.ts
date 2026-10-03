@@ -5,6 +5,7 @@ import { openaiRecommendProxy } from "./scripts/openaiProxy";
 import { inviteUserProxy } from "./scripts/inviteUserProxy";
 import { hubspotProxy } from "./scripts/hubspotProxy";
 import { accountsProvisionProxy } from "./scripts/accountsProvisionProxy";
+import { dealReviewProxy } from "./scripts/dealReviewProxy";
 
 export default defineConfig(({ mode }) => {
   // Expose API keys to the Vite Node process (proxies only).
@@ -75,6 +76,7 @@ export default defineConfig(({ mode }) => {
       inviteUserProxy(),
       hubspotProxy(),
       accountsProvisionProxy(),
+      dealReviewProxy(),
     ],
     server: {
       port: 5173,

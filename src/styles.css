@@ -13273,3 +13273,421 @@ a {
     max-width: 95%;
   }
 }
+
+/* —— Directeur commercial digital —— */
+.deal-blockers-panel {
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.deal-blockers-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.deal-blockers-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.deal-blockers-ok {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.deal-blockers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.deal-blocker-item {
+  padding: 0.7rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg, #fff) 80%, var(--panel));
+}
+
+.deal-blocker-item.sev-bloquant {
+  border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
+}
+
+.deal-blocker-item.sev-risque {
+  border-color: color-mix(in srgb, #b45309 45%, var(--line));
+}
+
+.deal-blocker-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.deal-blocker-code {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.deal-blocker-sev {
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+}
+
+.deal-blocker-sev.sev-bloquant {
+  background: color-mix(in srgb, #b91c1c 18%, transparent);
+  color: #991b1b;
+}
+
+.deal-blocker-sev.sev-risque {
+  background: color-mix(in srgb, #b45309 18%, transparent);
+  color: #92400e;
+}
+
+.deal-blocker-sev.sev-vigilance {
+  background: color-mix(in srgb, #64748b 18%, transparent);
+  color: #475569;
+}
+
+.deal-blocker-fact {
+  margin: 0 0 0.35rem;
+  line-height: 1.4;
+}
+
+.deal-blocker-q {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.deal-review-layout {
+  display: grid;
+  gap: 1.25rem;
+  min-height: 40vh;
+}
+
+.deal-review-fab-root {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+
+.deal-review-fab-root > * {
+  pointer-events: auto;
+}
+
+.deal-review-fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 3rem;
+  padding: 0.55rem 1.05rem 0.55rem 0.55rem;
+  border: 1px solid color-mix(in srgb, #0f766e 45%, var(--line));
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--ink) 16%, transparent);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.deal-review-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 22%, transparent);
+}
+
+.deal-review-avatar.size-sm {
+  width: 1.85rem;
+  height: 1.85rem;
+  font-size: 0.62rem;
+}
+
+.deal-review-avatar.size-md {
+  width: 2.6rem;
+  height: 2.6rem;
+  font-size: 0.78rem;
+}
+
+.deal-review-chatbot-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.deal-review-msg {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.deal-review-msg.bot {
+  align-self: flex-start;
+}
+
+.deal-review-msg.user {
+  align-self: flex-end;
+}
+
+.deal-review-fab:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, #0f766e 88%, #000);
+}
+
+.deal-review-fab.is-open {
+  padding: 0.7rem 1.15rem;
+  background: var(--panel);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.deal-review-fab.has-chat:not(.is-open)::after {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-left: 0.45rem;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.deal-review-chatbot {
+  width: min(26rem, calc(100vw - 1.5rem));
+  max-height: min(72vh, 640px);
+  display: grid;
+  grid-template-rows: auto auto auto 1fr auto auto;
+  gap: 0.65rem;
+  padding: 0.9rem 0.95rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--ink) 18%, transparent);
+  animation: deal-review-chatbot-in 0.22s ease;
+}
+
+@keyframes deal-review-chatbot-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.deal-review-chatbot-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.deal-review-chatbot-kicker {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.deal-review-chatbot-head h3 {
+  margin: 0.15rem 0 0;
+  font-size: 1.05rem;
+}
+
+.deal-review-chatbot-agent {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+}
+
+.deal-review-chatbot-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+}
+
+.deal-review-sector-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.65rem;
+}
+
+.deal-review-sector {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 8rem;
+  flex: 1 1 8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.deal-review-sector select {
+  font: inherit;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+  background: var(--bg, #fff);
+  color: var(--ink);
+}
+
+.deal-review-messages {
+  min-height: 8rem;
+  max-height: 28vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.deal-review-bubble {
+  max-width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+  line-height: 1.45;
+  font-size: 0.92rem;
+  white-space: pre-wrap;
+}
+
+.deal-review-msg.bot .deal-review-bubble {
+  max-width: calc(92% - 2.2rem);
+}
+
+.deal-review-bubble.bot {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg, #f8fafc) 70%, var(--panel));
+}
+
+.deal-review-bubble.user {
+  border: 1px solid color-mix(in srgb, #0f766e 35%, var(--line));
+  background: color-mix(in srgb, #0f766e 14%, var(--panel));
+}
+
+.deal-review-topic {
+  display: inline-block;
+  margin-right: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.deal-review-proposals {
+  max-height: 7.5rem;
+  overflow: auto;
+}
+
+.deal-review-proposals h4 {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.deal-review-proposals ul {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.deal-review-proposals li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.deal-review-chatbot-start {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  background: #0f766e;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.deal-review-chatbot-start:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.deal-review-composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.deal-review-composer textarea {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  resize: none;
+  background: var(--bg, #fff);
+  color: var(--ink);
+}
+
+@media (max-width: 640px) {
+  .deal-review-fab-root {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    left: 0.75rem;
+    align-items: stretch;
+  }
+
+  .deal-review-fab {
+    align-self: flex-end;
+  }
+
+  .deal-review-chatbot {
+    width: 100%;
+    max-height: min(78vh, 680px);
+  }
+
+  .deal-review-composer {
+    grid-template-columns: 1fr;
+  }
+}
