@@ -15,6 +15,7 @@ import OpportunityRecommendPanel from "./OpportunityRecommendPanel";
 import GenerateActionPlanPanel from "./GenerateActionPlanPanel";
 import DealReviewPanel from "./DealReviewPanel";
 import DealBlockersPanel from "./DealBlockersPanel";
+import SalesOpportunityHub from "./opportunities/SalesOpportunityHub";
 import {
   computeWhyNowValue,
   defaultOpportunityVariables,
@@ -80,10 +81,11 @@ export default function OpportunityDetailPage({
     phaseLabel,
     kpiClassifier,
   } = useOrgConfig();
-  const { hasEntitlement } = useAuth();
+  const { hasEntitlement, billing } = useAuth();
   const canOppProcess = hasEntitlement("opp.process");
   const canOppMapping = hasEntitlement("opp.mapping");
   const canOppActionPlan = hasEntitlement("opp.action_plan");
+  const isSalesUx = billing.productLine === "sales";
 
   const opportunity =
     opportunities.find((o) => o.id === opportunityId) ?? null;
@@ -236,6 +238,18 @@ export default function OpportunityDetailPage({
           </div>
         </header>
       </div>
+    );
+  }
+
+  if (isSalesUx) {
+    return (
+      <SalesOpportunityHub
+        opportunity={opportunity}
+        onBack={onBack}
+        backLabel={
+          backLabel === "← Retour aux opportunités" ? "← Mes deals" : backLabel
+        }
+      />
     );
   }
 

@@ -24,6 +24,7 @@ import {
   type OppDetailBackTarget,
 } from "./opportunities/oppNavigation";
 import type { AppPage } from "./navigation";
+import SalesDealCreateWizard from "./opportunities/SalesDealCreateWizard";
 
 function showsDealVariables(kind: OpportunityKind) {
   return kind === "up";
@@ -44,6 +45,7 @@ export default function OpportunityPage({
     clearQuotaError,
   } = useOpportunities();
   const { billing } = useAuth();
+  const isSalesUx = billing.productLine === "sales";
   const { getPlanForOpportunity } = useAccountPlans();
   const { activeAccounts } = useDomain();
   const {
@@ -209,7 +211,12 @@ export default function OpportunityPage({
     <div className="data-page opportunity-page">
       <header className="data-page-head">
         <div>
-          <h1>Opportunités</h1>
+          <h1>{isSalesUx ? "Mes deals" : "Opportunités"}</h1>
+          {isSalesUx ? (
+            <p className="muted">
+              Qualifie, challenge, next step — le reste vient ensuite.
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
@@ -219,12 +226,12 @@ export default function OpportunityPage({
             setCreating(true);
           }}
           disabled={
-            entreprises.length === 0 ||
+            (!isSalesUx && entreprises.length === 0) ||
             !billing.canWrite ||
             billing.opportunitiesFull
           }
           title={
-            entreprises.length === 0
+            !isSalesUx && entreprises.length === 0
               ? "Crée d’abord une entreprise"
               : !billing.canWrite
                 ? "Abonnement en lecture seule"
@@ -233,7 +240,7 @@ export default function OpportunityPage({
                   : undefined
           }
         >
-          Ajouter une opportunité
+          {isSalesUx ? "Nouveau deal" : "Ajouter une opportunité"}
         </button>
       </header>
 
@@ -241,6 +248,18 @@ export default function OpportunityPage({
         <p className="auth-error" role="alert">
           {quotaError}
         </p>
+      ) : null}
+
+      {creating && isSalesUx ? (
+        <SalesDealCreateWizard
+          onCancel={() => setCreating(false)}
+          onCreated={(id) => {
+            setCreating(false);
+            setActiveOpportunityId(id);
+            setBackTarget({ type: "list" });
+            setDetailId(id);
+          }}
+        />
       ) : null}
 
       <div
@@ -327,14 +346,14 @@ export default function OpportunityPage({
             <table className="ecosystem-table account-plan-table">
               <thead>
                 <tr>
-                  <th>Opportunité</th>
+                  <th>{isSalesUx ? "Deal" : "Opportunité"}</th>
                   <th>Type</th>
                   <th>Phase</th>
                   <th>Entreprise</th>
-                  <th>Account plan</th>
+                  {!isSalesUx ? <th>Account plan</th> : null}
                   <th>Solution</th>
                   <th>Montant</th>
-                  <th>Score</th>
+                  {!isSalesUx ? <th>Score</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -380,30 +399,36 @@ export default function OpportunityPage({
                       <td>{kindLabel(o.kind)}</td>
                       <td>{phaseLabel(o.phase)}</td>
                       <td>{account?.name ?? "—"}</td>
-                      <td>
-                        {plan ? (
-                          <span className="meta">
-                            {plan.status}
-                            {plan.dueDate ? ` · ${plan.dueDate}` : ""}
-                          </span>
-                        ) : (
-                          <span className="muted">Aucun</span>
-                        )}
-                      </td>
+                      {!isSalesUx ? (
+                        <td>
+                          {plan ? (
+                            <span className="meta">
+                              {plan.status}
+                              {plan.dueDate ? ` · ${plan.dueDate}` : ""}
+                            </span>
+                          ) : (
+                            <span className="muted">Aucun</span>
+                          )}
+                        </td>
+                      ) : null}
                       <td>{cat.short !== "—" ? cat.short : "—"}</td>
                       <td>
                         {formatEur(o.amount)}
-                        <span className="meta">
-                          {` · net ${formatEur(results.netValue)}`}
-                        </span>
+                        {!isSalesUx ? (
+                          <span className="meta">
+                            {` · net ${formatEur(results.netValue)}`}
+                          </span>
+                        ) : null}
                       </td>
-                      <td>
-                        {!kpiClassifier.isWhitespacePhase(o.phase) ? (
-                          <OppScorePills opportunity={o} compact />
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
-                      </td>
+                      {!isSalesUx ? (
+                        <td>
+                          {!kpiClassifier.isWhitespacePhase(o.phase) ? (
+                            <OppScorePills opportunity={o} compact />
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
@@ -413,7 +438,7 @@ export default function OpportunityPage({
         )}
       </section>
 
-      {creating && (
+      {creating && !isSalesUx && (
         <div
           className="plan-create-overlay"
           role="dialog"

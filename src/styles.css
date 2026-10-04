@@ -13728,3 +13728,261 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* —— Sales hub + coach + create —— */
+.sales-hub-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.25rem 0 1rem;
+}
+
+.sales-hub-nav button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0.45rem 0.95rem;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.sales-hub-nav button.active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
+.sales-hub-zone {
+  display: grid;
+  gap: 1rem;
+}
+
+.sales-hub-hint {
+  margin: 0;
+}
+
+.sales-hub-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.sales-hub-subnav button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.sales-hub-subnav button.active {
+  border-color: color-mix(in srgb, #0f766e 50%, var(--line));
+  background: color-mix(in srgb, #0f766e 12%, var(--panel));
+  font-weight: 700;
+}
+
+.deal-review-chatbot.is-embedded {
+  position: static;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  box-shadow: none;
+  animation: none;
+}
+
+.sales-coach-root {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 58;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+
+.sales-coach-root > * {
+  pointer-events: auto;
+}
+
+.sales-coach-fab {
+  border: 1px solid color-mix(in srgb, #0f766e 45%, var(--line));
+  border-radius: 999px;
+  padding: 0.65rem 1.1rem;
+  background: #0f766e;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.sales-coach-fab.is-open {
+  background: var(--panel);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.sales-coach-panel {
+  width: min(24rem, calc(100vw - 1.5rem));
+  max-height: min(70vh, 560px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 0.65rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
+.sales-coach-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.sales-coach-kicker {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sales-coach-head h3 {
+  margin: 0.15rem 0 0;
+  font-size: 1.05rem;
+}
+
+.sales-coach-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sales-coach-messages {
+  min-height: 8rem;
+  max-height: 34vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.sales-coach-bubble {
+  max-width: 92%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  line-height: 1.45;
+  font-size: 0.92rem;
+  white-space: pre-wrap;
+}
+
+.sales-coach-bubble.bot {
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg, #f8fafc) 70%, var(--panel));
+}
+
+.sales-coach-bubble.user {
+  align-self: flex-end;
+  border: 1px solid color-mix(in srgb, #0f766e 35%, var(--line));
+  background: color-mix(in srgb, #0f766e 14%, var(--panel));
+}
+
+.sales-coach-composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.45rem;
+  align-items: end;
+}
+
+.sales-coach-composer textarea {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  resize: none;
+  background: var(--bg, #fff);
+  color: var(--ink);
+}
+
+.sales-coach-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sales-create-wizard {
+  margin-bottom: 1rem;
+}
+
+.sales-create-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  grid-column: 1 / -1;
+}
+
+.sales-create-mode button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sales-create-mode button.active {
+  border-color: #0f766e;
+  background: color-mix(in srgb, #0f766e 12%, var(--panel));
+  font-weight: 700;
+}
+
+.sales-create-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.data-form-grid .full-width {
+  grid-column: 1 / -1;
+}
+
+/* Évite collision FAB coach deal vs assistant config (bas gauche) */
+.onboard-fab-root {
+  z-index: 55;
+}
+
+@media (max-width: 640px) {
+  .sales-coach-root {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    left: 0.75rem;
+    align-items: stretch;
+  }
+
+  .sales-coach-fab {
+    align-self: flex-end;
+  }
+
+  .sales-coach-panel {
+    width: 100%;
+  }
+
+  .sales-coach-composer {
+    grid-template-columns: 1fr;
+  }
+}

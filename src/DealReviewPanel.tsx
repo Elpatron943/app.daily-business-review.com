@@ -38,6 +38,8 @@ type ProposedUpdate = {
 
 type Props = {
   opportunity: Opportunity;
+  /** Sans blockers ni FAB fixe (hub Sales / panneau parent). */
+  embedded?: boolean;
 };
 
 async function postDealReview(body: unknown): Promise<{
@@ -82,7 +84,10 @@ async function postDealReview(body: unknown): Promise<{
   };
 }
 
-export default function DealReviewPanel({ opportunity }: Props) {
+export default function DealReviewPanel({
+  opportunity,
+  embedded = false,
+}: Props) {
   const { profile, organization, billing } = useAuth();
   const { activeContacts, activeAccounts } = useDomain();
   const {
@@ -92,7 +97,7 @@ export default function DealReviewPanel({ opportunity }: Props) {
   } = useOrgConfig();
   const { updateOpportunity, addAction } = useOpportunities();
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(embedded);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -292,6 +297,181 @@ export default function DealReviewPanel({ opportunity }: Props) {
     setError(null);
   }
 
+  const panel =
+    open || embedded ? (
+      <section
+        id="deal-review-chatbot"
+        className={`deal-review-chatbot${embedded ? " is-embedded" : ""}`}
+        role={embedded ? "region" : "dialog"}
+        aria-label="Revue — directeur commercial digital"
+      >
+        <header className="deal-review-chatbot-head">
+          <div className="deal-review-chatbot-identity">
+            <AgentAvatarFace
+              firstName={selectedAgent?.firstName}
+              avatar={selectedAgent?.avatar}
+              size="md"
+            />
+            <div>
+              <p className="deal-review-chatbot-kicker">Revue deal</p>
+              <h3>{selectedAgent?.firstName ?? "Directeur commercial"}</h3>
+              {selectedAgent ? (
+                <p className="muted deal-review-chatbot-agent">
+                  {selectedAgent.label}
+                </p>
+              ) : (
+                <p className="muted deal-review-chatbot-agent">
+                  {sectorId ? "Choisis un agent…" : "Mode générique"}
+                </p>
+              )}
+            </div>
+          </div>
+          {!embedded ? (
+            <button
+              type="button"
+              className="deal-review-chatbot-close"
+              aria-label="Fermer le chat"
+              onClick={() => setOpen(false)}
+            >
+              ×
+            </button>
+          ) : null}
+        </header>
+
+        <div className="deal-review-sector-row">
+          <label className="deal-review-sector">
+            <span>Famille</span>
+            <select
+              value={sectorId}
+              disabled={busy}
+              onChange={(e) => onSectorChange(e.target.value)}
+            >
+              <option value="">Générique</option>
+              {DEAL_REVIEW_SECTORS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedSector ? (
+            <label className="deal-review-sector">
+              <span>Agent</span>
+              <select
+                value={subSectorId}
+                disabled={busy}
+                onChange={(e) => setSubSectorId(e.target.value)}
+              >
+                <option value="">Choisir…</option>
+                {selectedSector.subSectors.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.firstName} — {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+
+        {error ? <p className="form-error">{error}</p> : null}
+
+        <div className="deal-review-messages" ref={scrollerRef}>
+          {messages.length === 0 && !busy ? (
+            <p className="muted">
+              Lance la revue pour challenger les constats du diagnostic. Rien
+              n’est écrit sans ton « Appliquer ».
+            </p>
+          ) : null}
+          {messages.map((m, i) => (
+            <div
+              key={`${m.role}-${i}`}
+              className={
+                m.role === "assistant"
+                  ? "deal-review-msg bot"
+                  : "deal-review-msg user"
+              }
+            >
+              {m.role === "assistant" ? (
+                <AgentAvatarFace
+                  firstName={selectedAgent?.firstName}
+                  avatar={selectedAgent?.avatar}
+                  size="sm"
+                />
+              ) : null}
+              <div
+                className={
+                  m.role === "assistant"
+                    ? "deal-review-bubble bot"
+                    : "deal-review-bubble user"
+                }
+              >
+                {m.topic ? (
+                  <span className="deal-review-topic">{m.topic}</span>
+                ) : null}
+                {m.text}
+              </div>
+            </div>
+          ))}
+          {busy ? (
+            <div className="deal-review-msg bot">
+              <AgentAvatarFace
+                firstName={selectedAgent?.firstName}
+                avatar={selectedAgent?.avatar}
+                size="sm"
+              />
+              <div className="deal-review-bubble bot muted">Réflexion…</div>
+            </div>
+          ) : null}
+        </div>
+
+        {proposals.length > 0 ? (
+          <div className="deal-review-proposals">
+            <h4>Mises à jour proposées</h4>
+            <ul>
+              {proposals.map((u, i) => (
+                <li key={`${u.type}-${i}`}>
+                  <span>
+                    <strong>{u.type}</strong> · {u.target} → {u.value}
+                  </span>
+                  <button type="button" onClick={() => applyUpdate(u)}>
+                    Appliquer
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {!started ? (
+          <button
+            type="button"
+            className="deal-review-chatbot-start"
+            disabled={busy || Boolean(sectorId && !subSectorId)}
+            onClick={() => void startOrContinue()}
+          >
+            Lancer la revue
+          </button>
+        ) : (
+          <form className="deal-review-composer" onSubmit={onSubmit}>
+            <textarea
+              rows={2}
+              value={input}
+              disabled={busy}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ta réponse…"
+            />
+            <button type="submit" disabled={busy || !input.trim()}>
+              Envoyer
+            </button>
+          </form>
+        )}
+      </section>
+    ) : null;
+
+  if (embedded) {
+    return <div className="deal-review-layout is-embedded">{panel}</div>;
+  }
+
   return (
     <div className="deal-review-layout">
       <DealBlockersPanel
@@ -304,176 +484,7 @@ export default function DealReviewPanel({ opportunity }: Props) {
       />
 
       <div className="deal-review-fab-root">
-        {open ? (
-          <section
-            id="deal-review-chatbot"
-            className="deal-review-chatbot"
-            role="dialog"
-            aria-label="Revue — directeur commercial digital"
-          >
-            <header className="deal-review-chatbot-head">
-              <div className="deal-review-chatbot-identity">
-                <AgentAvatarFace
-                  firstName={selectedAgent?.firstName}
-                  avatar={selectedAgent?.avatar}
-                  size="md"
-                />
-                <div>
-                  <p className="deal-review-chatbot-kicker">Revue deal</p>
-                  <h3>
-                    {selectedAgent?.firstName ?? "Directeur commercial"}
-                  </h3>
-                  {selectedAgent ? (
-                    <p className="muted deal-review-chatbot-agent">
-                      {selectedAgent.label}
-                    </p>
-                  ) : (
-                    <p className="muted deal-review-chatbot-agent">
-                      {sectorId ? "Choisis un agent…" : "Mode générique"}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="deal-review-chatbot-close"
-                aria-label="Fermer le chat"
-                onClick={() => setOpen(false)}
-              >
-                ×
-              </button>
-            </header>
-
-            <div className="deal-review-sector-row">
-              <label className="deal-review-sector">
-                <span>Famille</span>
-                <select
-                  value={sectorId}
-                  disabled={busy}
-                  onChange={(e) => onSectorChange(e.target.value)}
-                >
-                  <option value="">Générique</option>
-                  {DEAL_REVIEW_SECTORS.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {selectedSector ? (
-                <label className="deal-review-sector">
-                  <span>Agent</span>
-                  <select
-                    value={subSectorId}
-                    disabled={busy}
-                    onChange={(e) => setSubSectorId(e.target.value)}
-                  >
-                    <option value="">Choisir…</option>
-                    {selectedSector.subSectors.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.firstName} — {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-            </div>
-
-            {error ? <p className="form-error">{error}</p> : null}
-
-            <div className="deal-review-messages" ref={scrollerRef}>
-              {messages.length === 0 && !busy ? (
-                <p className="muted">
-                  Lance la revue pour challenger les constats du diagnostic.
-                  Rien n’est écrit sans ton « Appliquer ».
-                </p>
-              ) : null}
-              {messages.map((m, i) => (
-                <div
-                  key={`${m.role}-${i}`}
-                  className={
-                    m.role === "assistant"
-                      ? "deal-review-msg bot"
-                      : "deal-review-msg user"
-                  }
-                >
-                  {m.role === "assistant" ? (
-                    <AgentAvatarFace
-                      firstName={selectedAgent?.firstName}
-                      avatar={selectedAgent?.avatar}
-                      size="sm"
-                    />
-                  ) : null}
-                  <div
-                    className={
-                      m.role === "assistant"
-                        ? "deal-review-bubble bot"
-                        : "deal-review-bubble user"
-                    }
-                  >
-                    {m.topic ? (
-                      <span className="deal-review-topic">{m.topic}</span>
-                    ) : null}
-                    {m.text}
-                  </div>
-                </div>
-              ))}
-              {busy ? (
-                <div className="deal-review-msg bot">
-                  <AgentAvatarFace
-                    firstName={selectedAgent?.firstName}
-                    avatar={selectedAgent?.avatar}
-                    size="sm"
-                  />
-                  <div className="deal-review-bubble bot muted">Réflexion…</div>
-                </div>
-              ) : null}
-            </div>
-
-            {proposals.length > 0 ? (
-              <div className="deal-review-proposals">
-                <h4>Mises à jour proposées</h4>
-                <ul>
-                  {proposals.map((u, i) => (
-                    <li key={`${u.type}-${i}`}>
-                      <span>
-                        <strong>{u.type}</strong> · {u.target} → {u.value}
-                      </span>
-                      <button type="button" onClick={() => applyUpdate(u)}>
-                        Appliquer
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {!started ? (
-              <button
-                type="button"
-                className="deal-review-chatbot-start"
-                disabled={busy || Boolean(sectorId && !subSectorId)}
-                onClick={() => void startOrContinue()}
-              >
-                Lancer la revue
-              </button>
-            ) : (
-              <form className="deal-review-composer" onSubmit={onSubmit}>
-                <textarea
-                  rows={2}
-                  value={input}
-                  disabled={busy}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ta réponse…"
-                />
-                <button type="submit" disabled={busy || !input.trim()}>
-                  Envoyer
-                </button>
-              </form>
-            )}
-          </section>
-        ) : null}
-
+        {panel}
         <button
           type="button"
           className={`deal-review-fab${open ? " is-open" : ""}${started ? " has-chat" : ""}`}

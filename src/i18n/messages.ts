@@ -4,6 +4,8 @@ import type { Locale } from "./types";
 export type MessageKey =
   | "nav.group.view"
   | "nav.group.data"
+  | "nav.group.deals"
+  | "nav.group.ref"
   | "nav.group.pilotage"
   | "nav.dashboard"
   | "nav.map"
@@ -48,12 +50,14 @@ export type MessageKey =
 const fr: Record<MessageKey, string> = {
   "nav.group.view": "Vue",
   "nav.group.data": "Saisie",
+  "nav.group.deals": "Deals",
+  "nav.group.ref": "Référentiel",
   "nav.group.pilotage": "Pilotage",
   "nav.dashboard": "Dashboard",
   "nav.map": "Cartographie",
   "nav.entreprises": "Entreprises",
   "nav.contacts": "Contacts",
-  "nav.opportunites": "Opportunités",
+  "nav.opportunites": "Mes deals",
   "nav.accountPlans": "Account plan",
   "nav.aria": "Navigation principale",
   "sidebar.signOut": "Déconnexion",
@@ -97,12 +101,14 @@ const fr: Record<MessageKey, string> = {
 const en: Record<MessageKey, string> = {
   "nav.group.view": "View",
   "nav.group.data": "Input",
+  "nav.group.deals": "Deals",
+  "nav.group.ref": "Directory",
   "nav.group.pilotage": "Execution",
   "nav.dashboard": "Dashboard",
   "nav.map": "Map",
   "nav.entreprises": "Companies",
   "nav.contacts": "Contacts",
-  "nav.opportunites": "Opportunities",
+  "nav.opportunites": "My deals",
   "nav.accountPlans": "Account plan",
   "nav.aria": "Main navigation",
   "sidebar.signOut": "Sign out",

@@ -37,6 +37,8 @@ import { useSales } from "./sales/SalesContext";
 import {
   isDataSection,
   NAV_DATA,
+  NAV_DATA_SALES_PRIMARY,
+  NAV_DATA_SALES_REF,
   NAV_MAIN,
   NAV_PILOTAGE,
   type AppPage,
@@ -484,7 +486,9 @@ export default function App() {
     if (billing.productLine === "pilotage" && canViewNav) {
       setPage("dashboard");
     } else if (canSaisieNav) {
-      setPage("entreprises");
+      setPage(
+        billing.productLine === "sales" ? "opportunites" : "entreprises",
+      );
     } else if (canViewNav) {
       setPage("dashboard");
     } else if (canSettingsNav) {
@@ -1386,19 +1390,48 @@ export default function App() {
           ) : null}
 
           {canSaisieNav ? (
-            <>
-              <p className="sidebar-group">{t("nav.group.data")}</p>
-              {NAV_DATA.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={page === item.id ? "active" : ""}
-                  onClick={() => navigate(item.id)}
-                >
-                  {navLabel(item.id)}
-                </button>
-              ))}
-            </>
+            billing.productLine === "sales" ? (
+              <>
+                <p className="sidebar-group">{t("nav.group.deals")}</p>
+                {NAV_DATA_SALES_PRIMARY.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={page === item.id ? "active" : ""}
+                    onClick={() => navigate(item.id)}
+                  >
+                    {item.id === "opportunites"
+                      ? t("nav.opportunites")
+                      : navLabel(item.id)}
+                  </button>
+                ))}
+                <p className="sidebar-group">{t("nav.group.ref")}</p>
+                {NAV_DATA_SALES_REF.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={page === item.id ? "active" : ""}
+                    onClick={() => navigate(item.id)}
+                  >
+                    {navLabel(item.id)}
+                  </button>
+                ))}
+              </>
+            ) : (
+              <>
+                <p className="sidebar-group">{t("nav.group.data")}</p>
+                {NAV_DATA.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={page === item.id ? "active" : ""}
+                    onClick={() => navigate(item.id)}
+                  >
+                    {navLabel(item.id)}
+                  </button>
+                ))}
+              </>
+            )
           ) : null}
 
           {canPilotageNav ? (

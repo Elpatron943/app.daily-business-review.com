@@ -25,6 +25,17 @@ export const NAV_DATA: { id: AppPage; label: string }[] = DATA_SECTIONS.map(
   }),
 );
 
+/** Sales : deals d’abord. */
+export const NAV_DATA_SALES_PRIMARY: { id: AppPage; label: string }[] = [
+  { id: "opportunites", label: "Mes deals" },
+];
+
+/** Sales : référentiels secondaires. */
+export const NAV_DATA_SALES_REF: { id: AppPage; label: string }[] = [
+  { id: "entreprises", label: "Entreprises" },
+  { id: "contacts", label: "Contacts" },
+];
+
 /** Pilotage : plan de compte (les actions opérationnelles restent dans l’opportunité). */
 export const NAV_PILOTAGE: { id: AppPage; label: string }[] = [
   { id: "account-plans", label: "Account plan" },
