@@ -175,6 +175,24 @@ body {
   color: var(--muted);
 }
 
+.billing-quota-subscribe {
+  display: block;
+  margin-top: 0.55rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius);
+  background: var(--accent, #c9a227);
+  color: #111;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+
+.billing-quota-subscribe:hover,
+.billing-quota-subscribe:focus-visible {
+  filter: brightness(1.08);
+}
+
 .billing-quota-full {
   color: var(--danger);
   font-weight: 700;

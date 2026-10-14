@@ -8,6 +8,10 @@ function trialDaysLeft(trialEndsAt: string | null): number | null {
   return Math.max(0, Math.ceil((end - Date.now()) / 86400000));
 }
 
+/** Page d’abonnement DBR Sales (paiement Stripe sur le site). */
+export const SUBSCRIBE_URL =
+  "https://daily-business-review.com/tarifs#acces-solo";
+
 /** Bannière quotas formule — sidebar / shell. */
 export default function BillingQuotaBanner() {
   const { billing, organization } = useAuth();
@@ -20,6 +24,16 @@ export default function BillingQuotaBanner() {
   const trialExpired = isTrialExpired(organization);
   const productLabel =
     productLine === "pilotage" ? "Pilotage" : "Sales";
+
+  // Bouton « S’abonner » : essai DBR Sales (en cours ou terminé), attente de
+  // paiement ou abonnement résilié. Jamais pour Pilotage (sur devis).
+  const status = organization?.subscription_status;
+  const showSubscribe =
+    productLine !== "pilotage" &&
+    (organization?.plan?.code === "freemium" ||
+      trialExpired ||
+      status === "none" ||
+      status === "canceled");
 
   let lockLabel: string | null = null;
   if (!canWrite) {
@@ -69,6 +83,16 @@ export default function BillingQuotaBanner() {
           </>
         ) : null}
       </div>
+      {showSubscribe ? (
+        <a
+          className="billing-quota-subscribe"
+          href={SUBSCRIBE_URL}
+          target="_blank"
+          rel="noopener"
+        >
+          S’abonner à DBR Sales — 9,99 € TTC/mois
+        </a>
+      ) : null}
     </div>
   );
 }

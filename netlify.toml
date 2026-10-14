@@ -16,6 +16,11 @@
   status = 200
 
 [[redirects]]
+  from = "/accounts/subscription"
+  to = "/.netlify/functions/accounts-subscription"
+  status = 200
+
+[[redirects]]
   from = "/api/invite-user"
   to = "/.netlify/functions/invite-user"
   status = 200
