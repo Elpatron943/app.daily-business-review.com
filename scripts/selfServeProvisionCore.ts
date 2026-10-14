@@ -21,7 +21,7 @@ export type SelfServeProvisionResult =
   | { ok: true; loginUrl: string; orgId: string; userId: string }
   | { ok: false; status: number; error: string };
 
-function adminClient(url: string, serviceKey: string) {
+export function adminClient(url: string, serviceKey: string) {
   return createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -31,7 +31,7 @@ function mapPlan(plan: SelfServePlan): PlanCode {
   return plan === "sales" ? "sales_solo" : "freemium";
 }
 
-async function findAuthUserIdByEmail(
+export async function findAuthUserIdByEmail(
   admin: ReturnType<typeof adminClient>,
   email: string,
 ): Promise<string | null> {
