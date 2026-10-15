@@ -4,7 +4,7 @@ import LanguageSwitcher from "../i18n/LanguageSwitcher";
 import { useT } from "../i18n/LocaleContext";
 
 export default function AuthScreen() {
-  const { configured, signIn, resetPassword } = useAuth();
+  const { configured, signIn, resetPassword, linkError } = useAuth();
   const t = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -74,6 +74,10 @@ export default function AuthScreen() {
         <LanguageSwitcher className="auth-lang" />
 
         <h2 className="auth-title">{t("auth.loginTitle")}</h2>
+
+        {linkError && !error && !info ? (
+          <p className="auth-error">{t("auth.linkExpired")}</p>
+        ) : null}
 
         <label>
           {t("auth.email")}

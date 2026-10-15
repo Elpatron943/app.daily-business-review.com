@@ -58,6 +58,8 @@ type AuthContextValue = {
   profileError: string | null;
   /** True après clic sur le lien e-mail de reset (event PASSWORD_RECOVERY). */
   passwordRecovery: boolean;
+  /** Lien e-mail (création ou réinitialisation de mot de passe) expiré ou déjà utilisé. */
+  linkError: string | null;
   organization: OrganizationBilling | null;
   billing: BillingState;
   /**
@@ -197,6 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [team, setTeam] = useState<UserProfile[]>([]);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [organization, setOrganization] = useState<OrganizationBilling | null>(
     null,
   );
@@ -269,18 +272,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const client = supabase;
     const hash = window.location.hash.replace(/^#/, "");
     const search = window.location.search.replace(/^\?/, "");
     const params = new URLSearchParams(hash || search);
-    if (params.get("type") === "recovery") {
-      setPasswordRecovery(true);
-    }
+    const linkType = params.get("type");
+    const tokenHash = params.get("token_hash");
+    // Invitation (nouveau client) ou réinitialisation : l'utilisateur doit choisir son mot de passe.
+    const isPasswordLink = linkType === "invite" || linkType === "recovery";
 
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
+    const boot = async () => {
+      if (tokenHash && isPasswordLink) {
+        // Lien envoyé dans l'e-mail de bienvenue DBR : ?token_hash=…&type=invite|recovery.
+        // Vérifié ici, sans passer par la liste d'URL de redirection de Supabase.
+        const { error } = await client.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: linkType as "invite" | "recovery",
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if (!mounted) return;
+        if (error) setLinkError(error.message);
+        else setPasswordRecovery(true);
+      } else if (isPasswordLink) {
+        setPasswordRecovery(true);
+      }
+      const { data } = await client.auth.getSession();
       if (!mounted) return;
       void hydrate(data.session);
-    });
+    };
+    void boot();
 
     const {
       data: { subscription },
@@ -584,6 +605,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       team,
       profileError,
       passwordRecovery,
+      linkError,
       organization,
       billing,
       needsOrgOnboarding,
@@ -614,6 +636,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       team,
       profileError,
       passwordRecovery,
+      linkError,
       organization,
       billing,
       needsOrgOnboarding,

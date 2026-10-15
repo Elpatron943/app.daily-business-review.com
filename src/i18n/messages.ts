@@ -28,6 +28,7 @@ export type MessageKey =
   | "auth.forgot"
   | "auth.forgotNeedEmail"
   | "auth.forgotSent"
+  | "auth.linkExpired"
   | "auth.configHint"
   | "auth.loading"
   | "auth.profileRequired"
@@ -76,6 +77,8 @@ const fr: Record<MessageKey, string> = {
     "Indique ton e-mail pour réinitialiser le mot de passe.",
   "auth.forgotSent":
     "Si un compte existe pour cet e-mail, un lien de réinitialisation vient d’être envoyé.",
+  "auth.linkExpired":
+    "Ce lien a expiré ou a déjà été utilisé. Indique ton e-mail puis clique sur « Mot de passe oublié ? » pour en recevoir un nouveau.",
   "auth.configHint":
     "La connexion n’est pas disponible pour le moment. Réessaie plus tard ou contacte ton administrateur.",
   "auth.loading": "Chargement de la session…",
@@ -126,6 +129,8 @@ const en: Record<MessageKey, string> = {
   "auth.forgotNeedEmail": "Enter your email to reset your password.",
   "auth.forgotSent":
     "If an account exists for this email, a reset link has been sent.",
+  "auth.linkExpired":
+    "This link has expired or was already used. Enter your email, then click “Forgot password?” to get a new one.",
   "auth.configHint":
     "Sign-in is unavailable right now. Try again later or contact your administrator.",
   "auth.loading": "Loading session…",

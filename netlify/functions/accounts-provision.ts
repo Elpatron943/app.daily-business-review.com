@@ -113,6 +113,7 @@ export const handler: Handler = async (event) => {
       loginUrl: result.loginUrl,
       orgId: result.orgId,
       userId: result.userId,
+      setPasswordUrl: result.setPasswordUrl,
     }),
   };
 };
