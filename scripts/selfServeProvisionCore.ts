@@ -18,8 +18,50 @@ export type SelfServeProvisionBody = {
 };
 
 export type SelfServeProvisionResult =
-  | { ok: true; loginUrl: string; orgId: string; userId: string }
+  | {
+      ok: true;
+      loginUrl: string;
+      orgId: string;
+      userId: string;
+      /**
+       * Lien personnel « Créer mon mot de passe » (compte sans mot de passe).
+       * Le site l'envoie lui-même dans l'e-mail de bienvenue DBR : Supabase n'envoie
+       * plus d'e-mail d'invitation (expéditeur générique, en anglais, souvent en Promotions).
+       */
+      setPasswordUrl?: string;
+    }
   | { ok: false; status: number; error: string };
+
+/** Lien vers l'app, vérifié par l'app elle-même (verifyOtp), sans redirection Supabase. */
+export function buildSetPasswordUrl(
+  loginUrl: string,
+  hashedToken: string,
+  type: "invite" | "recovery",
+): string {
+  const u = new URL(loginUrl);
+  u.searchParams.set("token_hash", hashedToken);
+  u.searchParams.set("type", type);
+  return u.toString();
+}
+
+/** Compte existant qui ne s'est jamais connecté : lien pour choisir son mot de passe. */
+async function recoveryLinkIfNeverSignedIn(
+  admin: ReturnType<typeof adminClient>,
+  userId: string,
+  email: string,
+  loginUrl: string,
+): Promise<string | undefined> {
+  const { data } = await admin.auth.admin.getUserById(userId);
+  if (!data?.user || data.user.last_sign_in_at) return undefined;
+  const { data: link, error } = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: { redirectTo: loginUrl },
+  });
+  const hashed = link?.properties?.hashed_token;
+  if (error || !hashed) return undefined;
+  return buildSetPasswordUrl(loginUrl, hashed, "recovery");
+}
 
 export function adminClient(url: string, serviceKey: string) {
   return createClient(url, serviceKey, {
@@ -119,6 +161,12 @@ export async function selfServeProvision(input: {
         loginUrl,
         orgId: profile.organization_id,
         userId: existingUserId,
+        setPasswordUrl: await recoveryLinkIfNeverSignedIn(
+          admin,
+          existingUserId,
+          email,
+          loginUrl,
+        ),
       };
     }
 
@@ -220,21 +268,27 @@ export async function selfServeProvision(input: {
     };
   }
 
-  // Sales sans mot de passe : invitation e-mail pour définir le MDP
+  // Sales sans mot de passe : on crée l'utilisateur et un lien d'invitation SANS e-mail
+  // Supabase ; le lien part dans l'e-mail de bienvenue DBR envoyé par le site (Resend).
   const { data: invited, error: inviteErr } =
-    await admin.auth.admin.inviteUserByEmail(email, {
-      data: {
-        full_name: name,
-        organization_id: org.id,
-        role: "admin",
-        phone: input.body.phone || null,
-        stripe_customer_id: input.body.stripeCustomerId || null,
-        stripe_subscription_id: input.body.stripeSubscriptionId || null,
+    await admin.auth.admin.generateLink({
+      type: "invite",
+      email,
+      options: {
+        data: {
+          full_name: name,
+          organization_id: org.id,
+          role: "admin",
+          phone: input.body.phone || null,
+          stripe_customer_id: input.body.stripeCustomerId || null,
+          stripe_subscription_id: input.body.stripeSubscriptionId || null,
+        },
+        redirectTo: loginUrl,
       },
-      redirectTo: loginUrl,
     });
 
-  if (inviteErr || !invited.user) {
+  const hashedToken = invited?.properties?.hashed_token;
+  if (inviteErr || !invited?.user || !hashedToken) {
     await admin.from("organizations").delete().eq("id", org.id);
     return {
       ok: false,
@@ -256,6 +310,7 @@ export async function selfServeProvision(input: {
     loginUrl,
     orgId: org.id,
     userId: invited.user.id,
+    setPasswordUrl: buildSetPasswordUrl(loginUrl, hashedToken, "invite"),
   };
 }
 

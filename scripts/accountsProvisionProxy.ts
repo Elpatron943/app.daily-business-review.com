@@ -131,6 +131,7 @@ export function accountsProvisionProxy(): Plugin {
             loginUrl: result.loginUrl,
             orgId: result.orgId,
             userId: result.userId,
+            setPasswordUrl: result.setPasswordUrl,
           });
         } catch (err) {
           sendJson(res, 500, {
