@@ -43,3 +43,18 @@ Source runtime : `src/opportunities/dealReviewSectors.ts` (ces fichiers MD sont 
 ## Usage prévu
 
 Injecter l’agent du sous-secteur choisi en complément du prompt système générique, sans jamais inventer de faits hors `<diagnostic>`.
+
+## Modèles sectoriels : entraînement à boutons et analyse (oct. 2026)
+
+Architecture : **patterns communs à tous les secteurs** (`src/opportunities/meetingPatterns.ts` : problème, décideurs, budget, mode d'achat, cas concret, utilisateurs, critère de succès, exigences, clauses, signataire, date de décision…) **ajustés par des variables sectorielles** (`src/opportunities/sectorModels.ts` : qui peut dire non, quel budget, quelle procédure d'achat, quelle revue, quelles données, quel circuit de signature). Le profil vendeur (éditeur SaaS, ESN, conseil, fabricant, services récurrents) ajoute son objection ; la couche « grands groupes » ajoute ses étapes si le client est une filiale.
+
+- **S'entraîner** (onglet du chatbot, Sales et Pilotage) : tout se fait par boutons. Le commercial choisit ce qu'il vend, le secteur de son client, l'organisation (entité seule ou filiale) et le rendez-vous (R1 à R4). À chaque étape, trois réponses : une bonne question, un argument, une question vague. Seule la bonne question révèle le signal de risque tiré pour la partie. Débrief : questions posées et oubliées, signaux repérés et manqués, prochaine étape à obtenir dans le vrai deal. Moteur déterministe (graine) : pas d'appel IA, rien n'est écrit dans la fiche.
+- **Revue du deal** (Pilotage) : le prompt IA reçoit en plus les variables du secteur client (comité, veto, procédure, revue, règles sourcées).
+
+Pour ajouter un secteur : renseigner ses variables dans `sectorModels.ts` (les tests vérifient qu'aucune n'est vide). Pour ajouter un moment de rendez-vous commun à tous : un pattern dans `meetingPatterns.ts`.
+
+### Packs métier (couche 3)
+
+`src/opportunities/metierPacks.ts` précise ce que le commercial vend exactement. Un pack ne réécrit pas le cadre commun : il reformule certains moments (`variants`, par id de pattern), ajoute ses questions propres (chacune rattachée à un des 11 facteurs de blocage), précise interlocuteurs, preuves et blocages fréquents. Des règles croisées métier × secteur client (`CROSS_RULES`) ajustent le rendez-vous là où ça change vraiment (ex. risque fournisseur vendu à une banque : registre DORA).
+
+Premier pack : **Cybersécurité**, 7 domaines — infrastructure et réseau, identités et accès, détection et réponse (SOC), gestion du risque fournisseur, gouvernance et conformité (NIS2, ISO 27001), sécurité du cloud, sensibilisation. Pour ajouter un métier : un pack sur le même modèle ; les tests vérifient facteurs, variantes et jouabilité de toutes les combinaisons.

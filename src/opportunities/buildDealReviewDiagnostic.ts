@@ -183,6 +183,10 @@ export function buildDealReviewSystemPrompt(opts: {
   agentFirstName?: string | null;
   /** Agent complet du sous-secteur (docs/agents/commercial). */
   sectorAddendum?: string | null;
+  /** Variables du secteur client + profil vendeur (sectorModels, Pilotage). */
+  sectorModelAddendum?: string | null;
+  /** Grille des facteurs de blocage (blockerFactors). */
+  blockerAddendum?: string | null;
 }): string {
   const agentName = opts.agentFirstName?.trim();
   const who = agentName
@@ -196,6 +200,11 @@ Tu incarnes la persona suivante (prioritaire pour le vocabulaire et les relances
 ${opts.sectorAddendum.trim()}
 Sans inventer de faits hors <diagnostic>.`
     : "";
+  const modelBlock = [opts.blockerAddendum, opts.sectorModelAddendum]
+    .map((b) => b?.trim())
+    .filter(Boolean)
+    .map((b) => `\n\n${b}`)
+    .join("");
 
   return `${who}. Tu fais une revue de deal avec ${opts.sellerFirstName} sur l'opportunité décrite dans <diagnostic>.
 
@@ -216,12 +225,13 @@ Aider le commercial à voir lui-même pourquoi ce deal bloque et quelle est la p
 - Tu ne notes pas le commercial et tu ne le compares à personne.
 - Si <previous_answers> contient un engagement passé, demande ce qui s'est passé avant d'aller plus loin.
 - Tu tutoies, tu restes direct et cordial. Pas de jargon gratuit, pas de flatterie, pas d'emoji.
-- Messages courts : 3 phrases au plus, sauf le résumé final.${sectorBlock}
+- Messages courts : 3 phrases au plus, sauf le résumé final.${sectorBlock}${modelBlock}
 
 # Format de chaque réponse
 Réponds uniquement en JSON :
 { "message": "ce que tu dis au commercial",
   "topic": "code du constat traité (ex. C2)",
   "proposed_updates": [ { "type": "stakeholder_status | process_answer | action | note", "target": "…", "value": "…" } ],
+  "facteurs": ["identifiants des facteurs de blocage en jeu"],
   "done": false }`;
 }

@@ -26,6 +26,21 @@ import {
   buildDealReviewSectorAddendum,
   getDealReviewSubSector,
 } from "../src/opportunities/dealReviewSectors";
+import {
+  buildSectorReviewAddendum,
+  computeComplexity,
+  getClientSectorModel,
+  getSellerProfile,
+  type ClientSizeId,
+} from "../src/opportunities/sectorModels";
+import { buildTrameReviewAddendum } from "../src/opportunities/meetingPatterns";
+import { getMetierDomain } from "../src/opportunities/metierPacks";
+import {
+  BLOCKER_FACTORS,
+  buildBlockerFactorsAddendum,
+  type BlockerFactorId,
+} from "../src/opportunities/blockerFactors";
+import { productLineForPlanCode } from "../src/billing/entitlements";
 import type { Opportunity } from "../src/opportunities/OpportunityContext";
 import type { OppMappingSubtypeDef } from "../src/config/types";
 
@@ -66,6 +81,16 @@ export type DealReviewRequest = {
   sectorId?: string | null;
   /** Id sous-secteur (optionnel). */
   subSectorId?: string | null;
+  /** Profil du vendeur — ce que le commercial vend (voir sectorModels). */
+  sellerProfileId?: string | null;
+  /** Modèle sectoriel du client — à qui il vend (voir sectorModels). */
+  clientSectorId?: string | null;
+  /** Compte rattaché à un groupe : ajoute les variables grands groupes. */
+  multiEntity?: boolean;
+  /** Sous-domaine métier du vendeur (metierPacks). */
+  metierId?: string | null;
+  /** Taille du client (pme, eti, ge) : entre dans la complexité du deal. */
+  clientSize?: ClientSizeId | null;
   messages?: DealReviewChatMessage[];
   /** Uniquement si le reload serveur échoue (dev). */
   clientDiagnostic?: DealReviewDiagnostic;
@@ -80,6 +105,8 @@ export type DealReviewAiJson = {
     value: string;
   }>;
   done?: boolean;
+  /** Facteurs de blocage en jeu (identifiants de blockerFactors). */
+  facteurs?: string[];
 };
 
 function callOpenAi(
@@ -364,6 +391,50 @@ export async function runDealReview(
       : "toi");
 
   const agent = getDealReviewSubSector(body.sectorId, body.subSectorId);
+  // Analyse par variables sectorielles : réservée à DBR Pilotage (décision du 18 oct. 2026).
+  const { data: orgRow } = await admin
+    .from("organizations")
+    .select("commercial_plans ( code )")
+    .eq("id", orgId)
+    .maybeSingle();
+  const planRel = (orgRow as { commercial_plans?: unknown } | null)
+    ?.commercial_plans;
+  const planCode = Array.isArray(planRel)
+    ? (planRel[0] as { code?: string } | undefined)?.code
+    : (planRel as { code?: string } | null | undefined)?.code;
+  const sectorModelAddendum =
+    productLineForPlanCode(planCode) === "pilotage"
+      ? buildSectorReviewAddendum({
+          clientSectorId: body.clientSectorId ?? null,
+          sellerProfileId: body.sellerProfileId ?? null,
+          multiEntity: Boolean(body.multiEntity),
+          metierId: body.metierId ?? null,
+        })
+      : null;
+  // Grille des facteurs de blocage : pour tous (cœur du produit). Les facteurs
+  // fréquents du secteur client ne sont donnés qu'en Pilotage.
+  const isPilotage = productLineForPlanCode(planCode) === "pilotage";
+  const likelyBlockers: BlockerFactorId[] = [
+    ...new Set([
+      ...(isPilotage
+        ? getClientSectorModel(body.clientSectorId)?.likelyBlockers ?? []
+        : []),
+      ...(getSellerProfile(body.sellerProfileId)?.likelyBlockers ?? []),
+      ...(getMetierDomain(body.metierId)?.domain.likelyBlockers ?? []),
+    ]),
+  ];
+  // Trame de qualification du fondateur (douze grandes questions), pour tous les deals.
+  const complexity = computeComplexity({
+    clientSectorId: body.clientSectorId ?? null,
+    clientSize: ["pme", "eti", "ge"].includes(String(body.clientSize)) ? body.clientSize! : null,
+    multiEntity: Boolean(body.multiEntity),
+  });
+  const blockerAddendum = [
+    buildBlockerFactorsAddendum(likelyBlockers),
+    buildTrameReviewAddendum(complexity.label),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   const system = buildDealReviewSystemPrompt({
     orgName,
     sellerFirstName: seller || "toi",
@@ -372,6 +443,8 @@ export async function runDealReview(
       body.sectorId,
       body.subSectorId,
     ),
+    sectorModelAddendum,
+    blockerAddendum,
   });
   const history = (body.messages ?? [])
     .map((m) => `${m.role === "user" ? "Commercial" : "Directeur"}: ${m.content}`)
@@ -413,6 +486,10 @@ Réponds en JSON selon le format imposé.`;
   }
 
   const parsed = parseAiJson(content);
+  const knownFactors = new Set<string>(BLOCKER_FACTORS.map((f) => f.id));
+  parsed.facteurs = Array.isArray(parsed.facteurs)
+    ? parsed.facteurs.filter((f) => typeof f === "string" && knownFactors.has(f))
+    : [];
 
   const userAnswers = (body.messages ?? [])
     .filter((m) => m.role === "user")

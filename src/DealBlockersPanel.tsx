@@ -14,6 +14,11 @@ import {
   type FindingSeverity,
 } from "./opportunities/dealDiagnosis";
 import type { Opportunity } from "./opportunities/OpportunityContext";
+import {
+  factorForFinding,
+  getBlockerFactor,
+  summarizeFactors,
+} from "./opportunities/blockerFactors";
 
 type Props = {
   opportunity: Opportunity;
@@ -82,6 +87,8 @@ export default function DealBlockersPanel({
     config.oppMappingSubtypes,
   ]);
 
+  const factors = useMemo(() => summarizeFactors(findings), [findings]);
+
   if (findings.length === 0) {
     return (
       <section className="deal-blockers-panel">
@@ -119,6 +126,22 @@ export default function DealBlockersPanel({
           </button>
         ) : null}
       </header>
+      {factors.length > 0 ? (
+        <div>
+          <p className="muted">Facteurs de blocage signalés par les données :</p>
+          <div className="deal-blockers-factors">
+            {factors.map((f) => (
+              <span
+                key={f.factor.id}
+                className={`deal-blockers-factor${f.blocking ? " is-blocking" : ""}`}
+                title={f.factor.description}
+              >
+                {f.factor.label} · {f.findings}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <ul className="deal-blockers-list">
         {findings.map((f) => (
           <li
@@ -130,7 +153,9 @@ export default function DealBlockersPanel({
               <span className={`deal-blocker-sev sev-${f.severity}`}>
                 {SEV_LABEL[f.severity]}
               </span>
-              <span className="muted">{f.family}</span>
+              <span className="muted">
+                {getBlockerFactor(factorForFinding(f.code))?.label ?? f.family}
+              </span>
             </div>
             <p className="deal-blocker-fact">{f.fact}</p>
             <p className="deal-blocker-q">

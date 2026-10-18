@@ -24,11 +24,44 @@ import {
   useOpportunities,
   type Opportunity,
 } from "./opportunities/OpportunityContext";
+import MeetingSimulator from "./opportunities/MeetingSimulator";
+import { getBlockerFactor } from "./opportunities/blockerFactors";
+import {
+  SELLER_PROFILES,
+  clientModelIdFromDealReviewSector,
+  clientSizeFromAccountSize,
+} from "./opportunities/sectorModels";
 import { supabase } from "./supabase/client";
 import DealBlockersPanel from "./DealBlockersPanel";
 import { resolveAccountSector } from "./SameSectorPanel";
 
-type ChatMsg = { role: "assistant" | "user"; text: string; topic?: string };
+type ChatMsg = {
+  role: "assistant" | "user";
+  text: string;
+  topic?: string;
+  facteurs?: string[];
+};
+
+type ChatMode = "review" | "simulation";
+
+const SELLER_PROFILE_KEY = "dbr.sellerProfileId";
+
+function readSellerProfile(): string {
+  try {
+    return window.localStorage.getItem(SELLER_PROFILE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeSellerProfile(id: string) {
+  try {
+    if (id) window.localStorage.setItem(SELLER_PROFILE_KEY, id);
+    else window.localStorage.removeItem(SELLER_PROFILE_KEY);
+  } catch {
+    /* stockage indisponible : le choix vaut pour la session */
+  }
+}
 
 type ProposedUpdate = {
   type: string;
@@ -47,6 +80,7 @@ async function postDealReview(body: unknown): Promise<{
   topic?: string;
   proposed_updates?: ProposedUpdate[];
   done?: boolean;
+  facteurs?: string[];
   diagnosticFindingsCount?: number;
 }> {
   const session = supabase
@@ -69,6 +103,7 @@ async function postDealReview(body: unknown): Promise<{
     topic?: string;
     proposed_updates?: ProposedUpdate[];
     done?: boolean;
+    facteurs?: string[];
     diagnosticFindingsCount?: number;
   };
   if (!res.ok) {
@@ -80,6 +115,7 @@ async function postDealReview(body: unknown): Promise<{
     topic: data.topic,
     proposed_updates: data.proposed_updates,
     done: data.done,
+    facteurs: data.facteurs,
     diagnosticFindingsCount: data.diagnosticFindingsCount,
   };
 }
@@ -104,6 +140,15 @@ export default function DealReviewPanel({
   const [error, setError] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ProposedUpdate[]>([]);
   const [started, setStarted] = useState(false);
+  const [mode, setMode] = useState<ChatMode>("review");
+  const [sellerProfileId, setSellerProfileId] = useState(readSellerProfile);
+  const primaryAccount = useMemo(
+    () => activeAccounts.find((a) => a.id === opportunity.primaryAccountId),
+    [activeAccounts, opportunity.primaryAccountId],
+  );
+  const multiEntity = Boolean(
+    primaryAccount?.holdingId || primaryAccount?.type === "Holding",
+  );
   const accountSector = useMemo(() => {
     const acc = activeAccounts.find(
       (a) => a.id === opportunity.primaryAccountId,
@@ -135,6 +180,11 @@ export default function DealReviewPanel({
       setSubSectorId(matchDealReviewSubSectorId(matched, accountSector) ?? "");
     }
   }, [accountSector, started]);
+
+  function onSellerProfileChange(next: string) {
+    setSellerProfileId(next);
+    writeSellerProfile(next);
+  }
 
   function onSectorChange(next: string) {
     setSectorId(next);
@@ -221,6 +271,17 @@ export default function DealReviewPanel({
         sellerFirstName: firstName,
         sectorId: sectorId || null,
         subSectorId: subSectorId || null,
+        sellerProfileId: sellerProfileId || null,
+        clientSectorId: clientModelIdFromDealReviewSector(sectorId, subSectorId),
+        metierId: (() => {
+          try {
+            return window.localStorage.getItem("dbr.metierId") || null;
+          } catch {
+            return null;
+          }
+        })(),
+        multiEntity,
+        clientSize: clientSizeFromAccountSize(primaryAccount?.size),
         messages: history.map((m) => ({ role: m.role, content: m.text })),
         clientDiagnostic: diagnosticBundle.diagnostic,
       });
@@ -230,6 +291,7 @@ export default function DealReviewPanel({
           role: "assistant",
           text: reply.message,
           topic: reply.topic,
+          facteurs: reply.facteurs,
         },
       ]);
       setProposals(reply.proposed_updates ?? []);
@@ -313,7 +375,9 @@ export default function DealReviewPanel({
               size="md"
             />
             <div>
-              <p className="deal-review-chatbot-kicker">Revue deal</p>
+              <p className="deal-review-chatbot-kicker">
+                {mode === "simulation" ? "Rendez-vous simulé" : "Revue deal"}
+              </p>
               <h3>{selectedAgent?.firstName ?? "Directeur commercial"}</h3>
               {selectedAgent ? (
                 <p className="muted deal-review-chatbot-agent">
@@ -338,9 +402,65 @@ export default function DealReviewPanel({
           ) : null}
         </header>
 
+        <div
+          className="deal-review-mode"
+          role="tablist"
+          aria-label="Mode du chatbot"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "review"}
+            className={mode === "review" ? "is-active" : ""}
+            disabled={busy}
+            onClick={() => setMode("review")}
+          >
+            Revue du deal
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "simulation"}
+            className={mode === "simulation" ? "is-active" : ""}
+            disabled={busy}
+            onClick={() => setMode("simulation")}
+          >
+            S’entraîner
+          </button>
+        </div>
+
+        {mode === "simulation" ? (
+          <MeetingSimulator
+            defaultClientSectorId={clientModelIdFromDealReviewSector(
+              sectorId,
+              subSectorId,
+            )}
+            defaultMultiEntity={multiEntity}
+            defaultClientSize={clientSizeFromAccountSize(primaryAccount?.size)}
+            sellerProfileId={sellerProfileId}
+            onSellerProfileChange={onSellerProfileChange}
+            disabled={billing.subscriptionBlocked}
+          />
+        ) : (
+        <>
         <div className="deal-review-sector-row">
           <label className="deal-review-sector">
-            <span>Famille</span>
+            <span>Ce que tu vends</span>
+            <select
+              value={sellerProfileId}
+              disabled={busy}
+              onChange={(e) => onSellerProfileChange(e.target.value)}
+            >
+              <option value="">Non précisé</option>
+              {SELLER_PROFILES.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="deal-review-sector">
+            <span>Secteur du client</span>
             <select
               value={sectorId}
               disabled={busy}
@@ -409,6 +529,15 @@ export default function DealReviewPanel({
                   <span className="deal-review-topic">{m.topic}</span>
                 ) : null}
                 {m.text}
+                {m.facteurs && m.facteurs.length > 0 ? (
+                  <span className="deal-blockers-factors">
+                    {m.facteurs.map((id) => (
+                      <span key={id} className="deal-blockers-factor">
+                        {getBlockerFactor(id)?.label ?? id}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
               </div>
             </div>
           ))}
@@ -464,6 +593,8 @@ export default function DealReviewPanel({
               Envoyer
             </button>
           </form>
+        )}
+        </>
         )}
       </section>
     ) : null;
