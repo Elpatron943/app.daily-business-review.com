@@ -44,11 +44,11 @@ Source runtime : `src/opportunities/dealReviewSectors.ts` (ces fichiers MD sont 
 
 Injecter l’agent du sous-secteur choisi en complément du prompt système générique, sans jamais inventer de faits hors `<diagnostic>`.
 
-## Modèles sectoriels : rendez-vous simulés et analyse (oct. 2026)
+## Modèles sectoriels : entraînement à boutons et analyse (oct. 2026)
 
-Source runtime : `src/opportunities/sectorModels.ts`. Le commercial choisit **ce qu'il vend** (profil vendeur : éditeur SaaS, ESN, conseil, fabricant, services récurrents) et **le secteur de son client** (familles ci-dessus, ramenées à un modèle client : banque-assurance, public, santé publique, énergie-eau-transports, industrie, ou générique ; couche « grands groupes » si le compte est rattaché à un groupe).
+Architecture : **patterns communs à tous les secteurs** (`src/opportunities/meetingPatterns.ts` : problème, décideurs, budget, mode d'achat, cas concret, utilisateurs, critère de succès, exigences, clauses, signataire, date de décision…) **ajustés par des variables sectorielles** (`src/opportunities/sectorModels.ts` : qui peut dire non, quel budget, quelle procédure d'achat, quelle revue, quelles données, quel circuit de signature). Le profil vendeur (éditeur SaaS, ESN, conseil, fabricant, services récurrents) ajoute son objection ; la couche « grands groupes » ajoute ses étapes si le client est une filiale.
 
-- **Rendez-vous simulé** (Sales et Pilotage) : l'IA joue l'acheteur d'un rendez-vous R1 découverte, R2 démonstration, R3 revue sécurité-conformité-juridique ou R4 achats, en suivant l'arbre de décision du secteur client et les objections du profil vendeur ; débrief à la fin (« débrief »). Rien n'est écrit dans la fiche.
-- **Revue du deal** (Pilotage) : le prompt reçoit en plus le comité attendu, les détenteurs du veto, les règles sourcées et les passages clés du secteur client.
+- **S'entraîner** (onglet du chatbot, Sales et Pilotage) : tout se fait par boutons. Le commercial choisit ce qu'il vend, le secteur de son client, l'organisation (entité seule ou filiale) et le rendez-vous (R1 à R4). À chaque étape, trois réponses : une bonne question, un argument, une question vague. Seule la bonne question révèle le signal de risque tiré pour la partie. Débrief : questions posées et oubliées, signaux repérés et manqués, prochaine étape à obtenir dans le vrai deal. Moteur déterministe (graine) : pas d'appel IA, rien n'est écrit dans la fiche.
+- **Revue du deal** (Pilotage) : le prompt IA reçoit en plus les variables du secteur client (comité, veto, procédure, revue, règles sourcées).
 
-Règles marquées « sourcé » (lien + date) ou « hypothèse » / « à vérifier » : à calibrer sur 30 deals clos par secteur. Miroir lisible : cerveau DBR, notes `secteur-*` et `projet-modeles-sectoriels`.
+Pour ajouter un secteur : renseigner ses variables dans `sectorModels.ts` (les tests vérifient qu'aucune n'est vide). Pour ajouter un moment de rendez-vous commun à tous : un pattern dans `meetingPatterns.ts`.

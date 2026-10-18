@@ -26,12 +26,7 @@ import {
   buildDealReviewSectorAddendum,
   getDealReviewSubSector,
 } from "../src/opportunities/dealReviewSectors";
-import {
-  buildSectorReviewAddendum,
-  buildSimulationSystemPrompt,
-  getMeetingType,
-  type MeetingTypeId,
-} from "../src/opportunities/sectorModels";
+import { buildSectorReviewAddendum } from "../src/opportunities/sectorModels";
 import { productLineForPlanCode } from "../src/billing/entitlements";
 import type { Opportunity } from "../src/opportunities/OpportunityContext";
 import type { OppMappingSubtypeDef } from "../src/config/types";
@@ -65,28 +60,20 @@ export type DealReviewChatMessage = {
   content: string;
 };
 
-export type DealReviewMode = "review" | "simulation";
-
 export type DealReviewRequest = {
   opportunityId: string;
-  /** « review » (analyse de l'opportunité, défaut) ou « simulation » (rendez-vous simulé). */
-  mode?: DealReviewMode;
-  /** Profil du vendeur — ce que le commercial vend (voir sectorModels). */
-  sellerProfileId?: string | null;
-  /** Modèle sectoriel du client — à qui il vend (voir sectorModels). */
-  clientSectorId?: string | null;
-  /** Compte rattaché à un groupe : ajoute la couche grands groupes. */
-  multiEntity?: boolean;
-  /** Rendez-vous simulé : R1 découverte, R2 démo, R3 revue sécurité, R4 achats. */
-  meetingType?: MeetingTypeId | null;
-  /** Rendez-vous simulé : rôle joué par l'acheteur IA. */
-  buyerRole?: string | null;
   orgName?: string;
   sellerFirstName?: string;
   /** Id agent secteur (voir dealReviewSectors). */
   sectorId?: string | null;
   /** Id sous-secteur (optionnel). */
   subSectorId?: string | null;
+  /** Profil du vendeur — ce que le commercial vend (voir sectorModels). */
+  sellerProfileId?: string | null;
+  /** Modèle sectoriel du client — à qui il vend (voir sectorModels). */
+  clientSectorId?: string | null;
+  /** Compte rattaché à un groupe : ajoute les variables grands groupes. */
+  multiEntity?: boolean;
   messages?: DealReviewChatMessage[];
   /** Uniquement si le reload serveur échoue (dev). */
   clientDiagnostic?: DealReviewDiagnostic;
@@ -101,14 +88,6 @@ export type DealReviewAiJson = {
     value: string;
   }>;
   done?: boolean;
-  /** Rendez-vous simulé : débrief de fin. */
-  debrief?: {
-    questions_posees?: string[];
-    questions_oubliees?: string[];
-    signaux_rates?: string[];
-    issue_atteinte?: boolean;
-    prochaine_etape?: string;
-  } | null;
 };
 
 function callOpenAi(
@@ -117,11 +96,10 @@ function callOpenAi(
   user: string,
   model: string,
   insecure: boolean,
-  temperature = 0.35,
 ): Promise<{ status: number; text: string }> {
   const payload = JSON.stringify({
     model,
-    temperature,
+    temperature: 0.35,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: system },
@@ -393,91 +371,45 @@ export async function runDealReview(
       ? profile.full_name.split(/\s+/)[0]
       : "toi");
 
-  const mode: DealReviewMode =
-    body.mode === "simulation" ? "simulation" : "review";
-  const sectorContext = {
-    clientSectorId: body.clientSectorId ?? null,
-    sellerProfileId: body.sellerProfileId ?? null,
-    multiEntity: Boolean(body.multiEntity),
-  };
-
-  let system: string;
-  let userPrompt: string;
-  let temperature = 0.35;
-  if (mode === "simulation") {
-    const meeting = getMeetingType(body.meetingType)?.id ?? "R1";
-    system = buildSimulationSystemPrompt({
-      ...sectorContext,
-      meeting,
-      buyerRole: body.buyerRole ?? null,
-      sellerFirstName: seller || "le commercial",
-      orgName,
-    });
-    // Contexte du vrai deal : sert à rendre le jeu réaliste, pas à imiter des personnes.
-    const dealContext = {
-      opportunite: diagnostic.opportunity.name,
-      phase: diagnostic.opportunity.phase,
-      montant: diagnostic.opportunity.amount,
-      devise: diagnostic.opportunity.currency,
-      probleme: diagnostic.opportunity.problem,
-      pourquoi_maintenant: diagnostic.opportunity.why_now,
-      roles_connus: diagnostic.committee.map((c) => ({
-        fonction: c.title,
-        role: c.role,
-        statut: c.status,
-      })),
-    };
-    const simHistory = (body.messages ?? [])
-      .map(
-        (m) => `${m.role === "user" ? "Commercial" : "Acheteur"}: ${m.content}`,
-      )
-      .join("\n");
-    userPrompt = `<contexte_deal>
-${JSON.stringify(dealContext, null, 2)}
-</contexte_deal>
-
-${simHistory ? `Échanges du rendez-vous :\n${simHistory}\n` : "Le rendez-vous commence : ouvre-le dans ton rôle.\n"}
-Réponds en JSON selon le format imposé.`;
-    temperature = 0.6;
-  } else {
-    const agent = getDealReviewSubSector(body.sectorId, body.subSectorId);
-    // Analyse par modèle sectoriel : réservée à DBR Pilotage (décision du 18 oct. 2026).
-    const { data: orgRow } = await admin
-      .from("organizations")
-      .select("commercial_plans ( code )")
-      .eq("id", orgId)
-      .maybeSingle();
-    const planRel = (orgRow as { commercial_plans?: unknown } | null)
-      ?.commercial_plans;
-    const planCode = Array.isArray(planRel)
-      ? (planRel[0] as { code?: string } | undefined)?.code
-      : (planRel as { code?: string } | null | undefined)?.code;
-    const sectorModelBlock =
-      productLineForPlanCode(planCode) === "pilotage"
-        ? buildSectorReviewAddendum(sectorContext)
-        : null;
-    system = buildDealReviewSystemPrompt({
-      orgName,
-      sellerFirstName: seller || "toi",
-      agentFirstName: agent?.firstName ?? null,
-      sectorAddendum: buildDealReviewSectorAddendum(
-        body.sectorId,
-        body.subSectorId,
-      ),
-      sectorModelAddendum: sectorModelBlock,
-    });
-    const history = (body.messages ?? [])
-      .map(
-        (m) => `${m.role === "user" ? "Commercial" : "Directeur"}: ${m.content}`,
-      )
-      .join("\n");
-    userPrompt = `<diagnostic>
+  const agent = getDealReviewSubSector(body.sectorId, body.subSectorId);
+  // Analyse par variables sectorielles : réservée à DBR Pilotage (décision du 18 oct. 2026).
+  const { data: orgRow } = await admin
+    .from("organizations")
+    .select("commercial_plans ( code )")
+    .eq("id", orgId)
+    .maybeSingle();
+  const planRel = (orgRow as { commercial_plans?: unknown } | null)
+    ?.commercial_plans;
+  const planCode = Array.isArray(planRel)
+    ? (planRel[0] as { code?: string } | undefined)?.code
+    : (planRel as { code?: string } | null | undefined)?.code;
+  const sectorModelAddendum =
+    productLineForPlanCode(planCode) === "pilotage"
+      ? buildSectorReviewAddendum({
+          clientSectorId: body.clientSectorId ?? null,
+          sellerProfileId: body.sellerProfileId ?? null,
+          multiEntity: Boolean(body.multiEntity),
+        })
+      : null;
+  const system = buildDealReviewSystemPrompt({
+    orgName,
+    sellerFirstName: seller || "toi",
+    agentFirstName: agent?.firstName ?? null,
+    sectorAddendum: buildDealReviewSectorAddendum(
+      body.sectorId,
+      body.subSectorId,
+    ),
+    sectorModelAddendum,
+  });
+  const history = (body.messages ?? [])
+    .map((m) => `${m.role === "user" ? "Commercial" : "Directeur"}: ${m.content}`)
+    .join("\n");
+  const userPrompt = `<diagnostic>
 ${JSON.stringify(diagnostic, null, 2)}
 </diagnostic>
 
 ${history ? `Échanges déjà tenus :\n${history}\n` : ""}
 Réponds en JSON selon le format imposé.`;
-  }
 
   const model = env.openaiModel?.trim() || DEFAULT_MODEL;
   const insecure = Boolean(env.openaiInsecureTls);
@@ -487,7 +419,6 @@ Réponds en JSON selon le format imposé.`;
     userPrompt,
     model,
     insecure,
-    temperature,
   );
   if (aiRes.status >= 400) {
     return {
@@ -511,48 +442,28 @@ Réponds en JSON selon le format imposé.`;
 
   const parsed = parseAiJson(content);
 
-  // Les réponses d'un rendez-vous simulé ne sont pas des faits du deal :
-  // elles ne rejoignent pas previous_answers. La ligne compte dans la limite du jour.
-  const userAnswers =
-    mode === "simulation"
-      ? []
-      : (body.messages ?? [])
-          .filter((m) => m.role === "user")
-          .map((m) => ({
-            code: parsed.topic || "general",
-            answer: m.content,
-          }));
-  const savedFindings =
-    mode === "simulation"
-      ? [
-          {
-            code: `SIM-${getMeetingType(body.meetingType)?.id ?? "R1"}`,
-            severity: "info",
-            fact: "Rendez-vous simulé",
-            question: body.buyerRole ?? "",
-          },
-        ]
-      : findings.map((f) => ({
-          code: f.code,
-          severity: f.severity,
-          fact: f.fact,
-          question: f.question,
-        }));
+  const userAnswers = (body.messages ?? [])
+    .filter((m) => m.role === "user")
+    .map((m) => ({
+      code: parsed.topic || "general",
+      answer: m.content,
+    }));
 
   const { error: saveErr } = await admin.from("deal_reviews").insert({
     organization_id: orgId,
     opportunity_id: body.opportunityId,
     created_by: user.id,
-    findings: savedFindings,
+    findings: findings.map((f) => ({
+      code: f.code,
+      severity: f.severity,
+      fact: f.fact,
+      question: f.question,
+    })),
     answers: userAnswers,
-    decided_actions: mode === "simulation" ? [] : parsed.proposed_updates ?? [],
+    decided_actions: parsed.proposed_updates ?? [],
     model,
   });
   void saveErr; /* table absente tant que la migration n’est pas appliquée */
-
-  if (mode === "simulation") {
-    parsed.proposed_updates = [];
-  }
 
   return {
     ok: true,

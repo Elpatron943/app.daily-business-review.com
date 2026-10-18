@@ -24,32 +24,16 @@ import {
   useOpportunities,
   type Opportunity,
 } from "./opportunities/OpportunityContext";
+import MeetingSimulator from "./opportunities/MeetingSimulator";
 import {
-  MEETING_TYPES,
   SELLER_PROFILES,
   clientModelIdFromDealReviewSector,
-  getClientSectorModel,
-  getMeetingTree,
-  type MeetingTypeId,
 } from "./opportunities/sectorModels";
 import { supabase } from "./supabase/client";
 import DealBlockersPanel from "./DealBlockersPanel";
 import { resolveAccountSector } from "./SameSectorPanel";
 
-type Debrief = {
-  questions_posees?: string[];
-  questions_oubliees?: string[];
-  signaux_rates?: string[];
-  issue_atteinte?: boolean;
-  prochaine_etape?: string;
-};
-
-type ChatMsg = {
-  role: "assistant" | "user";
-  text: string;
-  topic?: string;
-  debrief?: Debrief | null;
-};
+type ChatMsg = { role: "assistant" | "user"; text: string; topic?: string };
 
 type ChatMode = "review" | "simulation";
 
@@ -89,7 +73,6 @@ async function postDealReview(body: unknown): Promise<{
   topic?: string;
   proposed_updates?: ProposedUpdate[];
   done?: boolean;
-  debrief?: Debrief | null;
   diagnosticFindingsCount?: number;
 }> {
   const session = supabase
@@ -112,7 +95,6 @@ async function postDealReview(body: unknown): Promise<{
     topic?: string;
     proposed_updates?: ProposedUpdate[];
     done?: boolean;
-    debrief?: Debrief | null;
     diagnosticFindingsCount?: number;
   };
   if (!res.ok) {
@@ -124,7 +106,6 @@ async function postDealReview(body: unknown): Promise<{
     topic: data.topic,
     proposed_updates: data.proposed_updates,
     done: data.done,
-    debrief: data.debrief ?? null,
     diagnosticFindingsCount: data.diagnosticFindingsCount,
   };
 }
@@ -150,16 +131,13 @@ export default function DealReviewPanel({
   const [proposals, setProposals] = useState<ProposedUpdate[]>([]);
   const [started, setStarted] = useState(false);
   const [mode, setMode] = useState<ChatMode>("review");
-  const [simDone, setSimDone] = useState(false);
   const [sellerProfileId, setSellerProfileId] = useState(readSellerProfile);
-  const [meetingType, setMeetingType] = useState<MeetingTypeId>("R1");
-  const [buyerRole, setBuyerRole] = useState("");
   const primaryAccount = useMemo(
     () => activeAccounts.find((a) => a.id === opportunity.primaryAccountId),
     [activeAccounts, opportunity.primaryAccountId],
   );
-  const [multiEntity, setMultiEntity] = useState(() =>
-    Boolean(primaryAccount?.holdingId || primaryAccount?.type === "Holding"),
+  const multiEntity = Boolean(
+    primaryAccount?.holdingId || primaryAccount?.type === "Holding",
   );
   const accountSector = useMemo(() => {
     const acc = activeAccounts.find(
@@ -182,17 +160,6 @@ export default function DealReviewPanel({
     () => getDealReviewSubSector(sectorId, subSectorId),
     [sectorId, subSectorId],
   );
-  const clientModel = useMemo(
-    () =>
-      getClientSectorModel(
-        clientModelIdFromDealReviewSector(sectorId, subSectorId),
-      ),
-    [sectorId, subSectorId],
-  );
-  const meetingTree = useMemo(
-    () => getMeetingTree(clientModel, meetingType),
-    [clientModel, meetingType],
-  );
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -204,37 +171,14 @@ export default function DealReviewPanel({
     }
   }, [accountSector, started]);
 
-  useEffect(() => {
-    if (started) return;
-    setMultiEntity(
-      Boolean(primaryAccount?.holdingId || primaryAccount?.type === "Holding"),
-    );
-  }, [primaryAccount, started]);
-
-  function resetConversation() {
-    setMessages([]);
-    setProposals([]);
-    setStarted(false);
-    setSimDone(false);
-    setError(null);
+  function onSellerProfileChange(next: string) {
+    setSellerProfileId(next);
+    writeSellerProfile(next);
   }
 
   function onSectorChange(next: string) {
     setSectorId(next);
     setSubSectorId("");
-    setBuyerRole("");
-    if (mode === "simulation") resetConversation();
-  }
-
-  function onModeChange(next: ChatMode) {
-    if (next === mode || busy) return;
-    setMode(next);
-    resetConversation();
-  }
-
-  function onSellerProfileChange(next: string) {
-    setSellerProfileId(next);
-    writeSellerProfile(next);
   }
 
   const firstName =
@@ -301,7 +245,6 @@ export default function DealReviewPanel({
       setOpen(true);
       return;
     }
-    if (mode === "simulation" && simDone) return;
     setOpen(true);
     setBusy(true);
     setError(null);
@@ -318,12 +261,9 @@ export default function DealReviewPanel({
         sellerFirstName: firstName,
         sectorId: sectorId || null,
         subSectorId: subSectorId || null,
-        mode,
         sellerProfileId: sellerProfileId || null,
-        clientSectorId: clientModel?.id ?? null,
+        clientSectorId: clientModelIdFromDealReviewSector(sectorId, subSectorId),
         multiEntity,
-        meetingType: mode === "simulation" ? meetingType : null,
-        buyerRole: mode === "simulation" ? buyerRole || null : null,
         messages: history.map((m) => ({ role: m.role, content: m.text })),
         clientDiagnostic: diagnosticBundle.diagnostic,
       });
@@ -333,12 +273,10 @@ export default function DealReviewPanel({
           role: "assistant",
           text: reply.message,
           topic: reply.topic,
-          debrief: mode === "simulation" ? reply.debrief ?? null : null,
         },
       ]);
-      setProposals(mode === "review" ? reply.proposed_updates ?? [] : []);
+      setProposals(reply.proposed_updates ?? []);
       setStarted(true);
-      if (mode === "simulation" && reply.done) setSimDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur revue");
     } finally {
@@ -421,16 +359,8 @@ export default function DealReviewPanel({
               <p className="deal-review-chatbot-kicker">
                 {mode === "simulation" ? "Rendez-vous simulé" : "Revue deal"}
               </p>
-              <h3>
-                {mode === "simulation"
-                  ? buyerRole || meetingTree?.interlocutor || "Acheteur"
-                  : (selectedAgent?.firstName ?? "Directeur commercial")}
-              </h3>
-              {mode === "simulation" ? (
-                <p className="muted deal-review-chatbot-agent">
-                  {clientModel?.label ?? "Modèle générique"}
-                </p>
-              ) : selectedAgent ? (
+              <h3>{selectedAgent?.firstName ?? "Directeur commercial"}</h3>
+              {selectedAgent ? (
                 <p className="muted deal-review-chatbot-agent">
                   {selectedAgent.label}
                 </p>
@@ -464,7 +394,7 @@ export default function DealReviewPanel({
             aria-selected={mode === "review"}
             className={mode === "review" ? "is-active" : ""}
             disabled={busy}
-            onClick={() => onModeChange("review")}
+            onClick={() => setMode("review")}
           >
             Revue du deal
           </button>
@@ -474,12 +404,25 @@ export default function DealReviewPanel({
             aria-selected={mode === "simulation"}
             className={mode === "simulation" ? "is-active" : ""}
             disabled={busy}
-            onClick={() => onModeChange("simulation")}
+            onClick={() => setMode("simulation")}
           >
-            Rendez-vous simulé
+            S’entraîner
           </button>
         </div>
 
+        {mode === "simulation" ? (
+          <MeetingSimulator
+            defaultClientSectorId={clientModelIdFromDealReviewSector(
+              sectorId,
+              subSectorId,
+            )}
+            defaultMultiEntity={multiEntity}
+            sellerProfileId={sellerProfileId}
+            onSellerProfileChange={onSellerProfileChange}
+            disabled={billing.subscriptionBlocked}
+          />
+        ) : (
+        <>
         <div className="deal-review-sector-row">
           <label className="deal-review-sector">
             <span>Ce que tu vends</span>
@@ -496,18 +439,6 @@ export default function DealReviewPanel({
               ))}
             </select>
           </label>
-          <label className="deal-review-sector deal-review-check">
-            <input
-              type="checkbox"
-              checked={multiEntity}
-              disabled={busy}
-              onChange={(e) => setMultiEntity(e.target.checked)}
-            />
-            <span>Client multi-filiales</span>
-          </label>
-        </div>
-
-        <div className="deal-review-sector-row">
           <label className="deal-review-sector">
             <span>Secteur du client</span>
             <select
@@ -542,55 +473,13 @@ export default function DealReviewPanel({
           ) : null}
         </div>
 
-        {mode === "simulation" ? (
-          <div className="deal-review-sector-row">
-            <label className="deal-review-sector">
-              <span>Rendez-vous</span>
-              <select
-                value={meetingType}
-                disabled={busy || started}
-                onChange={(e) => {
-                  setMeetingType(e.target.value as MeetingTypeId);
-                  setBuyerRole("");
-                }}
-              >
-                {MEETING_TYPES.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.id} · {m.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="deal-review-sector">
-              <span>Interlocuteur</span>
-              <select
-                value={buyerRole}
-                disabled={busy || started}
-                onChange={(e) => setBuyerRole(e.target.value)}
-              >
-                <option value="">
-                  {meetingTree?.interlocutor ?? "Interlocuteur type"}
-                </option>
-                {(clientModel?.committee ?? [])
-                  .filter((r) => r !== meetingTree?.interlocutor)
-                  .map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          </div>
-        ) : null}
-
         {error ? <p className="form-error">{error}</p> : null}
 
         <div className="deal-review-messages" ref={scrollerRef}>
           {messages.length === 0 && !busy ? (
             <p className="muted">
-              {mode === "simulation"
-                ? "Entraîne-toi : l’IA joue l’acheteur selon le secteur de ton client et ce que tu vends. Écris « débrief » pour terminer. Rien n’est écrit dans la fiche."
-                : "Lance la revue pour challenger les constats du diagnostic. Rien n’est écrit sans ton « Appliquer »."}
+              Lance la revue pour challenger les constats du diagnostic. Rien
+              n’est écrit sans ton « Appliquer ».
             </p>
           ) : null}
           {messages.map((m, i) => (
@@ -603,15 +492,11 @@ export default function DealReviewPanel({
               }
             >
               {m.role === "assistant" ? (
-                mode === "simulation" ? (
-                  <AgentAvatarFace firstName="Acheteur" size="sm" />
-                ) : (
-                  <AgentAvatarFace
-                    firstName={selectedAgent?.firstName}
-                    avatar={selectedAgent?.avatar}
-                    size="sm"
-                  />
-                )
+                <AgentAvatarFace
+                  firstName={selectedAgent?.firstName}
+                  avatar={selectedAgent?.avatar}
+                  size="sm"
+                />
               ) : null}
               <div
                 className={
@@ -624,7 +509,6 @@ export default function DealReviewPanel({
                   <span className="deal-review-topic">{m.topic}</span>
                 ) : null}
                 {m.text}
-                {m.debrief ? <DebriefBlock debrief={m.debrief} /> : null}
               </div>
             </div>
           ))}
@@ -665,18 +549,7 @@ export default function DealReviewPanel({
             disabled={busy || Boolean(sectorId && !subSectorId)}
             onClick={() => void startOrContinue()}
           >
-            {mode === "simulation"
-              ? "Commencer le rendez-vous"
-              : "Lancer la revue"}
-          </button>
-        ) : mode === "simulation" && simDone ? (
-          <button
-            type="button"
-            className="deal-review-chatbot-start"
-            disabled={busy}
-            onClick={resetConversation}
-          >
-            Nouveau rendez-vous
+            Lancer la revue
           </button>
         ) : (
           <form className="deal-review-composer" onSubmit={onSubmit}>
@@ -685,16 +558,14 @@ export default function DealReviewPanel({
               value={input}
               disabled={busy}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                mode === "simulation"
-                  ? "Ta question à l’acheteur… (« débrief » pour finir)"
-                  : "Ta réponse…"
-              }
+              placeholder="Ta réponse…"
             />
             <button type="submit" disabled={busy || !input.trim()}>
               Envoyer
             </button>
           </form>
+        )}
+        </>
         )}
       </section>
     ) : null;
@@ -765,38 +636,5 @@ function AgentAvatarFace({
     >
       {initials}
     </span>
-  );
-}
-
-function DebriefBlock({ debrief }: { debrief: Debrief }) {
-  const list = (title: string, items?: string[]) =>
-    items && items.length > 0 ? (
-      <div className="deal-review-debrief-part">
-        <strong>{title}</strong>
-        <ul>
-          {items.map((it, i) => (
-            <li key={i}>{it}</li>
-          ))}
-        </ul>
-      </div>
-    ) : null;
-  return (
-    <div className="deal-review-debrief">
-      {list("Questions posées", debrief.questions_posees)}
-      {list("Questions oubliées", debrief.questions_oubliees)}
-      {list("Signaux de risque manqués", debrief.signaux_rates)}
-      {typeof debrief.issue_atteinte === "boolean" ? (
-        <p>
-          <strong>Issue du rendez-vous :</strong>{" "}
-          {debrief.issue_atteinte ? "atteinte" : "pas encore atteinte"}
-        </p>
-      ) : null}
-      {debrief.prochaine_etape ? (
-        <p>
-          <strong>À obtenir dans le vrai deal :</strong>{" "}
-          {debrief.prochaine_etape}
-        </p>
-      ) : null}
-    </div>
   );
 }

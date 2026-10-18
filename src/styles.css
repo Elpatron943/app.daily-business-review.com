@@ -14006,7 +14006,7 @@ a {
 }
 
 
-/* Modèles sectoriels : mode du chatbot, profil vendeur, débrief de rendez-vous simulé */
+/* Modèles sectoriels : onglets du chatbot et entraînement à boutons */
 .deal-review-mode {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -14037,22 +14037,144 @@ a {
   cursor: not-allowed;
 }
 
-.deal-review-check {
+.sim-root {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sim-chips {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.sim-chips legend {
+  padding: 0;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.sim-chips-row,
+.sim-actions {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
-  align-self: end;
-  padding-bottom: 0.35rem;
+}
+
+.sim-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.4rem 0.75rem;
+  background: var(--panel, #fff);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 2.25rem;
+}
+
+.sim-chip:hover:not(:disabled) {
+  border-color: #0f766e;
+}
+
+.sim-chip.is-active {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+.sim-hint {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.sim-messages {
+  max-height: 34vh;
+}
+
+.sim-opening {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.sim-step {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sim-buyer {
+  background: hsl(32 55% 38%);
+  color: #fff;
+}
+
+.sim-pick.is-argument,
+.sim-pick.is-vague {
+  border-style: dashed;
+}
+
+.sim-flag {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, #b45309 40%, var(--line));
+  background: color-mix(in srgb, #b45309 10%, var(--panel, #fff));
+}
+
+.sim-flag.is-risque_majeur {
+  border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
+  background: color-mix(in srgb, #b91c1c 10%, var(--panel, #fff));
+}
+
+.sim-choices {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.sim-choices-label {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.sim-choice {
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  background: var(--panel, #fff);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  cursor: pointer;
+  min-height: 2.75rem;
+}
+
+.sim-choice:hover:not(:disabled) {
+  border-color: #0f766e;
+  background: color-mix(in srgb, #0f766e 6%, var(--panel, #fff));
+}
+
+.sim-debrief h4 {
+  margin: 0;
+  font-size: 0.95rem;
 }
 
 .deal-review-debrief {
-  margin-top: 0.6rem;
+  margin-top: 0.25rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 0.4rem;
+  gap: 0.45rem;
   font-size: 0.86rem;
-  white-space: normal;
 }
 
 .deal-review-debrief ul {
