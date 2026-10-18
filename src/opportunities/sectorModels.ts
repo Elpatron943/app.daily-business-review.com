@@ -10,7 +10,7 @@
  * - le profil vendeur (ce que le commercial vend) ajoute ses objections.
  *
  * Niveau de preuve : les règles marquées « source » sont sourcées et datées ;
- * le reste est une hypothèse à calibrer sur 30 deals clos par secteur.
+ * le reste est une hypothèse, ajustée par le fondateur selon les retours clients.
  * Miroir lisible : cerveau DBR, notes secteur-* et projet-modeles-sectoriels.
  */
 
