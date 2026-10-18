@@ -20,6 +20,7 @@
 
 import type { BlockerFactorId } from "./blockerFactors";
 import type { ComplexityLevel, MeetingTypeId } from "./sectorModels";
+import type { DiscoveryStageId } from "./meetingPatterns";
 
 export type QuestionVariant = {
   buyerLine?: string;
@@ -31,6 +32,8 @@ export type QuestionVariant = {
 export type MetierQuestion = {
   id: string;
   meeting: MeetingTypeId;
+  /** Étape de la trame de découverte ; par défaut, déduite du facteur. */
+  stage?: DiscoveryStageId;
   factor: BlockerFactorId;
   minLevel: ComplexityLevel;
   theme: string;
@@ -553,9 +556,13 @@ export const CROSS_RULES: readonly CrossRule[] = [
     why: "DORA fait du suivi des prestataires TIC une obligation : la valeur est forte, le blocage se déplace vers les achats et la conformité.",
     addLikely: ["conformite", "achats"],
     variants: {
-      "r1-urgence": {
+      "r1-situation": {
         question: "Comment tenez-vous aujourd'hui le registre d'informations DORA de vos contrats TIC ?",
-        good: "Dans un tableur, et l'ACPR va nous le demander.",
+        good: "Dans un tableur, mis à jour quand on y pense.",
+      },
+      "r1-urgence": {
+        question: "Que se passe-t-il si l'ACPR vous demande votre registre DORA et qu'il est incomplet ?",
+        good: "Ce serait un constat de contrôle : la direction ne veut pas en entendre parler.",
       },
     },
     source: "https://www.legiscope.com/blog/dora-prestataires-tic-tierce-partie.html",

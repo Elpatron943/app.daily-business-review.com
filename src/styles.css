@@ -14292,3 +14292,51 @@ a {
   display: grid;
   gap: 0.2rem;
 }
+
+/* Trame de découverte du débrief */
+.sim-stages {
+  list-style: none;
+  padding-left: 0 !important;
+  margin: 0.35rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.sim-stages li {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+}
+
+.sim-stage-status {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sim-stages li.is-couverte {
+  border-color: color-mix(in srgb, #0f766e 45%, var(--line));
+}
+
+.sim-stages li.is-couverte .sim-stage-status {
+  color: #0f766e;
+}
+
+.sim-stages li.is-manquee {
+  border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
+}
+
+.sim-stages li.is-manquee .sim-stage-status {
+  color: #b91c1c;
+}
+
+.sim-stages li.is-perdue {
+  border-style: dashed;
+  opacity: 0.75;
+}

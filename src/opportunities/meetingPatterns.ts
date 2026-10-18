@@ -40,6 +40,59 @@ import {
 
 export type ChoiceKind = "question" | "argument" | "vague";
 
+/**
+ * Trame de découverte commune à tous les secteurs : chaque question du moteur
+ * appartient à une étape. Situation → problème → impact → événement déclencheur
+ * → solution attendue → décision → prochaine étape.
+ */
+export type DiscoveryStageId =
+  | "situation"
+  | "probleme"
+  | "impact"
+  | "declencheur"
+  | "solution"
+  | "decision"
+  | "objection"
+  | "suite";
+
+export const DISCOVERY_STAGES: readonly { id: DiscoveryStageId; label: string; question: string }[] = [
+  { id: "situation", label: "Situation actuelle", question: "Comment ça se passe aujourd'hui, avec qui et avec quels outils ?" },
+  { id: "probleme", label: "Problème", question: "Qu'est-ce qui ne va pas, et qui en souffre ?" },
+  { id: "impact", label: "Impact", question: "Combien ça coûte, sur quel indicateur ?" },
+  { id: "declencheur", label: "Événement déclencheur", question: "Que se passe-t-il si rien ne change, et avant quelle date faut-il décider ?" },
+  { id: "solution", label: "Solution attendue", question: "À quoi le client reconnaîtra-t-il la bonne solution ?" },
+  { id: "decision", label: "Décision", question: "Qui décide, sur quel budget, par quel circuit ?" },
+  { id: "objection", label: "Objection", question: "Qu'est-ce qui inquiète le client ?" },
+  { id: "suite", label: "Prochaine étape", question: "Qu'est-ce qui est daté et engagé ?" },
+];
+
+const STAGE_ORDER: Record<DiscoveryStageId, number> = Object.fromEntries(
+  DISCOVERY_STAGES.map((s, i) => [s.id, i]),
+) as Record<DiscoveryStageId, number>;
+
+/** Étape de découverte par défaut d'un facteur de blocage (relances, retours, questions métier). */
+const STAGE_BY_FACTOR: Record<BlockerFactorId, DiscoveryStageId> = {
+  decideur: "decision",
+  valeur: "impact",
+  "statu-quo": "declencheur",
+  budget: "decision",
+  priorites: "situation",
+  influence: "decision",
+  consensus: "decision",
+  achats: "decision",
+  conformite: "solution",
+  concurrence: "situation",
+  capacite: "solution",
+};
+
+export function stageForFactor(factor: BlockerFactorId | null | undefined): DiscoveryStageId {
+  return factor ? STAGE_BY_FACTOR[factor] : "suite";
+}
+
+export function getDiscoveryStage(id: DiscoveryStageId) {
+  return DISCOVERY_STAGES.find((s) => s.id === id)!;
+}
+
 export type SimRisk = {
   factor: BlockerFactorId;
   level: "risque" | "risque_majeur";
@@ -58,6 +111,8 @@ export type SimStep = {
   /** base : question du rendez-vous ; relance : débloquée par une bonne question ; retour : blocage raté qui revient. */
   origin: "base" | "relance" | "retour";
   theme: string;
+  /** Étape de la trame de découverte (situation, problème, impact…). */
+  stage: DiscoveryStageId;
   /** Facteur de blocage que cette étape permet de vérifier. */
   factor: BlockerFactorId | null;
   buyerLine: string;
@@ -136,7 +191,16 @@ export type BlockerOutcome = {
   action: string;
 };
 
+export type StageOutcome = {
+  stage: DiscoveryStageId;
+  label: string;
+  /** couverte : au moins une bonne question ; manquee : posée sans bonne question ; perdue : jamais atteinte. */
+  status: "couverte" | "manquee" | "perdue";
+};
+
 export type SimDebrief = {
+  /** Trame de découverte : chaque étape du rendez-vous, couverte ou non. */
+  stages: StageOutcome[];
   asked: string[];
   missed: string[];
   risksFound: SimRisk[];
@@ -177,6 +241,7 @@ type PatternOutput = {
 type PatternDef = {
   id: string;
   theme: string;
+  stage: DiscoveryStageId;
   meeting: MeetingTypeId;
   factor: BlockerFactorId | null;
   /** Niveau de complexité à partir duquel la question apparaît (1 à 4). */
@@ -186,7 +251,7 @@ type PatternDef = {
 };
 
 const ISSUES: Record<MeetingTypeId, string> = {
-  R1: "Problème relié à un indicateur, décideurs et veto identifiés, budget et mode d'achat connus, démonstration datée.",
+  R1: "Situation et problème décrits, coût chiffré, événement qui oblige à décider, décideurs et veto identifiés, budget et mode d'achat connus, démonstration datée.",
   R2: "Cas d'usage validé par les utilisateurs, soutiens et opposants connus, critère de succès fixé.",
   R3: "Exigences listées avec leurs preuves, clauses connues, capacité de déploiement vérifiée, date de l'avis.",
   R4: "Procédure, budget, signataire, consensus interne et date de décision connus.",
@@ -208,31 +273,75 @@ function q(text: string): string {
 const PATTERNS: PatternDef[] = [
   // ---------- R1 · Découverte ----------
   {
+    id: "r1-situation",
+    theme: "Les outils et l'organisation",
+    stage: "situation",
+    meeting: "R1",
+    factor: "concurrence",
+    minLevel: 1,
+    build: () => ({
+      buyerLine: "On m'a dit que vous pouviez nous aider. Je vous écoute, j'ai vingt minutes.",
+      question: q("Comment ça se passe aujourd'hui : qui s'en occupe, et avec quels outils ?"),
+      good: "Chacun tient son tableur, et on consolide à la main en fin de mois.",
+      riskReply: "On a un outil maison qui fait le travail, à peu près. L'équipe y tient.",
+      risk: {
+        level: "risque",
+        text: "Fait-maison en place : l'équipe est attachée à son outil actuel.",
+        action: "Comprendre ce que l'outil en place fait bien, et qui l'a construit.",
+      },
+      argument: [q("Laissez-moi vous montrer comment nous faisons, nous."), "Allez-y… mais vous ne savez pas encore comment on travaille."],
+      vague: [q("Vous êtes bien organisés ?"), "Oui, ça va."],
+    }),
+  },
+  {
     id: "r1-probleme",
-    theme: "Le problème et sa valeur",
+    theme: "Ce qui ne va pas, et pour qui",
+    stage: "probleme",
     meeting: "R1",
     factor: "valeur",
     minLevel: 1,
     build: () => ({
-      buyerLine: "On m'a dit que vous pouviez nous aider. Je vous écoute, j'ai vingt minutes.",
-      question: q("Quel problème voulez-vous résoudre, et que vous coûte-t-il aujourd'hui ?"),
-      good: "Mes équipes perdent du temps à consolider l'information, et la direction le voit dans ses indicateurs.",
+      buyerLine: "Ça tourne, même si ce n'est pas parfait.",
+      question: q("Qu'est-ce qui ne va pas dans cette façon de faire, et qui en souffre le plus ?"),
+      good: "Les chiffres arrivent trop tard : les managers pilotent à l'aveugle, et la direction s'en plaint.",
       riskReply: "Je ne sais pas trop, c'est la direction qui m'a demandé de regarder.",
       risk: {
         level: "risque",
-        text: "Valeur non perçue : le client ne formule ni problème ni gain.",
-        action: "Faire formuler le gain attendu et son indicateur, avec ses mots.",
+        text: "Valeur non perçue : le client ne formule pas de problème.",
+        action: "Faire formuler le problème et qui le vit, avec ses mots.",
       },
       argument: [q("Je vous présente d'abord ce que fait notre offre."), "Très bien… mais je ne vois pas encore en quoi ça me concerne."],
       vague: [q("Tout va bien de votre côté ?"), "Oui, globalement ça va."],
     }),
   },
   {
+    id: "r1-impact",
+    theme: "Ce que ça coûte",
+    stage: "impact",
+    meeting: "R1",
+    factor: "valeur",
+    minLevel: 2,
+    build: () => ({
+      buyerLine: "C'est agaçant, c'est sûr.",
+      question: q("Combien ça vous coûte : en temps, en affaires perdues, sur quel indicateur ?"),
+      good: "Plusieurs jours par mois pour chaque manager, et des affaires perdues faute d'avoir vu le risque à temps.",
+      riskReply: "Aucune idée, personne ne l'a jamais chiffré.",
+      risk: {
+        level: "risque",
+        text: "Impact non chiffré : sans coût connu, le projet ne passera aucun arbitrage.",
+        action: "Chiffrer avec le client un indicateur et sa valeur actuelle avant la démonstration.",
+      },
+      argument: [q("Nos clients gagnent beaucoup de temps avec nous."), "Vos clients, peut-être. Nous, on ne sait pas."],
+      vague: [q("Ça vous coûte cher ?"), "Un peu, sûrement."],
+    }),
+  },
+  {
     id: "r1-urgence",
-    theme: "L'urgence",
+    theme: "Si rien ne change",
+    stage: "declencheur",
     meeting: "R1",
     factor: "statu-quo",
-    minLevel: 2,
+    minLevel: 1,
     build: () => ({
       buyerLine: "C'est un sujet dont on parle depuis un moment.",
       question: q("Que se passe-t-il si vous ne faites rien d'ici un an ?"),
@@ -248,8 +357,30 @@ const PATTERNS: PatternDef[] = [
     }),
   },
   {
+    id: "r1-evenement",
+    theme: "L'échéance qui oblige à décider",
+    stage: "declencheur",
+    meeting: "R1",
+    factor: "statu-quo",
+    minLevel: 3,
+    build: () => ({
+      buyerLine: "Ce n'est pas le seul sujet sur la table, vous savez.",
+      question: q("Y a-t-il une date qui oblige à décider : un audit, une échéance réglementaire, la fin d'un contrat ?"),
+      good: "Notre contrat actuel se termine en juin : il faut avoir choisi avant.",
+      riskReply: "Pas vraiment de date : on avancera quand on aura le temps.",
+      risk: {
+        level: "risque_majeur",
+        text: "Pas d'événement déclencheur : rien n'oblige à décider à une date précise, le projet peut glisser.",
+        action: "Trouver l'échéance externe (audit, contrat, réglementation) qui fixe la date de décision.",
+      },
+      argument: [q("Si vous signez ce mois-ci, je vous fais une remise."), "Une remise ne crée pas d'urgence chez nous."],
+      vague: [q("Vous avez un calendrier en tête ?"), "Pas vraiment."],
+    }),
+  },
+  {
     id: "r1-entite",
     theme: "Qui paie dans le groupe",
+    stage: "decision",
     meeting: "R1",
     factor: "budget",
     minLevel: 1,
@@ -271,6 +402,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r1-decideurs",
     theme: "Les décideurs et le veto",
+    stage: "decision",
     meeting: "R1",
     factor: "decideur",
     minLevel: 1,
@@ -291,6 +423,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r1-budget",
     theme: "Le budget",
+    stage: "decision",
     meeting: "R1",
     factor: "budget",
     minLevel: 1,
@@ -312,6 +445,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r1-priorites",
     theme: "Les projets en cours",
+    stage: "situation",
     meeting: "R1",
     factor: "priorites",
     minLevel: 3,
@@ -332,6 +466,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r1-achat",
     theme: "Le mode d'achat",
+    stage: "decision",
     meeting: "R1",
     factor: "achats",
     minLevel: 2,
@@ -352,6 +487,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r1-historique",
     theme: "Les tentatives passées",
+    stage: "situation",
     meeting: "R1",
     factor: "concurrence",
     minLevel: 4,
@@ -372,6 +508,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r1-calendrier",
     theme: "Les échéances internes",
+    stage: "decision",
     meeting: "R1",
     factor: "priorites",
     minLevel: 4,
@@ -392,6 +529,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r1-suite",
     theme: "La prochaine étape",
+    stage: "suite",
     meeting: "R1",
     factor: null,
     minLevel: 1,
@@ -408,6 +546,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r2-cas",
     theme: "Le cas concret",
+    stage: "solution",
     meeting: "R2",
     factor: "valeur",
     minLevel: 1,
@@ -428,6 +567,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r2-influence",
     theme: "Soutiens et opposants",
+    stage: "decision",
     meeting: "R2",
     factor: "influence",
     minLevel: 2,
@@ -448,6 +588,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r2-utilisateurs",
     theme: "Les utilisateurs",
+    stage: "solution",
     meeting: "R2",
     factor: "consensus",
     minLevel: 1,
@@ -468,6 +609,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r2-groupe",
     theme: "Le groupe dans la boucle",
+    stage: "decision",
     meeting: "R2",
     factor: "consensus",
     minLevel: 1,
@@ -489,6 +631,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r2-concurrence",
     theme: "Les alternatives",
+    stage: "solution",
     meeting: "R2",
     factor: "concurrence",
     minLevel: 2,
@@ -509,6 +652,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r2-valeur-chiffree",
     theme: "La valeur chiffrée",
+    stage: "impact",
     meeting: "R2",
     factor: "valeur",
     minLevel: 3,
@@ -529,6 +673,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r2-integration",
     theme: "L'intégration",
+    stage: "solution",
     meeting: "R2",
     factor: "capacite",
     minLevel: 4,
@@ -549,6 +694,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r2-critere",
     theme: "Le critère de succès",
+    stage: "solution",
     meeting: "R2",
     factor: "valeur",
     minLevel: 1,
@@ -571,6 +717,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r3-exigences",
     theme: "Les exigences",
+    stage: "solution",
     meeting: "R3",
     factor: "conformite",
     minLevel: 1,
@@ -591,6 +738,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r3-donnees",
     theme: "Les données et leurs règles",
+    stage: "solution",
     meeting: "R3",
     factor: null,
     minLevel: 2,
@@ -605,6 +753,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r3-capacite",
     theme: "La capacité à déployer",
+    stage: "solution",
     meeting: "R3",
     factor: "capacite",
     minLevel: 2,
@@ -625,6 +774,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r3-contrat",
     theme: "Les clauses",
+    stage: "decision",
     meeting: "R3",
     factor: "conformite",
     minLevel: 2,
@@ -645,6 +795,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r3-reversibilite",
     theme: "La sortie",
+    stage: "decision",
     meeting: "R3",
     factor: "conformite",
     minLevel: 3,
@@ -665,6 +816,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r3-comite",
     theme: "Le comité de validation",
+    stage: "decision",
     meeting: "R3",
     factor: "decideur",
     minLevel: 4,
@@ -685,6 +837,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r3-avis",
     theme: "L'avis et son délai",
+    stage: "suite",
     meeting: "R3",
     factor: null,
     minLevel: 1,
@@ -701,6 +854,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r4-procedure",
     theme: "La procédure",
+    stage: "decision",
     meeting: "R4",
     factor: "achats",
     minLevel: 1,
@@ -721,6 +875,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r4-groupe",
     theme: "Le référencement groupe",
+    stage: "decision",
     meeting: "R4",
     factor: "achats",
     minLevel: 1,
@@ -742,6 +897,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r4-budget",
     theme: "L'arbitrage budgétaire",
+    stage: "decision",
     meeting: "R4",
     factor: "budget",
     minLevel: 2,
@@ -762,6 +918,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r4-consensus",
     theme: "Le consensus interne",
+    stage: "decision",
     meeting: "R4",
     factor: "consensus",
     minLevel: 3,
@@ -782,6 +939,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r4-signataire",
     theme: "Le signataire",
+    stage: "decision",
     meeting: "R4",
     factor: "decideur",
     minLevel: 1,
@@ -802,6 +960,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r4-conditions",
     theme: "Les conditions",
+    stage: "decision",
     meeting: "R4",
     factor: null,
     minLevel: 2,
@@ -816,6 +975,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r4-juridique",
     theme: "La relecture juridique",
+    stage: "decision",
     meeting: "R4",
     factor: "conformite",
     minLevel: 4,
@@ -836,6 +996,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r4-delai",
     theme: "La date de décision",
+    stage: "suite",
     meeting: "R4",
     factor: null,
     minLevel: 1,
@@ -855,6 +1016,7 @@ function sellerObjectionPattern(seller: SellerProfile, objection: string, meetin
   return {
     id: "objection-vendeur",
     theme: `L'objection (${seller.label})`,
+    stage: "objection",
     meeting,
     factor: seller.objectionFactor,
     minLevel: 1,
@@ -887,6 +1049,7 @@ function metierPattern(m: MetierQuestion): PatternDef {
   return {
     id: `metier-${m.id}`,
     theme: m.theme,
+    stage: m.stage ?? stageForFactor(m.factor),
     meeting: m.meeting,
     factor: m.factor,
     minLevel: m.minLevel,
@@ -1037,6 +1200,14 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
       .map(metierPattern);
     defs.splice(Math.max(defs.length - 1, 0), 0, ...extra);
   }
+  // En découverte, les questions suivent la trame : situation, problème, impact, déclencheur…
+  if (meeting === "R1") {
+    const ordered = defs
+      .map((d, i) => ({ d, i }))
+      .sort((a, b) => STAGE_ORDER[a.d.stage] - STAGE_ORDER[b.d.stage] || a.i - b.i)
+      .map(({ d }) => d);
+    defs.splice(0, defs.length, ...ordered);
+  }
   const variants: Record<string, QuestionVariant> = {
     ...(metier?.domain.variants ?? {}),
     ...Object.assign({}, ...cross.map((c) => c.variants ?? {})),
@@ -1080,6 +1251,7 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
       id: def.id,
       origin: "base" as const,
       theme: def.theme,
+      stage: def.stage,
       factor: def.factor,
       buyerLine: out.buyerLine,
       choices,
@@ -1231,6 +1403,7 @@ function followUpStep(factor: BlockerFactorId, rand: () => number): SimStep {
     id: `relance-${factor}`,
     origin: "relance",
     theme: `Relance : ${label}`,
+    stage: stageForFactor(factor),
     factor,
     buyerLine: f.buyerLine,
     choices: shuffle(
@@ -1255,6 +1428,7 @@ function carriedStep(factor: BlockerFactorId, index: number, rand: () => number)
     id: `retour-${factor}-${index}`,
     origin: "retour",
     theme: `Blocage qui revient : ${factorDef.label}`,
+    stage: stageForFactor(factor),
     factor,
     buyerLine: ESCALATIONS[factor],
     choices: shuffle(
@@ -1451,7 +1625,19 @@ export function buildDebrief(sim: Simulation, state: SimState): SimDebrief {
         : missed[0]
           ? `Dans le vrai deal, pose la question oubliée : ${missed[0]}`
           : `Issue atteinte : ${sim.issue}`;
+  const stageIds = [...new Set([...state.played.map((p) => p.step.stage), ...state.lost.map((s) => s.stage)])]
+    .sort((a, b) => STAGE_ORDER[a] - STAGE_ORDER[b]);
+  const stages: StageOutcome[] = stageIds.map((id) => {
+    const played = state.played.filter((p) => p.step.stage === id);
+    const status: StageOutcome["status"] = played.some((p) => p.turn.kind === "question")
+      ? "couverte"
+      : played.length
+        ? "manquee"
+        : "perdue";
+    return { stage: id, label: getDiscoveryStage(id).label, status };
+  });
   return {
+    stages,
     asked,
     missed,
     risksFound,

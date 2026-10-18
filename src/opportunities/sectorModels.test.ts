@@ -23,6 +23,7 @@ import {
   type SimState,
   type SimStep,
   type Simulation,
+  DISCOVERY_STAGES,
 } from "./meetingPatterns";
 import { DEAL_REVIEW_SECTORS } from "./dealReviewSectors";
 import { METIER_PACKS, crossRulesFor } from "./metierPacks";
@@ -304,9 +305,11 @@ describe("enchaînement des questions", () => {
     expect(currentStep(st)!.factor).toBe(factor);
     // relance ratée : trouvé mais pas creusé
     st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "vague")!.id);
+    // Une autre question sur le même facteur redonne une chance de relance : on la rate aussi.
     while (!isFinished(st)) {
       const step = currentStep(st)!;
-      st = applyChoice(st, step.choices.find((c) => c.kind === "question")!.id);
+      const kind = step.origin === "relance" ? "argument" : "question";
+      st = applyChoice(st, step.choices.find((c) => c.kind === kind)!.id);
     }
     const d = buildDebrief(sim, st);
     expect(d.blockers.find((b) => b.factor === factor)!.status).toBe("repere");
@@ -395,9 +398,37 @@ describe("packs métier", () => {
 
   it("une règle croisée change le rendez-vous : risque fournisseur vendu à une banque", () => {
     const banque = buildSimulation({ clientSectorId: "banque-assurance", clientSize: "eti", sellerProfileId: null, meeting: "R1", seed: 3, metierId: "cyber-tprm" });
+    expect(banque.steps.find((s) => s.id === "r1-situation")!.goodQuestion).toContain("DORA");
     expect(banque.steps.find((s) => s.id === "r1-urgence")!.goodQuestion).toContain("DORA");
     const industrie = buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: null, meeting: "R1", seed: 3, metierId: "cyber-tprm" });
     expect(industrie.steps.find((s) => s.id === "r1-urgence")!.goodQuestion).not.toContain("DORA");
     expect(crossRulesFor("cyber-tprm", "banque-assurance")).toHaveLength(1);
+  });
+});
+
+describe("trame de découverte", () => {
+  it("la découverte suit situation, problème, impact, déclencheur, puis décision", () => {
+    const sim = buildSimulation({ clientSectorId: "banque-assurance", clientSize: "ge", sellerProfileId: "editeur-saas", meeting: "R1", seed: 3 });
+    const order = sim.steps.map((s) => DISCOVERY_STAGES.findIndex((d) => d.id === s.stage));
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const stages = new Set(sim.steps.map((s) => s.stage));
+    for (const id of ["situation", "probleme", "impact", "declencheur", "decision", "suite"] as const) expect(stages.has(id)).toBe(true);
+  });
+
+  it("même un deal simple pose la situation, le problème et ce qui se passe si rien ne change", () => {
+    const sim = buildSimulation({ clientSectorId: "generique", clientSize: "pme", sellerProfileId: null, meeting: "R1", seed: 1 });
+    expect(sim.complexity.level).toBe(1);
+    const ids = sim.steps.map((s) => s.id);
+    expect(ids.slice(0, 3)).toEqual(["r1-situation", "r1-probleme", "r1-urgence"]);
+  });
+
+  it("le débrief dit quelles étapes de la trame sont couvertes", () => {
+    const sim = buildSimulation({ clientSectorId: "industrie", clientSize: "pme", sellerProfileId: null, meeting: "R1", seed: 2 });
+    let st = startSimulation(sim);
+    st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "vague")!.id);
+    while (!isFinished(st)) st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "question")!.id);
+    const d = buildDebrief(sim, st);
+    expect(d.stages[0]).toMatchObject({ stage: "situation", status: "manquee" });
+    expect(d.stages.find((x) => x.stage === "probleme")!.status).toBe("couverte");
   });
 });

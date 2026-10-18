@@ -16,6 +16,7 @@ import {
   buildSimulation,
   buyerLineFor,
   currentStep,
+  getDiscoveryStage,
   isFinished,
   startSimulation,
   type SimState,
@@ -104,6 +105,8 @@ function PatienceMeter({ value, max }: { value: number; max: number }) {
     </p>
   );
 }
+
+const STAGE_STATUS = { couverte: "Couverte", manquee: "Manquée", perdue: "Pas atteinte" } as const;
 
 const STATUS_LABEL = {
   creuse: "Trouvé et creusé",
@@ -310,7 +313,9 @@ export default function MeetingSimulator({
                 A
               </span>
               <div className={`deal-review-bubble bot${s.origin === "retour" ? " sim-escalation" : ""}`}>
-                <span className="deal-review-topic">{s.theme}</span>
+                <span className="deal-review-topic">
+                  {getDiscoveryStage(s.stage).label} · {s.theme}
+                </span>
                 {buyerLine}
               </div>
             </div>
@@ -353,7 +358,9 @@ export default function MeetingSimulator({
 
       {phase === "play" && step ? (
         <div className="sim-choices" role="group" aria-label="Ta réponse">
-          <p className="sim-choices-label">Étape {state.played.length + 1} · que dis-tu ?</p>
+          <p className="sim-choices-label">
+            Étape {state.played.length + 1} · {getDiscoveryStage(step.stage).label} · que dis-tu ?
+          </p>
           {step.choices.map((c) => (
             <button
               key={c.id}
@@ -371,6 +378,17 @@ export default function MeetingSimulator({
       {debrief ? (
         <div className="deal-review-debrief sim-debrief">
           <h4>Débrief</h4>
+          <div className="deal-review-debrief-part">
+            <strong>La trame de découverte</strong>
+            <ol className="sim-stages">
+              {debrief.stages.map((st) => (
+                <li key={st.stage} className={`is-${st.status}`}>
+                  <span>{st.label}</span>
+                  <span className="sim-stage-status">{STAGE_STATUS[st.status]}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
           <div className="deal-review-debrief-part">
             <strong>Ce qui bloquait ce deal</strong>
             <ul className="sim-blockers">
