@@ -14200,11 +14200,11 @@ a {
   line-height: 1.4;
 }
 
-.sim-blockers li.is-found {
+.sim-blockers li.is-creuse {
   border-color: color-mix(in srgb, #0f766e 45%, var(--line));
 }
 
-.sim-blockers li.is-missed {
+.sim-blockers li.is-manque {
   border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
 }
 
@@ -14215,11 +14215,11 @@ a {
   letter-spacing: 0.03em;
 }
 
-.sim-blockers li.is-found .sim-blocker-status {
+.sim-blockers li.is-creuse .sim-blocker-status {
   color: #0f766e;
 }
 
-.sim-blockers li.is-missed .sim-blocker-status {
+.sim-blockers li.is-manque .sim-blocker-status {
   color: #b91c1c;
 }
 
@@ -14248,4 +14248,47 @@ a {
   border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 0.86rem;
+}
+
+.sim-blockers li.is-repere {
+  border-color: color-mix(in srgb, #b45309 45%, var(--line));
+}
+
+.sim-blockers li.is-repere .sim-blocker-status {
+  color: #b45309;
+}
+
+.sim-patience {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.sim-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-left: 0.2rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+}
+
+.sim-dot.is-on {
+  background: #0f766e;
+  border-color: #0f766e;
+}
+
+.deal-review-bubble.sim-escalation {
+  border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
+}
+
+.sim-events {
+  margin: 0.2rem 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.2rem;
 }

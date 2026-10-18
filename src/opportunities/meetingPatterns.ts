@@ -49,6 +49,8 @@ export type SimChoice = {
 
 export type SimStep = {
   id: string;
+  /** base : question du rendez-vous ; relance : débloquée par une bonne question ; retour : blocage raté qui revient. */
+  origin: "base" | "relance" | "retour";
   theme: string;
   /** Facteur de blocage que cette étape permet de vérifier. */
   factor: BlockerFactorId | null;
@@ -71,8 +73,38 @@ export type Simulation = {
   opening: string;
   /** Facteurs qui bloquent réellement ce deal (cachés pendant la partie). */
   blockers: BlockerFactorId[];
+  /** Blocages ratés au rendez-vous précédent, qui reviennent en début de rendez-vous. */
+  carried: BlockerFactorId[];
+  /** Facteurs déjà explorés aux rendez-vous précédents (l'acheteur s'en souvient). */
+  known: BlockerFactorId[];
+  /** Nombre de réponses faibles que l'acheteur tolère avant d'écourter. */
+  patience: number;
   steps: SimStep[];
   issue: string;
+};
+
+export type PlayedStep = {
+  step: SimStep;
+  /** Réplique de l'acheteur telle qu'affichée (avec un éventuel rappel). */
+  buyerLine: string;
+  turn: SimTurn;
+};
+
+export type SimState = {
+  /** Étapes restantes ; la première est l'étape en cours. */
+  queue: SimStep[];
+  played: PlayedStep[];
+  patience: number;
+  maxPatience: number;
+  endedEarly: boolean;
+  /** Questions perdues quand l'acheteur écourte. */
+  lost: SimStep[];
+  closingLine: string | null;
+  known: BlockerFactorId[];
+  revealed: BlockerFactorId[];
+  dug: BlockerFactorId[];
+  /** Récit de la partie, pour le débrief. */
+  events: string[];
 };
 
 export type SimTurn = {
@@ -86,6 +118,10 @@ export type SimTurn = {
 export type BlockerOutcome = {
   factor: BlockerFactorId;
   label: string;
+  /** creuse : repéré puis relancé ; repere : repéré sans relance ; manque : pas trouvé. */
+  status: "creuse" | "repere" | "manque";
+  /** Blocage revenu d'un rendez-vous précédent. */
+  carried: boolean;
   found: boolean;
   /** Ce qui l'a révélé, ou la question qui l'aurait révélé. */
   evidence: string;
@@ -99,6 +135,15 @@ export type SimDebrief = {
   risksMissed: SimRisk[];
   /** Ce qui bloquait réellement le deal, repéré ou non. */
   blockers: BlockerOutcome[];
+  /** Questions perdues parce que l'acheteur a écourté. */
+  lost: string[];
+  endedEarly: boolean;
+  /** Récit de l'enchaînement. */
+  events: string[];
+  /** Blocages non traités, qui reviendront au rendez-vous suivant. */
+  carryOver: BlockerFactorId[];
+  /** Facteurs explorés, dont l'acheteur se souviendra. */
+  known: BlockerFactorId[];
   issueReached: boolean;
   nextStep: string;
 };
@@ -889,6 +934,10 @@ export type SimulationSetup = {
   clientSize?: ClientSizeId | null;
   meeting: MeetingTypeId;
   seed: number;
+  /** Blocages ratés au rendez-vous précédent. */
+  carryOver?: BlockerFactorId[];
+  /** Facteurs explorés aux rendez-vous précédents. */
+  known?: BlockerFactorId[];
 };
 
 export function buildSimulation(setup: SimulationSetup): Simulation {
@@ -928,12 +977,16 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     );
   }
 
+  const carried = [...new Set(setup.carryOver ?? [])].filter((f) => getBlockerFactor(f));
   const built = defs.map((def) => ({ def, out: def.build(ctx) }));
   const available = built
     .filter(({ def, out }) => def.factor && out.riskReply && out.risk)
-    .map(({ def }) => def.factor!);
+    .map(({ def }) => def.factor!)
+    .filter((f) => !carried.includes(f));
   // Plus le deal est complexe, plus il y a de blocages.
-  const count = complexity.level === 1 ? 1 : complexity.level === 4 ? 3 : 2;
+  const target = complexity.level === 1 ? 1 : complexity.level === 4 ? 3 : 2;
+  // Les blocages qui reviennent comptent dans le total, avec au moins un nouveau.
+  const count = Math.max(1, target - carried.length);
   const blockers = drawBlockers(
     available,
     {
@@ -944,7 +997,7 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     rand,
   );
 
-  const steps: SimStep[] = built.map(({ def, out }) => {
+  const baseSteps: SimStep[] = built.map(({ def, out }) => {
     const risky = Boolean(def.factor && out.riskReply && out.risk && blockers.includes(def.factor));
     const choices = shuffle(
       [
@@ -956,6 +1009,7 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     );
     return {
       id: def.id,
+      origin: "base" as const,
       theme: def.theme,
       factor: def.factor,
       buyerLine: out.buyerLine,
@@ -971,6 +1025,11 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     };
   });
 
+  const steps: SimStep[] = [
+    ...carried.map((f, i) => carriedStep(f, i, rand)),
+    ...baseSteps,
+  ];
+
   const interlocutor = (groupModel && meeting !== "R3" ? groupModel : model).interlocutors[meeting];
   const meetingLabel = getMeetingType(meeting)?.label ?? meeting;
   return {
@@ -981,9 +1040,165 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     multiEntity: Boolean(groupModel),
     interlocutor,
     opening: `Rendez-vous ${meeting} · ${meetingLabel}. Vous êtes face à : ${interlocutor} (${model.label}${groupModel ? ", filiale d'un groupe" : ""}).`,
-    blockers,
+    blockers: [...carried, ...blockers],
+    carried,
+    known: [...new Set(setup.known ?? [])],
+    patience: PATIENCE[complexity.level],
     steps,
     issue: ISSUES[meeting],
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Enchaînement : patience, relances, retours, rappels                 */
+/* ------------------------------------------------------------------ */
+
+/** Réponses faibles tolérées avant que l'acheteur écourte (mécanique de jeu). */
+const PATIENCE: Record<ComplexityLevel, number> = { 1: 3, 2: 3, 3: 2, 4: 2 };
+
+type FollowUp = { buyerLine: string; question: string; good: string };
+
+/** Relance débloquée quand une bonne question révèle un blocage. */
+const FOLLOW_UPS: Record<BlockerFactorId, FollowUp> = {
+  decideur: {
+    buyerLine: "C'est un vrai sujet, je vous l'accorde.",
+    question: "Qui précisément peut dire non, et comment le rencontrer avec vous ?",
+    good: "Le directeur général : je peux vous obtenir quinze minutes avec lui si le dossier est solide.",
+  },
+  valeur: {
+    buyerLine: "Je ne suis pas sûr de pouvoir le défendre.",
+    question: "Si vous deviez convaincre votre direction en une phrase, que diriez-vous ?",
+    good: "Qu'on arrête de perdre des affaires faute de visibilité : c'est ce qui la fait réagir.",
+  },
+  "statu-quo": {
+    buyerLine: "On s'en accommode, c'est vrai.",
+    question: "Quel événement pourrait rendre ce sujet urgent cette année ?",
+    good: "Le prochain audit interne : il pointera forcément ce problème.",
+  },
+  budget: {
+    buyerLine: "Le budget, c'est le vrai frein.",
+    question: "Qui arbitre ce budget, et à quelle date ?",
+    good: "Le directeur financier, au comité budgétaire du mois prochain.",
+  },
+  priorites: {
+    buyerLine: "On est vraiment pris ailleurs.",
+    question: "Qu'est-ce qui ferait passer ce projet avant les autres ?",
+    good: "S'il aide le gros projet en cours au lieu de lui prendre du monde, il passera.",
+  },
+  influence: {
+    buyerLine: "Cette personne pèse beaucoup.",
+    question: "Qu'est-ce qui la ferait changer d'avis, et pouvons-nous la rencontrer ensemble ?",
+    good: "Elle veut des garanties sur le coût total. Je peux organiser un point.",
+  },
+  consensus: {
+    buyerLine: "Ce désaccord n'est pas nouveau.",
+    question: "Sur quel critère précis faudrait-il se mettre d'accord, et qui peut trancher ?",
+    good: "Le périmètre de départ ; la directrice des opérations peut trancher.",
+  },
+  achats: {
+    buyerLine: "C'est la règle chez nous.",
+    question: "Quelle est la première étape pour être en règle, et combien de temps prend-elle ?",
+    good: "Le dossier fournisseur : comptez trois semaines s'il est complet.",
+  },
+  conformite: {
+    buyerLine: "Je ne transigerai pas là-dessus.",
+    question: "Quelles preuves exactement, et qui les vérifiera ?",
+    good: "Vos certifications et notre questionnaire : c'est mon équipe qui vérifiera.",
+  },
+  concurrence: {
+    buyerLine: "Ce n'est pas exclu.",
+    question: "Qu'est-ce qui ferait pencher la balance d'un côté ou de l'autre ?",
+    good: "Le temps de mise en route : celui qui démarre le plus vite l'emportera.",
+  },
+  capacite: {
+    buyerLine: "C'est la réalité de nos équipes.",
+    question: "Que faudrait-il pour que la mise en place ne repose pas sur vos équipes ?",
+    good: "Que vous preniez en charge le paramétrage : là, on pourrait démarrer.",
+  },
+};
+
+/** Ce que dit l'acheteur quand un blocage raté revient au rendez-vous suivant. */
+const ESCALATIONS: Record<BlockerFactorId, string> = {
+  decideur: "Avant de commencer : la direction a demandé à revoir le dossier, elle ne savait pas qu'il existait.",
+  valeur: "Je dois être franc : en interne, on se demande encore à quoi ça va servir.",
+  "statu-quo": "On a fait le point : beaucoup pensent qu'on peut continuer comme avant.",
+  budget: "Mauvaise nouvelle : le budget vient d'être gelé, personne ne l'avait vu venir.",
+  priorites: "Le gros projet interne a pris du retard : il mobilise tout le monde, le vôtre passe après.",
+  influence: "Le directeur financier a entendu parler du projet, et il n'y est pas favorable.",
+  consensus: "En interne, ça se tend : la DSI et le métier ne sont pas d'accord.",
+  achats: "Les achats viennent de rappeler qu'on ne peut rien commander sans référencement.",
+  conformite: "La sécurité s'est saisie du dossier et bloque tant qu'elle n'a pas ses preuves.",
+  concurrence: "Un concurrent nous a fait une proposition entre-temps.",
+  capacite: "L'équipe qui devait déployer a été réaffectée.",
+};
+
+/** Ce que dit l'acheteur quand on revient sur un sujet déjà exploré. */
+const RECALLS: Partial<Record<BlockerFactorId, string>> = {
+  decideur: "Comme je vous l'ai dit, plusieurs personnes devront valider.",
+  budget: "On a déjà parlé du budget tout à l'heure.",
+  valeur: "Vous avez compris ce qu'on attend, je ne reviens pas dessus.",
+  achats: "Vous connaissez déjà notre circuit d'achat.",
+  conformite: "Vous savez déjà ce que la sécurité attend.",
+  consensus: "Je vous ai dit que tout le monde n'était pas aligné.",
+};
+const RECALL_DEFAULT = "Vous m'avez déjà interrogé là-dessus.";
+
+const WEAK_FOLLOW_UP = {
+  argument: [q("Ce n'est pas un vrai problème, nous savons gérer ça."), "Pour nous, si."] as [string, string],
+  vague: [q("D'accord, je note."), "Très bien."] as [string, string],
+};
+
+function followUpStep(factor: BlockerFactorId, rand: () => number): SimStep {
+  const f = FOLLOW_UPS[factor];
+  const label = getBlockerFactor(factor)!.label;
+  const question = q(f.question);
+  return {
+    id: `relance-${factor}`,
+    origin: "relance",
+    theme: `Relance : ${label}`,
+    factor,
+    buyerLine: f.buyerLine,
+    choices: shuffle(
+      [
+        { id: `relance-${factor}:question`, kind: "question" as const, label: question },
+        { id: `relance-${factor}:argument`, kind: "argument" as const, label: WEAK_FOLLOW_UP.argument[0] },
+        { id: `relance-${factor}:vague`, kind: "vague" as const, label: WEAK_FOLLOW_UP.vague[0] },
+      ],
+      rand,
+    ),
+    goodQuestion: question,
+    replies: { question: f.good, argument: WEAK_FOLLOW_UP.argument[1], vague: WEAK_FOLLOW_UP.vague[1] },
+    risky: false,
+  };
+}
+
+function carriedStep(factor: BlockerFactorId, index: number, rand: () => number): SimStep {
+  const f = FOLLOW_UPS[factor];
+  const factorDef = getBlockerFactor(factor)!;
+  const question = q(f.question);
+  return {
+    id: `retour-${factor}-${index}`,
+    origin: "retour",
+    theme: `Blocage qui revient : ${factorDef.label}`,
+    factor,
+    buyerLine: ESCALATIONS[factor],
+    choices: shuffle(
+      [
+        { id: `retour-${factor}:question`, kind: "question" as const, label: question },
+        { id: `retour-${factor}:argument`, kind: "argument" as const, label: WEAK_FOLLOW_UP.argument[0] },
+        { id: `retour-${factor}:vague`, kind: "vague" as const, label: WEAK_FOLLOW_UP.vague[0] },
+      ],
+      rand,
+    ),
+    goodQuestion: question,
+    replies: { question: f.good, argument: WEAK_FOLLOW_UP.argument[1], vague: WEAK_FOLLOW_UP.vague[1] },
+    risky: true,
+    risk: {
+      factor,
+      level: "risque_majeur",
+      text: `${factorDef.label} : raté au rendez-vous précédent, il revient plus grave.`,
+      action: factorDef.action,
+    },
   };
 }
 
@@ -1000,48 +1215,181 @@ export function playChoice(step: SimStep, choiceId: string): SimTurn {
   };
 }
 
-export function buildDebrief(sim: Simulation, turns: SimTurn[]): SimDebrief {
-  const byStep = new Map(turns.map((t) => [t.stepId, t]));
+/** Réplique de l'acheteur pour l'étape, avec un rappel si le sujet a déjà été exploré. */
+export function buyerLineFor(state: SimState, step: SimStep): string {
+  if (step.origin !== "base" || !step.factor || !state.known.includes(step.factor)) {
+    return step.buyerLine;
+  }
+  return `${RECALLS[step.factor] ?? RECALL_DEFAULT} ${step.buyerLine}`;
+}
+
+export function startSimulation(sim: Simulation): SimState {
+  return {
+    queue: [...sim.steps],
+    played: [],
+    patience: sim.patience,
+    maxPatience: sim.patience,
+    endedEarly: false,
+    lost: [],
+    closingLine: null,
+    known: [...sim.known],
+    revealed: [],
+    dug: [],
+    events: sim.carried.map(
+      (f) => `Un blocage raté au rendez-vous précédent revient : ${getBlockerFactor(f)!.label}.`,
+    ),
+  };
+}
+
+export function currentStep(state: SimState): SimStep | undefined {
+  return state.queue[0];
+}
+
+export function isFinished(state: SimState): boolean {
+  return state.queue.length === 0;
+}
+
+/**
+ * Joue un bouton. Une bonne question rassure l'acheteur, et si elle révèle un
+ * blocage, elle débloque une relance. Un argument ou une question vague
+ * l'agace : à bout de patience, il écourte et les questions restantes sont perdues.
+ */
+export function applyChoice(state: SimState, choiceId: string): SimState {
+  const step = state.queue[0];
+  if (!step) return state;
+  const turn = playChoice(step, choiceId);
+  const order = state.played.length + 1;
+  const next: SimState = {
+    ...state,
+    queue: state.queue.slice(1),
+    played: [...state.played, { step, buyerLine: buyerLineFor(state, step), turn }],
+    known: [...state.known],
+    revealed: [...state.revealed],
+    dug: [...state.dug],
+    events: [...state.events],
+    lost: [...state.lost],
+  };
+
+  if (turn.kind === "question") {
+    next.patience = Math.min(state.maxPatience, state.patience + 1);
+    if (step.factor && !next.known.includes(step.factor)) next.known.push(step.factor);
+    if (step.origin === "relance" && step.factor) {
+      next.dug.push(step.factor);
+      next.events.push(`Étape ${order} : relance réussie, le blocage « ${getBlockerFactor(step.factor)!.label} » est creusé.`);
+    }
+    if (step.origin === "retour" && step.factor) {
+      next.revealed.push(step.factor);
+      next.dug.push(step.factor);
+      next.events.push(`Étape ${order} : le blocage revenu (« ${getBlockerFactor(step.factor)!.label} ») est traité.`);
+    }
+    if (turn.riskFound && step.origin === "base") {
+      const factor = turn.riskFound.factor;
+      next.revealed.push(factor);
+      next.events.push(`Étape ${order} : bonne question, blocage repéré — ${getBlockerFactor(factor)!.label}.`);
+      if (!next.dug.includes(factor) && !next.queue.some((s) => s.id === `relance-${factor}`)) {
+        const rand = seededRandom(order * 7919 + factor.length);
+        next.queue = [followUpStep(factor, rand), ...next.queue];
+      }
+    }
+    return next;
+  }
+
+  next.patience = state.patience - 1;
+  next.events.push(
+    `Étape ${order} : ${turn.kind === "argument" ? "argument" : "question vague"} — l'acheteur ${next.patience > 0 ? "s'agace" : "décroche"}.`,
+  );
+  if (next.patience <= 0 && next.queue.length > 0) {
+    next.endedEarly = true;
+    next.lost = [...next.queue];
+    next.queue = [];
+    next.closingLine = "Je vais devoir vous laisser, on se rappelle.";
+    next.events.push(
+      `L'acheteur écourte le rendez-vous : ${next.lost.length} question${next.lost.length > 1 ? "s" : ""} perdue${next.lost.length > 1 ? "s" : ""}.`,
+    );
+  }
+  return next;
+}
+
+export function buildDebrief(sim: Simulation, state: SimState): SimDebrief {
   const asked: string[] = [];
   const missed: string[] = [];
   const risksFound: SimRisk[] = [];
   const risksMissed: SimRisk[] = [];
-  for (const step of sim.steps) {
-    const turn = byStep.get(step.id);
-    if (turn?.kind === "question") asked.push(step.goodQuestion);
+  for (const { step, turn } of state.played) {
+    if (turn.kind === "question") asked.push(step.goodQuestion);
     else missed.push(step.goodQuestion);
     if (step.risky && step.risk) {
-      if (turn?.riskFound) risksFound.push(step.risk);
+      if (turn.riskFound) risksFound.push(step.risk);
       else risksMissed.push(step.risk);
     }
   }
+  for (const step of state.lost) {
+    missed.push(step.goodQuestion);
+    if (step.risky && step.risk) risksMissed.push(step.risk);
+  }
 
+  const allSteps = [...state.played.map((p) => p.step), ...state.lost];
   const blockers: BlockerOutcome[] = sim.blockers.map((id) => {
     const factor = getBlockerFactor(id)!;
-    const steps = sim.steps.filter((s) => s.factor === id && s.risky);
-    const foundStep = steps.find((s) => byStep.get(s.id)?.riskFound);
+    const carried = sim.carried.includes(id);
+    const status: BlockerOutcome["status"] = state.dug.includes(id)
+      ? "creuse"
+      : state.revealed.includes(id)
+        ? "repere"
+        : "manque";
+    const revealing = state.played.find(
+      (p) => p.step.factor === id && (p.turn.riskFound || (p.step.origin === "retour" && p.turn.kind === "question")),
+    );
+    const candidate =
+      allSteps.find((s) => s.factor === id && s.risky) ?? allSteps.find((s) => s.factor === id);
+    const evidence =
+      status === "manque"
+        ? `Question qui l'aurait ${carried ? "traité" : "révélé"} : ${candidate?.goodQuestion ?? `«\u00a0${factor.question}\u00a0»`}`
+        : status === "creuse"
+          ? carried
+            ? `Revenu du rendez-vous précédent, traité grâce à ${revealing?.step.goodQuestion ?? "la bonne question"}`
+            : `Repéré grâce à ${revealing?.step.goodQuestion ?? "la bonne question"}, puis creusé par la relance`
+          : `Repéré grâce à ${revealing?.step.goodQuestion ?? "la bonne question"}, mais pas creusé`;
     return {
       factor: id,
       label: factor.label,
-      found: Boolean(foundStep),
-      evidence: foundStep
-        ? `Repéré grâce à ${foundStep.goodQuestion}`
-        : `Question qui l'aurait révélé : ${steps[0]?.goodQuestion ?? `« ${factor.question} »`}`,
-      action: steps[0]?.risk?.action ?? factor.action,
+      status,
+      carried,
+      found: status !== "manque",
+      evidence,
+      action: candidate?.risk?.action ?? factor.action,
     };
   });
 
-  const issueReached = missed.length === 0;
-  const hidden = blockers.find((b) => !b.found);
-  const seen = blockers.find((b) => b.found);
-  const nextStep = hidden
-    ? `Dans le vrai deal, vérifie d'abord ce blocage : ${hidden.label}. ${hidden.action}`
-    : seen
-      ? `Traite le blocage repéré : ${seen.label}. ${seen.action}`
-      : missed[0]
-        ? `Dans le vrai deal, pose la question oubliée : ${missed[0]}`
-        : `Issue atteinte : ${sim.issue}`;
-  return { asked, missed, risksFound, risksMissed, blockers, issueReached, nextStep };
+  // Ce qui n'est pas creusé revient au rendez-vous suivant.
+  const carryOver = blockers.filter((b) => b.status !== "creuse").map((b) => b.factor);
+  const lost = state.lost.map((s) => s.goodQuestion);
+  const issueReached = !state.endedEarly && missed.length === 0;
+  const hidden = blockers.find((b) => b.status === "manque");
+  const shallow = blockers.find((b) => b.status === "repere");
+  const nextStep = state.endedEarly
+    ? `L'acheteur a écourté : dans le vrai deal, obtiens un nouveau rendez-vous en partant de son problème, pas de ton offre.${hidden ? ` Puis vérifie ce blocage : ${hidden.label}.` : ""}`
+    : hidden
+      ? `Dans le vrai deal, vérifie d'abord ce blocage : ${hidden.label}. ${hidden.action}`
+      : shallow
+        ? `Creuse le blocage repéré : ${shallow.label}. ${shallow.action}`
+        : missed[0]
+          ? `Dans le vrai deal, pose la question oubliée : ${missed[0]}`
+          : `Issue atteinte : ${sim.issue}`;
+  return {
+    asked,
+    missed,
+    risksFound,
+    risksMissed,
+    blockers,
+    lost,
+    endedEarly: state.endedEarly,
+    events: state.events,
+    carryOver,
+    known: state.known,
+    issueReached,
+    nextStep,
+  };
 }
 
 /** Pour la doc et les tests : patterns communs par rendez-vous. */

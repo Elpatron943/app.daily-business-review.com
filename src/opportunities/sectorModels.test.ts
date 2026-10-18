@@ -11,11 +11,18 @@ import {
   selectableClientSectors,
 } from "./sectorModels";
 import {
+  applyChoice,
   buildDebrief,
+  buyerLineFor,
+  currentStep,
+  isFinished,
+  startSimulation,
   buildSimulation,
   listPatterns,
-  playChoice,
-  type SimTurn,
+  type ChoiceKind,
+  type SimState,
+  type SimStep,
+  type Simulation,
 } from "./meetingPatterns";
 import { DEAL_REVIEW_SECTORS } from "./dealReviewSectors";
 import {
@@ -23,6 +30,17 @@ import {
   buildBlockerFactorsAddendum,
   summarizeFactors,
 } from "./blockerFactors";
+
+function play(sim: Simulation, pick: (s: SimStep, n: number) => ChoiceKind): SimState {
+  let st = startSimulation(sim);
+  let n = 0;
+  while (!isFinished(st)) {
+    const step = currentStep(st)!;
+    st = applyChoice(st, step.choices.find((c) => c.kind === pick(step, n))!.id);
+    n++;
+  }
+  return st;
+}
 
 describe("variables sectorielles", () => {
   it("chaque secteur renseigne toutes les variables et un interlocuteur par rendez-vous", () => {
@@ -147,26 +165,21 @@ describe("rendez-vous à boutons", () => {
     }
   });
 
-  it("seule la bonne question révèle le risque ; le débrief compte les oublis", () => {
+  it("bonnes questions : tout est trouvé et creusé ; arguments : rendez-vous écourté", () => {
     const sim = buildSimulation({ clientSectorId: "banque-assurance", sellerProfileId: "editeur-saas", meeting: "R1", seed: 11 });
-    const allGood: SimTurn[] = sim.steps.map((s) =>
-      playChoice(s, s.choices.find((c) => c.kind === "question")!.id),
-    );
-    const good = buildDebrief(sim, allGood);
+    const good = buildDebrief(sim, play(sim, () => "question"));
     expect(good.missed).toHaveLength(0);
     expect(good.issueReached).toBe(true);
-    expect(good.risksMissed).toHaveLength(0);
-    expect(good.risksFound.length).toBe(sim.steps.filter((s) => s.risky).length);
+    expect(good.blockers.every((b) => b.status === "creuse")).toBe(true);
 
-    const allArgue: SimTurn[] = sim.steps.map((s) =>
-      playChoice(s, s.choices.find((c) => c.kind === "argument")!.id),
-    );
-    const bad = buildDebrief(sim, allArgue);
+    const st = play(sim, () => "argument");
+    const bad = buildDebrief(sim, st);
+    expect(st.endedEarly).toBe(true);
+    expect(st.played).toHaveLength(sim.patience);
+    expect(bad.lost.length).toBe(sim.steps.length - sim.patience);
     expect(bad.asked).toHaveLength(0);
-    expect(bad.issueReached).toBe(false);
-    expect(bad.risksFound).toHaveLength(0);
-    expect(bad.risksMissed.length).toBeGreaterThan(0);
-    expect(bad.nextStep).toContain("vrai deal");
+    expect(bad.blockers.every((b) => b.status === "manque")).toBe(true);
+    expect(bad.nextStep).toContain("écourté");
   });
 });
 
@@ -207,12 +220,11 @@ describe("facteurs de blocage", () => {
 
   it("le débrief dit ce qui bloquait le deal, trouvé ou non", () => {
     const sim = buildSimulation({ clientSectorId: "public", sellerProfileId: "esn-integrateur", meeting: "R1", seed: 21 });
-    const good = buildDebrief(sim, sim.steps.map((s) => playChoice(s, s.choices.find((c) => c.kind === "question")!.id)));
+    const good = buildDebrief(sim, play(sim, () => "question"));
     expect(good.blockers.map((b) => b.factor)).toEqual(sim.blockers);
     expect(good.blockers.every((b) => b.found)).toBe(true);
-    const vague = buildDebrief(sim, sim.steps.map((s) => playChoice(s, s.choices.find((c) => c.kind === "vague")!.id)));
+    const vague = buildDebrief(sim, play(sim, () => "vague"));
     expect(vague.blockers.every((b) => !b.found)).toBe(true);
-    expect(vague.nextStep).toContain("vérifie d'abord ce blocage");
   });
 
   it("le secteur oriente le tirage des blocages", () => {
@@ -273,5 +285,66 @@ describe("complexité du deal", () => {
       expect(sims[0]!.blockers).toHaveLength(1);
       expect(sims[3]!.blockers).toHaveLength(3);
     }
+  });
+});
+
+describe("enchaînement des questions", () => {
+  const sim = buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: null, meeting: "R1", seed: 4 });
+
+  it("une bonne question qui révèle un blocage débloque une relance juste après", () => {
+    let st = startSimulation(sim);
+    while (!isFinished(st)) {
+      const step = currentStep(st)!;
+      st = applyChoice(st, step.choices.find((c) => c.kind === "question")!.id);
+      if (st.played.at(-1)!.turn.riskFound) break;
+    }
+    const factor = st.played.at(-1)!.turn.riskFound!.factor;
+    expect(currentStep(st)!.origin).toBe("relance");
+    expect(currentStep(st)!.factor).toBe(factor);
+    // relance ratée : trouvé mais pas creusé
+    st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "vague")!.id);
+    while (!isFinished(st)) {
+      const step = currentStep(st)!;
+      st = applyChoice(st, step.choices.find((c) => c.kind === "question")!.id);
+    }
+    const d = buildDebrief(sim, st);
+    expect(d.blockers.find((b) => b.factor === factor)!.status).toBe("repere");
+    expect(d.carryOver).toContain(factor);
+  });
+
+  it("une bonne question rend de la patience : alterner évite d'écourter", () => {
+    const st = play(sim, (_, n) => (n % 2 === 0 ? "argument" : "question"));
+    expect(st.endedEarly).toBe(false);
+  });
+
+  it("un blocage non traité revient au rendez-vous suivant, plus grave", () => {
+    const d = buildDebrief(sim, play(sim, (_, n) => (n === 0 ? "question" : n % 2 ? "vague" : "question")));
+    expect(d.carryOver.length).toBeGreaterThan(0);
+    const next = buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: null, meeting: "R2", seed: 8, carryOver: d.carryOver, known: d.known });
+    expect(next.carried).toEqual(d.carryOver);
+    expect(next.steps.slice(0, d.carryOver.length).every((s) => s.origin === "retour" && s.risk?.level === "risque_majeur")).toBe(true);
+    for (const f of d.carryOver) expect(next.blockers).toContain(f);
+    const st = play(next, () => "question");
+    const nd = buildDebrief(next, st);
+    for (const f of d.carryOver) {
+      const b = nd.blockers.find((x) => x.factor === f)!;
+      expect(b.carried).toBe(true);
+      expect(b.status).toBe("creuse");
+    }
+  });
+
+  it("l'acheteur se souvient d'un sujet déjà exploré", () => {
+    const next = buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: null, meeting: "R4", seed: 2, known: ["decideur"] });
+    const st = startSimulation(next);
+    const signataire = next.steps.find((s) => s.id === "r4-signataire")!;
+    expect(buyerLineFor(st, signataire)).toContain("Comme je vous l'ai dit");
+    const fresh = startSimulation(buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: null, meeting: "R4", seed: 2 }));
+    expect(buyerLineFor(fresh, signataire)).not.toContain("Comme je vous l'ai dit");
+  });
+
+  it("le débrief raconte l'enchaînement", () => {
+    const d = buildDebrief(sim, play(sim, () => "argument"));
+    expect(d.events.some((e) => e.includes("s'agace"))).toBe(true);
+    expect(d.events.at(-1)).toContain("écourte le rendez-vous");
   });
 });

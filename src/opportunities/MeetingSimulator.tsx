@@ -3,16 +3,21 @@ import {
   CLIENT_SIZES,
   MEETING_TYPES,
   SELLER_PROFILES,
-  type ClientSizeId,
   getClientSectorModel,
   selectableClientSectors,
+  type ClientSizeId,
   type MeetingTypeId,
 } from "./sectorModels";
+import { getBlockerFactor, type BlockerFactorId } from "./blockerFactors";
 import {
+  applyChoice,
   buildDebrief,
   buildSimulation,
-  playChoice,
-  type SimTurn,
+  buyerLineFor,
+  currentStep,
+  isFinished,
+  startSimulation,
+  type SimState,
 } from "./meetingPatterns";
 
 type Props = {
@@ -67,6 +72,25 @@ function Chips<T extends string>({
   );
 }
 
+function PatienceMeter({ value, max }: { value: number; max: number }) {
+  return (
+    <p className="sim-patience" aria-label={`Patience de l'acheteur : ${value} sur ${max}`}>
+      Patience de l’acheteur{" "}
+      <span aria-hidden>
+        {Array.from({ length: max }, (_, i) => (
+          <span key={i} className={`sim-dot${i < value ? " is-on" : ""}`} />
+        ))}
+      </span>
+    </p>
+  );
+}
+
+const STATUS_LABEL = {
+  creuse: "Trouvé et creusé",
+  repere: "Trouvé, pas creusé",
+  manque: "Pas trouvé",
+} as const;
+
 export default function MeetingSimulator({
   defaultClientSectorId,
   defaultMultiEntity,
@@ -78,12 +102,12 @@ export default function MeetingSimulator({
   const [phase, setPhase] = useState<Phase>("setup");
   const [clientSectorId, setClientSectorId] = useState(defaultClientSectorId);
   const [multiEntity, setMultiEntity] = useState(defaultMultiEntity);
-  const [clientSize, setClientSize] = useState<ClientSizeId>(
-    defaultClientSize ?? "eti",
-  );
+  const [clientSize, setClientSize] = useState<ClientSizeId>(defaultClientSize ?? "eti");
   const [meeting, setMeeting] = useState<MeetingTypeId>("R1");
   const [seed, setSeed] = useState(newSeed);
-  const [turns, setTurns] = useState<SimTurn[]>([]);
+  const [carryOver, setCarryOver] = useState<BlockerFactorId[]>([]);
+  const [known, setKnown] = useState<BlockerFactorId[]>([]);
+  const [state, setState] = useState<SimState | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,47 +119,57 @@ export default function MeetingSimulator({
     // Ne suit le compte qu'avant la partie.
   }, [defaultClientSectorId, defaultMultiEntity, defaultClientSize]);
 
+  const settings = { clientSectorId, sellerProfileId, multiEntity, clientSize };
   const sim = useMemo(
-    () =>
-      buildSimulation({
-        clientSectorId,
-        sellerProfileId,
-        multiEntity,
-        clientSize,
-        meeting,
-        seed,
-      }),
-    [clientSectorId, sellerProfileId, multiEntity, clientSize, meeting, seed],
+    () => buildSimulation({ ...settings, meeting, seed, carryOver, known }),
+    [clientSectorId, sellerProfileId, multiEntity, clientSize, meeting, seed, carryOver, known],
   );
 
-  const stepIndex = turns.length;
-  const currentStep = phase === "play" ? sim.steps.at(stepIndex) : undefined;
-  const debrief = phase === "debrief" ? buildDebrief(sim, turns) : null;
+  const step = state && phase === "play" ? currentStep(state) : undefined;
+  const debrief = state && phase === "debrief" ? buildDebrief(sim, state) : null;
 
   useEffect(() => {
     const el = scrollerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [turns, phase]);
+  }, [state, phase]);
 
-  function start(nextMeeting?: MeetingTypeId) {
-    if (nextMeeting) setMeeting(nextMeeting);
-    setSeed(newSeed());
-    setTurns([]);
+  function start(opts?: {
+    meeting?: MeetingTypeId;
+    carryOver?: BlockerFactorId[];
+    known?: BlockerFactorId[];
+  }) {
+    const nextMeetingId = opts?.meeting ?? meeting;
+    const nextCarry = opts?.carryOver ?? [];
+    const nextKnown = opts?.known ?? [];
+    const nextSeed = newSeed();
+    // Même entrée que le useMemo : la partie démarre sur la simulation affichée.
+    const fresh = buildSimulation({
+      ...settings,
+      meeting: nextMeetingId,
+      seed: nextSeed,
+      carryOver: nextCarry,
+      known: nextKnown,
+    });
+    setMeeting(nextMeetingId);
+    setCarryOver(nextCarry);
+    setKnown(nextKnown);
+    setSeed(nextSeed);
+    setState(startSimulation(fresh));
     setPhase("play");
   }
 
   function choose(choiceId: string) {
-    if (!currentStep) return;
-    const turn = playChoice(currentStep, choiceId);
-    const next = [...turns, turn];
-    setTurns(next);
-    if (next.length >= sim.steps.length) setPhase("debrief");
+    if (!state) return;
+    const next = applyChoice(state, choiceId);
+    setState(next);
+    if (isFinished(next)) setPhase("debrief");
   }
 
   const meetingIndex = MEETING_TYPES.findIndex((m) => m.id === meeting);
   const nextMeeting = MEETING_TYPES.at(meetingIndex + 1)?.id;
+  const hiddenCount = sim.blockers.length - sim.carried.length;
 
-  if (phase === "setup") {
+  if (phase === "setup" || !state) {
     return (
       <div className="sim-root">
         <Chips
@@ -151,20 +185,14 @@ export default function MeetingSimulator({
         <Chips
           label="Secteur de ton client"
           value={clientSectorId}
-          options={selectableClientSectors().map((m) => ({
-            id: m.id,
-            label: m.label,
-          }))}
+          options={selectableClientSectors().map((m) => ({ id: m.id, label: m.label }))}
           onChange={setClientSectorId}
           disabled={disabled}
         />
         <Chips
           label="Taille du client"
           value={clientSize}
-          options={CLIENT_SIZES.map((c) => ({
-            id: c.id,
-            label: `${c.label} · ${c.detail}`,
-          }))}
+          options={CLIENT_SIZES.map((c) => ({ id: c.id, label: `${c.label} · ${c.detail}` }))}
           onChange={setClientSize}
           disabled={disabled}
         />
@@ -181,10 +209,7 @@ export default function MeetingSimulator({
         <Chips
           label="Rendez-vous"
           value={meeting}
-          options={MEETING_TYPES.map((m) => ({
-            id: m.id,
-            label: `${m.id} · ${m.label}`,
-          }))}
+          options={MEETING_TYPES.map((m) => ({ id: m.id, label: `${m.id} · ${m.label}` }))}
           onChange={setMeeting}
           disabled={disabled}
         />
@@ -193,12 +218,11 @@ export default function MeetingSimulator({
           <strong>
             {sim.complexity.level} · {sim.complexity.label}
           </strong>{" "}
-          — {sim.steps.length} questions, {sim.blockers.length} blocage
-          {sim.blockers.length > 1 ? "s" : ""} à trouver dans ce rendez-vous.
+          — au moins {sim.steps.length} questions, {sim.blockers.length} blocage
+          {sim.blockers.length > 1 ? "s" : ""} à trouver. L’acheteur tolère {sim.patience} réponses
+          faibles avant d’écourter.
         </p>
-        <p className="muted sim-hint">
-          {getClientSectorModel(clientSectorId)?.keyInsight}
-        </p>
+        <p className="muted sim-hint">{getClientSectorModel(clientSectorId)?.keyInsight}</p>
         <button
           type="button"
           className="deal-review-chatbot-start"
@@ -213,61 +237,69 @@ export default function MeetingSimulator({
 
   return (
     <div className="sim-root">
+      {phase === "play" ? <PatienceMeter value={state.patience} max={state.maxPatience} /> : null}
       <div className="deal-review-messages sim-messages" ref={scrollerRef}>
         <p className="sim-opening">{sim.opening}</p>
         <p className="sim-opening">
-          Ce deal cache {sim.blockers.length} blocage
-          {sim.blockers.length > 1 ? "s" : ""} : à toi de les trouver.
+          {hiddenCount > 0
+            ? `Ce deal cache ${hiddenCount} blocage${hiddenCount > 1 ? "s" : ""} : à toi de ${hiddenCount > 1 ? "les" : "le"} trouver.`
+            : ""}
+          {sim.carried.length > 0
+            ? ` ${sim.carried.length} blocage${sim.carried.length > 1 ? "s" : ""} du rendez-vous précédent revien${sim.carried.length > 1 ? "nent" : "t"}.`
+            : ""}
         </p>
-        {sim.steps.slice(0, stepIndex + (phase === "play" ? 1 : 0)).map((step, i) => {
-          const turn = turns.at(i);
-          return (
-            <div key={step.id} className="sim-step">
-              <div className="deal-review-msg bot">
-                <span className="deal-review-avatar size-sm sim-buyer" aria-hidden>
-                  A
-                </span>
-                <div className="deal-review-bubble bot">
-                  {turn ? (
-                    <span className="deal-review-topic">{step.theme}</span>
-                  ) : null}
-                  {step.buyerLine}
-                </div>
+        {state.played.map(({ step: s, buyerLine, turn }, i) => (
+          <div key={`${s.id}-${i}`} className="sim-step">
+            <div className="deal-review-msg bot">
+              <span className="deal-review-avatar size-sm sim-buyer" aria-hidden>
+                A
+              </span>
+              <div className={`deal-review-bubble bot${s.origin === "retour" ? " sim-escalation" : ""}`}>
+                <span className="deal-review-topic">{s.theme}</span>
+                {buyerLine}
               </div>
-              {turn ? (
-                <>
-                  <div className="deal-review-msg user">
-                    <div className={`deal-review-bubble user sim-pick is-${turn.kind}`}>
-                      {turn.label}
-                    </div>
-                  </div>
-                  <div className="deal-review-msg bot">
-                    <span className="deal-review-avatar size-sm sim-buyer" aria-hidden>
-                      A
-                    </span>
-                    <div className="deal-review-bubble bot">{turn.reply}</div>
-                  </div>
-                  {turn.riskFound ? (
-                    <p
-                      className={`sim-flag is-${turn.riskFound.level}`}
-                      role="status"
-                    >
-                      Signal repéré : {turn.riskFound.text}
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
             </div>
-          );
-        })}
+            <div className="deal-review-msg user">
+              <div className={`deal-review-bubble user sim-pick is-${turn.kind}`}>{turn.label}</div>
+            </div>
+            <div className="deal-review-msg bot">
+              <span className="deal-review-avatar size-sm sim-buyer" aria-hidden>
+                A
+              </span>
+              <div className="deal-review-bubble bot">{turn.reply}</div>
+            </div>
+            {turn.riskFound && s.origin === "base" ? (
+              <p className={`sim-flag is-${turn.riskFound.level}`} role="status">
+                Blocage repéré : {turn.riskFound.text} Une relance est possible.
+              </p>
+            ) : null}
+          </div>
+        ))}
+        {step ? (
+          <div className="deal-review-msg bot">
+            <span className="deal-review-avatar size-sm sim-buyer" aria-hidden>
+              A
+            </span>
+            <div className={`deal-review-bubble bot${step.origin === "retour" ? " sim-escalation" : ""}`}>
+              {step.origin !== "base" ? <span className="deal-review-topic">{step.theme}</span> : null}
+              {buyerLineFor(state, step)}
+            </div>
+          </div>
+        ) : null}
+        {state.closingLine ? (
+          <div className="deal-review-msg bot">
+            <span className="deal-review-avatar size-sm sim-buyer" aria-hidden>
+              A
+            </span>
+            <div className="deal-review-bubble bot sim-escalation">{state.closingLine}</div>
+          </div>
+        ) : null}
       </div>
 
-      {phase === "play" && currentStep ? (
+      {phase === "play" && step ? (
         <div className="sim-choices" role="group" aria-label="Ta réponse">
-          <p className="sim-choices-label">
-            Étape {stepIndex + 1} sur {sim.steps.length} · que fais-tu ?
-          </p>
-          {currentStep.choices.map((c) => (
+          <p className="sim-choices-label">Étape {state.played.length + 1} · que dis-tu ?</p>
+          {step.choices.map((c) => (
             <button
               key={c.id}
               type="button"
@@ -288,12 +320,10 @@ export default function MeetingSimulator({
             <strong>Ce qui bloquait ce deal</strong>
             <ul className="sim-blockers">
               {debrief.blockers.map((b) => (
-                <li
-                  key={b.factor}
-                  className={b.found ? "is-found" : "is-missed"}
-                >
+                <li key={b.factor} className={`is-${b.status}`}>
                   <span className="sim-blocker-status">
-                    {b.found ? "Trouvé" : "Pas trouvé"}
+                    {b.carried ? "Revenu · " : ""}
+                    {STATUS_LABEL[b.status]}
                   </span>{" "}
                   <strong>{b.label}</strong> — {b.evidence}.
                   <br />
@@ -302,34 +332,56 @@ export default function MeetingSimulator({
               ))}
             </ul>
           </div>
+          <div className="deal-review-debrief-part">
+            <strong>Ce qui s’est passé</strong>
+            <ol className="sim-events">
+              {debrief.events.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+              {debrief.events.length === 0 ? <li>Rendez-vous mené sans faux pas.</li> : null}
+            </ol>
+          </div>
           <p>
             <strong>Questions posées :</strong> {debrief.asked.length} sur{" "}
-            {sim.steps.length}
+            {debrief.asked.length + debrief.missed.length}
+            {debrief.lost.length > 0
+              ? ` (dont ${debrief.lost.length} perdue${debrief.lost.length > 1 ? "s" : ""} : rendez-vous écourté)`
+              : ""}
           </p>
           {debrief.missed.length > 0 ? (
             <div className="deal-review-debrief-part">
-              <strong>Questions oubliées</strong>
+              <strong>Questions manquées</strong>
               <ul>
-                {debrief.missed.map((q) => (
-                  <li key={q}>{q}</li>
+                {debrief.missed.map((q, i) => (
+                  <li key={`${q}-${i}`}>{q}</li>
                 ))}
               </ul>
             </div>
           ) : null}
           <p>
             <strong>Issue du rendez-vous :</strong>{" "}
-            {debrief.issueReached ? "atteinte" : "pas encore atteinte"}
+            {debrief.issueReached
+              ? "atteinte"
+              : debrief.endedEarly
+                ? "rendez-vous écourté"
+                : "pas encore atteinte"}
           </p>
           <p>{debrief.nextStep}</p>
           <div className="sim-actions">
-            <button type="button" className="sim-chip" onClick={() => start()}>
+            <button
+              type="button"
+              className="sim-chip"
+              onClick={() => start({ meeting, carryOver: sim.carried, known: sim.known })}
+            >
               Rejouer ce rendez-vous
             </button>
             {nextMeeting ? (
               <button
                 type="button"
-                className="sim-chip"
-                onClick={() => start(nextMeeting)}
+                className="sim-chip is-active"
+                onClick={() =>
+                  start({ meeting: nextMeeting, carryOver: debrief.carryOver, known: debrief.known })
+                }
               >
                 Rendez-vous suivant ({nextMeeting})
               </button>
@@ -338,13 +390,21 @@ export default function MeetingSimulator({
               type="button"
               className="sim-chip"
               onClick={() => {
-                setTurns([]);
+                setState(null);
+                setCarryOver([]);
+                setKnown([]);
                 setPhase("setup");
               }}
             >
               Changer de secteur
             </button>
           </div>
+          {debrief.carryOver.length > 0 && nextMeeting ? (
+            <p className="muted">
+              Si tu passes au rendez-vous suivant, ces blocages non traités reviendront :{" "}
+              {debrief.carryOver.map((f) => getBlockerFactor(f)?.label).join(", ")}.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>
