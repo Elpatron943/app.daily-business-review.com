@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CLIENT_SIZES,
   MEETING_TYPES,
   SELLER_PROFILES,
+  type ClientSizeId,
   getClientSectorModel,
   selectableClientSectors,
   type MeetingTypeId,
@@ -18,6 +20,8 @@ type Props = {
   defaultClientSectorId: string;
   /** Compte rattaché à un groupe. */
   defaultMultiEntity: boolean;
+  /** Taille déduite de la fiche compte, si renseignée. */
+  defaultClientSize?: ClientSizeId | null;
   /** Ce que vend le commercial (partagé avec la revue). */
   sellerProfileId: string;
   onSellerProfileChange: (id: string) => void;
@@ -66,6 +70,7 @@ function Chips<T extends string>({
 export default function MeetingSimulator({
   defaultClientSectorId,
   defaultMultiEntity,
+  defaultClientSize = null,
   sellerProfileId,
   onSellerProfileChange,
   disabled = false,
@@ -73,6 +78,9 @@ export default function MeetingSimulator({
   const [phase, setPhase] = useState<Phase>("setup");
   const [clientSectorId, setClientSectorId] = useState(defaultClientSectorId);
   const [multiEntity, setMultiEntity] = useState(defaultMultiEntity);
+  const [clientSize, setClientSize] = useState<ClientSizeId>(
+    defaultClientSize ?? "eti",
+  );
   const [meeting, setMeeting] = useState<MeetingTypeId>("R1");
   const [seed, setSeed] = useState(newSeed);
   const [turns, setTurns] = useState<SimTurn[]>([]);
@@ -82,9 +90,10 @@ export default function MeetingSimulator({
     if (phase === "setup") {
       setClientSectorId(defaultClientSectorId);
       setMultiEntity(defaultMultiEntity);
+      if (defaultClientSize) setClientSize(defaultClientSize);
     }
     // Ne suit le compte qu'avant la partie.
-  }, [defaultClientSectorId, defaultMultiEntity]);
+  }, [defaultClientSectorId, defaultMultiEntity, defaultClientSize]);
 
   const sim = useMemo(
     () =>
@@ -92,10 +101,11 @@ export default function MeetingSimulator({
         clientSectorId,
         sellerProfileId,
         multiEntity,
+        clientSize,
         meeting,
         seed,
       }),
-    [clientSectorId, sellerProfileId, multiEntity, meeting, seed],
+    [clientSectorId, sellerProfileId, multiEntity, clientSize, meeting, seed],
   );
 
   const stepIndex = turns.length;
@@ -149,6 +159,16 @@ export default function MeetingSimulator({
           disabled={disabled}
         />
         <Chips
+          label="Taille du client"
+          value={clientSize}
+          options={CLIENT_SIZES.map((c) => ({
+            id: c.id,
+            label: `${c.label} · ${c.detail}`,
+          }))}
+          onChange={setClientSize}
+          disabled={disabled}
+        />
+        <Chips
           label="Organisation du client"
           value={multiEntity ? "groupe" : "seule"}
           options={[
@@ -168,6 +188,14 @@ export default function MeetingSimulator({
           onChange={setMeeting}
           disabled={disabled}
         />
+        <p className="sim-level">
+          Complexité du deal :{" "}
+          <strong>
+            {sim.complexity.level} · {sim.complexity.label}
+          </strong>{" "}
+          — {sim.steps.length} questions, {sim.blockers.length} blocage
+          {sim.blockers.length > 1 ? "s" : ""} à trouver dans ce rendez-vous.
+        </p>
         <p className="muted sim-hint">
           {getClientSectorModel(clientSectorId)?.keyInsight}
         </p>

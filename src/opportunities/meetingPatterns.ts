@@ -23,7 +23,10 @@ import {
   getClientSectorModel,
   getMeetingType,
   getSellerProfile,
+  computeComplexity,
   type ClientSectorModel,
+  type ClientSizeId,
+  type ComplexityLevel,
   type MeetingTypeId,
   type SectorVariables,
   type SellerProfile,
@@ -60,6 +63,7 @@ export type SimStep = {
 
 export type Simulation = {
   model: ClientSectorModel;
+  complexity: { level: ComplexityLevel; label: string };
   seller: SellerProfile | null;
   meeting: MeetingTypeId;
   multiEntity: boolean;
@@ -122,6 +126,8 @@ type PatternDef = {
   theme: string;
   meeting: MeetingTypeId;
   factor: BlockerFactorId | null;
+  /** Niveau de complexité à partir duquel la question apparaît (1 à 4). */
+  minLevel: ComplexityLevel;
   when?: (ctx: Ctx) => boolean;
   build: (ctx: Ctx) => PatternOutput;
 };
@@ -148,6 +154,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Le problème et sa valeur",
     meeting: "R1",
     factor: "valeur",
+    minLevel: 1,
     build: () => ({
       buyerLine: "On m'a dit que vous pouviez nous aider. Je vous écoute, j'ai vingt minutes.",
       question: q("Quel problème voulez-vous résoudre, et que vous coûte-t-il aujourd'hui ?"),
@@ -167,6 +174,7 @@ const PATTERNS: PatternDef[] = [
     theme: "L'urgence",
     meeting: "R1",
     factor: "statu-quo",
+    minLevel: 2,
     build: () => ({
       buyerLine: "C'est un sujet dont on parle depuis un moment.",
       question: q("Que se passe-t-il si vous ne faites rien d'ici un an ?"),
@@ -186,6 +194,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Qui paie dans le groupe",
     meeting: "R1",
     factor: "budget",
+    minLevel: 1,
     when: (c) => Boolean(c.group),
     build: (c) => ({
       buyerLine: "Je précise : nous sommes une filiale d'un groupe.",
@@ -206,6 +215,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Les décideurs et le veto",
     meeting: "R1",
     factor: "decideur",
+    minLevel: 1,
     build: ({ v }) => ({
       buyerLine: "Si ça m'intéresse, je peux avancer assez vite.",
       question: q(`En dehors de vous, qui devra valider : ${v.vetoRoles} ?`),
@@ -225,6 +235,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Le budget",
     meeting: "R1",
     factor: "budget",
+    minLevel: 1,
     when: (c) => !c.group,
     build: ({ v }) => ({
       buyerLine: "Sur le principe, l'idée me plaît.",
@@ -245,6 +256,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Les projets en cours",
     meeting: "R1",
     factor: "priorites",
+    minLevel: 3,
     build: () => ({
       buyerLine: "Je vous préviens, nous avons beaucoup de sujets en ce moment.",
       question: q("Qu'est-ce qui est déjà en cours chez vous, et où se place ce projet par rapport à eux ?"),
@@ -264,6 +276,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Le mode d'achat",
     meeting: "R1",
     factor: "achats",
+    minLevel: 2,
     build: ({ v }) => ({
       buyerLine: "Admettons que ça marche chez nous.",
       question: q(`Comment achetez-vous ce type d'offre (${v.procurement}) ?`),
@@ -279,10 +292,51 @@ const PATTERNS: PatternDef[] = [
     }),
   },
   {
+    id: "r1-historique",
+    theme: "Les tentatives passées",
+    meeting: "R1",
+    factor: "concurrence",
+    minLevel: 4,
+    build: () => ({
+      buyerLine: "Ce n'est pas la première fois qu'on regarde ce sujet.",
+      question: q("Qu'avez-vous déjà essayé pour régler ce problème, et pourquoi ça n'a pas suffi ?"),
+      good: "On a tenté un tableur partagé : personne ne le tenait à jour.",
+      riskReply: "On a déjà un outil pour ça : personne ne l'utilise, mais il est payé pour trois ans.",
+      risk: {
+        level: "risque",
+        text: "Concurrence ou fait-maison : une solution déjà en place et payée.",
+        action: "Comprendre pourquoi l'outil en place n'est pas utilisé et qui l'a choisi.",
+      },
+      argument: [q("Notre solution est bien meilleure que tout ce qui existe."), "Vous ne savez pas ce qu'on a essayé."],
+      vague: [q("Vous avez déjà regardé le sujet ?"), "Un peu."],
+    }),
+  },
+  {
+    id: "r1-calendrier",
+    theme: "Les échéances internes",
+    meeting: "R1",
+    factor: "priorites",
+    minLevel: 4,
+    build: () => ({
+      buyerLine: "Chez nous, rien ne se décide vite.",
+      question: q("Quelles échéances internes (budget, comités, réorganisation) vont rythmer la décision ?"),
+      good: "Le comité de direction de fin de trimestre : c'est là que ça se décidera.",
+      riskReply: "Une réorganisation vient d'être annoncée : tout est suspendu jusqu'à nouvel ordre.",
+      risk: {
+        level: "risque_majeur",
+        text: "Projets en cours : une réorganisation gèle les décisions.",
+        action: "Identifier qui portera le sujet après la réorganisation et garder le lien.",
+      },
+      argument: [q("On peut aller plus vite que vos comités."), "Non, on ne peut pas."],
+      vague: [q("Ça prend du temps chez vous ?"), "Toujours."],
+    }),
+  },
+  {
     id: "r1-suite",
     theme: "La prochaine étape",
     meeting: "R1",
     factor: null,
+    minLevel: 1,
     build: () => ({
       buyerLine: "Bon, il faut que je file.",
       question: q("Qui faut-il réunir pour la démonstration, et à quelle date ?"),
@@ -298,6 +352,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Le cas concret",
     meeting: "R2",
     factor: "valeur",
+    minLevel: 1,
     build: ({ v }) => ({
       buyerLine: `Allons-y. ${v.demo}`,
       question: q("Sur quel cas concret de votre quotidien voulez-vous juger ce que nous proposons ?"),
@@ -317,6 +372,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Soutiens et opposants",
     meeting: "R2",
     factor: "influence",
+    minLevel: 2,
     build: () => ({
       buyerLine: "Personnellement, je trouve ça intéressant.",
       question: q("Qui d'autre que vous doit être convaincu, et qui pourrait s'y opposer ?"),
@@ -336,6 +392,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Les utilisateurs",
     meeting: "R2",
     factor: "consensus",
+    minLevel: 1,
     build: () => ({
       buyerLine: "Mon équipe est là : c'est elle qui l'utiliserait au quotidien.",
       question: q("Qui l'utilisera chaque semaine, et que fera-t-il autrement ?"),
@@ -355,6 +412,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Le groupe dans la boucle",
     meeting: "R2",
     factor: "consensus",
+    minLevel: 1,
     when: (c) => Boolean(c.group),
     build: (c) => ({
       buyerLine: c.group!.demo,
@@ -375,6 +433,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Les alternatives",
     meeting: "R2",
     factor: "concurrence",
+    minLevel: 2,
     build: () => ({
       buyerLine: "On regarde aussi d'autres options, vous vous en doutez.",
       question: q("Qu'est-ce que vous regardez d'autre, y compris faire en interne, et sur quels critères ?"),
@@ -390,10 +449,51 @@ const PATTERNS: PatternDef[] = [
     }),
   },
   {
+    id: "r2-valeur-chiffree",
+    theme: "La valeur chiffrée",
+    meeting: "R2",
+    factor: "valeur",
+    minLevel: 3,
+    build: () => ({
+      buyerLine: "Pour défendre le projet, il me faudra des arguments.",
+      question: q("Combien vaut ce gain pour vous, et qui devra valider ce chiffre ?"),
+      good: "Le contrôle de gestion validera, sur la base du temps gagné par l'équipe.",
+      riskReply: "Je ne saurais pas le chiffrer, et la direction voudra un chiffre.",
+      risk: {
+        level: "risque",
+        text: "Valeur non perçue : le gain n'est pas chiffré, le projet sera difficile à défendre.",
+        action: "Construire le chiffrage avec le client et le faire valider par celui qui arbitre.",
+      },
+      argument: [q("Le retour sur investissement est évident."), "Pas pour notre directeur financier."],
+      vague: [q("Ça vaut le coup, non ?"), "Sans doute."],
+    }),
+  },
+  {
+    id: "r2-integration",
+    theme: "L'intégration",
+    meeting: "R2",
+    factor: "capacite",
+    minLevel: 4,
+    build: () => ({
+      buyerLine: "Il faudra que ça fonctionne avec ce qu'on a déjà.",
+      question: q("Avec quels outils et quelles équipes la solution devra-t-elle fonctionner ?"),
+      good: "Notre outil client et l'équipe informatique, qui a du temps le mois prochain.",
+      riskReply: "Avec une dizaine d'outils, et l'équipe informatique n'a pas de disponibilité cette année.",
+      risk: {
+        level: "risque",
+        text: "Capacité de mise en œuvre : intégration lourde sans équipe disponible.",
+        action: "Réduire le périmètre de départ et dater l'intégration avec la DSI.",
+      },
+      argument: [q("Nous nous intégrons à tout."), "C'est ce qu'on nous dit à chaque fois."],
+      vague: [q("L'intégration, ça devrait aller ?"), "On verra."],
+    }),
+  },
+  {
     id: "r2-critere",
     theme: "Le critère de succès",
     meeting: "R2",
     factor: "valeur",
+    minLevel: 1,
     build: () => ({
       buyerLine: "On commence à voir l'intérêt.",
       question: q("À quoi verrez-vous, dans trois mois, que ça a marché ?"),
@@ -415,6 +515,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Les exigences",
     meeting: "R3",
     factor: "conformite",
+    minLevel: 1,
     build: ({ v }) => ({
       buyerLine: `Je suis là pour ${v.review}.`,
       question: q("Quelles sont vos exigences, et sous quelle forme voulez-vous les preuves ?"),
@@ -434,6 +535,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Les données et leurs règles",
     meeting: "R3",
     factor: null,
+    minLevel: 2,
     build: ({ v }) => ({
       buyerLine: "Parlons des données.",
       question: q("Quelles données exactement, et quelles règles internes s'y appliquent ?"),
@@ -447,6 +549,7 @@ const PATTERNS: PatternDef[] = [
     theme: "La capacité à déployer",
     meeting: "R3",
     factor: "capacite",
+    minLevel: 2,
     build: () => ({
       buyerLine: "Côté technique, je vous préviens, on est très chargés.",
       question: q("Qui, chez vous, aura le temps de mettre en place la solution, et quand ?"),
@@ -466,6 +569,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Les clauses",
     meeting: "R3",
     factor: "conformite",
+    minLevel: 2,
     build: () => ({
       buyerLine: "Il y aura aussi le volet contractuel.",
       question: q("Quel modèle de contrat et quelles clauses de sécurité imposez-vous ?"),
@@ -481,10 +585,51 @@ const PATTERNS: PatternDef[] = [
     }),
   },
   {
+    id: "r3-reversibilite",
+    theme: "La sortie",
+    meeting: "R3",
+    factor: "conformite",
+    minLevel: 3,
+    build: () => ({
+      buyerLine: "Nous devons aussi prévoir la fin du contrat.",
+      question: q("Quelles conditions de sortie et de récupération des données exigez-vous ?"),
+      good: "Un export complet à tout moment et un accompagnement à la sortie.",
+      riskReply: "Il nous faut un plan de sortie détaillé et testé avant de signer.",
+      risk: {
+        level: "risque",
+        text: "Sécurité et conformité : plan de sortie exigé avant signature.",
+        action: "Préparer le plan de sortie et le faire valider tôt.",
+      },
+      argument: [q("Vous ne voudrez jamais partir."), "Ce n'est pas la question."],
+      vague: [q("La sortie, c'est important pour vous ?"), "Oui."],
+    }),
+  },
+  {
+    id: "r3-comite",
+    theme: "Le comité de validation",
+    meeting: "R3",
+    factor: "decideur",
+    minLevel: 4,
+    build: () => ({
+      buyerLine: "Mon avis ne suffira pas.",
+      question: q("Le dossier doit-il passer devant un comité, qui y siège et quand se réunit-il ?"),
+      good: "Le comité des risques, dans un mois : je présenterai le dossier.",
+      riskReply: "Le comité ne se réunit qu'une fois par trimestre, et l'ordre du jour est déjà plein.",
+      risk: {
+        level: "risque_majeur",
+        text: "Décideur : un comité décide, son calendrier repousse la décision.",
+        action: "Obtenir une inscription à l'ordre du jour et préparer le dossier avec le sponsor.",
+      },
+      argument: [q("Vous pouvez valider sans le comité ?"), "Non."],
+      vague: [q("Il y a d'autres validations ?"), "Peut-être."],
+    }),
+  },
+  {
     id: "r3-avis",
     theme: "L'avis et son délai",
     meeting: "R3",
     factor: null,
+    minLevel: 1,
     build: () => ({
       buyerLine: "Je ne pourrai pas conclure aujourd'hui.",
       question: q("Qui rend l'avis final, et dans quel délai ?"),
@@ -500,6 +645,7 @@ const PATTERNS: PatternDef[] = [
     theme: "La procédure",
     meeting: "R4",
     factor: "achats",
+    minLevel: 1,
     build: ({ v }) => ({
       buyerLine: "Je reprends le dossier côté achats.",
       question: q(`Quelle procédure s'applique ici (${v.procurement}) ?`),
@@ -519,6 +665,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Le référencement groupe",
     meeting: "R4",
     factor: "achats",
+    minLevel: 1,
     when: (c) => Boolean(c.group),
     build: (c) => ({
       buyerLine: "Je dois aussi en parler au groupe.",
@@ -539,6 +686,7 @@ const PATTERNS: PatternDef[] = [
     theme: "L'arbitrage budgétaire",
     meeting: "R4",
     factor: "budget",
+    minLevel: 2,
     build: ({ v }) => ({
       buyerLine: "Il faut maintenant que je défende le budget.",
       question: q("Qui arbitre ce budget, et face à quels autres projets ?"),
@@ -558,6 +706,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Le consensus interne",
     meeting: "R4",
     factor: "consensus",
+    minLevel: 3,
     build: () => ({
       buyerLine: "En interne, on en discute encore.",
       question: q("Sur quoi les avis divergent-ils, et qui tranche ?"),
@@ -577,6 +726,7 @@ const PATTERNS: PatternDef[] = [
     theme: "Le signataire",
     meeting: "R4",
     factor: "decideur",
+    minLevel: 1,
     build: ({ v }) => ({
       buyerLine: "Votre offre est en cours d'analyse.",
       question: q(`Qui signe, et faut-il passer par ${v.signature} ?`),
@@ -592,10 +742,45 @@ const PATTERNS: PatternDef[] = [
     }),
   },
   {
+    id: "r4-conditions",
+    theme: "Les conditions",
+    meeting: "R4",
+    factor: null,
+    minLevel: 2,
+    build: () => ({
+      buyerLine: "Il reste à cadrer les conditions.",
+      question: q("Quelles conditions sont non négociables pour vous ?"),
+      good: "Nos délais de paiement habituels, la réversibilité et nos clauses types.",
+      argument: [q("Nos conditions générales sont standard."), "Nous verrons ça avec le juridique."],
+      vague: [q("Il y a des points bloquants ?"), "Pas à ma connaissance."],
+    }),
+  },
+  {
+    id: "r4-juridique",
+    theme: "La relecture juridique",
+    meeting: "R4",
+    factor: "conformite",
+    minLevel: 4,
+    build: () => ({
+      buyerLine: "Le contrat partira chez nos juristes.",
+      question: q("Qui relit le contrat côté juridique, et combien de temps faut-il prévoir ?"),
+      good: "Notre juriste, sous deux semaines.",
+      riskReply: "Nos juristes ont plusieurs semaines de retard et voudront revoir toutes les clauses.",
+      risk: {
+        level: "risque",
+        text: "Sécurité, conformité, juridique : relecture longue qui décale la signature.",
+        action: "Envoyer le contrat tôt et proposer une réunion avec les juristes.",
+      },
+      argument: [q("Le contrat est standard, ça ira vite."), "Nos juristes en décideront."],
+      vague: [q("Le juridique, ça va aller ?"), "On verra."],
+    }),
+  },
+  {
     id: "r4-delai",
     theme: "La date de décision",
     meeting: "R4",
     factor: null,
+    minLevel: 1,
     build: ({ v }) => ({
       buyerLine: "Vous voulez sans doute une date.",
       question: q(`Compte tenu de ${v.delay}, quelle date de décision est réaliste ?`),
@@ -614,6 +799,7 @@ function sellerObjectionPattern(seller: SellerProfile, objection: string, meetin
     theme: `L'objection (${seller.label})`,
     meeting,
     factor: seller.objectionFactor,
+    minLevel: 1,
     build: () => ({
       buyerLine: objection,
       question: q("Qu'est-ce qui vous amène à poser cette question ?"),
@@ -699,6 +885,8 @@ export type SimulationSetup = {
   clientSectorId: string | null | undefined;
   sellerProfileId: string | null | undefined;
   multiEntity?: boolean;
+  /** Taille du client : augmente la complexité. */
+  clientSize?: ClientSizeId | null;
   meeting: MeetingTypeId;
   seed: number;
 };
@@ -716,9 +904,18 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     meeting,
   };
   const rand = seededRandom(setup.seed);
+  const complexity = computeComplexity({
+    clientSectorId: model.id,
+    clientSize: setup.clientSize ?? null,
+    multiEntity: Boolean(groupModel),
+  });
 
+  // Plus le deal est complexe, plus le rendez-vous compte de questions.
   const defs = PATTERNS.filter(
-    (p) => p.meeting === meeting && (!p.when || p.when(ctx)),
+    (p) =>
+      p.meeting === meeting &&
+      p.minLevel <= complexity.level &&
+      (!p.when || p.when(ctx)),
   );
   if (seller) {
     const objection =
@@ -735,8 +932,8 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
   const available = built
     .filter(({ def, out }) => def.factor && out.riskReply && out.risk)
     .map(({ def }) => def.factor!);
-  // Plus le client est complexe (filiale de groupe), plus il y a de blocages.
-  const count = groupModel ? 3 : 2;
+  // Plus le deal est complexe, plus il y a de blocages.
+  const count = complexity.level === 1 ? 1 : complexity.level === 4 ? 3 : 2;
   const blockers = drawBlockers(
     available,
     {
@@ -778,6 +975,7 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
   const meetingLabel = getMeetingType(meeting)?.label ?? meeting;
   return {
     model,
+    complexity: { level: complexity.level, label: complexity.label },
     seller,
     meeting,
     multiEntity: Boolean(groupModel),

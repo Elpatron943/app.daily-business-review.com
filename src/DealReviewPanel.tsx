@@ -29,6 +29,7 @@ import { getBlockerFactor } from "./opportunities/blockerFactors";
 import {
   SELLER_PROFILES,
   clientModelIdFromDealReviewSector,
+  clientSizeFromAccountSize,
 } from "./opportunities/sectorModels";
 import { supabase } from "./supabase/client";
 import DealBlockersPanel from "./DealBlockersPanel";
@@ -427,6 +428,7 @@ export default function DealReviewPanel({
               subSectorId,
             )}
             defaultMultiEntity={multiEntity}
+            defaultClientSize={clientSizeFromAccountSize(primaryAccount?.size)}
             sellerProfileId={sellerProfileId}
             onSellerProfileChange={onSellerProfileChange}
             disabled={billing.subscriptionBlocked}

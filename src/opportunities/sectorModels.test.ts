@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  CLIENT_SIZES,
+  computeComplexity,
   CLIENT_SECTOR_MODELS,
   MEETING_TYPES,
   SELLER_PROFILES,
@@ -112,7 +114,7 @@ describe("rendez-vous à boutons", () => {
   it("chaque combinaison donne trois boutons distincts par étape, dont une seule bonne question", () => {
     for (const setup of setups) {
       const sim = buildSimulation(setup);
-      expect(sim.steps.length).toBeGreaterThanOrEqual(3);
+      expect(sim.steps.length).toBeGreaterThanOrEqual(2);
       for (const step of sim.steps) {
         expect(step.choices).toHaveLength(3);
         expect(new Set(step.choices.map((c) => c.kind)).size).toBe(3);
@@ -193,7 +195,7 @@ describe("facteurs de blocage", () => {
       for (const mt of MEETING_TYPES) {
         for (const multi of [false, true]) {
           const sim = buildSimulation({ clientSectorId: m.id, sellerProfileId: "editeur-saas", multiEntity: multi, meeting: mt.id, seed: 5 });
-          expect(sim.blockers.length, `${m.id} ${mt.id}`).toBeGreaterThanOrEqual(2);
+          expect(sim.blockers.length, `${m.id} ${mt.id}`).toBeGreaterThanOrEqual(1);
           expect(new Set(sim.blockers).size).toBe(sim.blockers.length);
           for (const b of sim.blockers) {
             expect(sim.steps.some((s) => s.factor === b && s.risky), `${m.id} ${mt.id} ${b}`).toBe(true);
@@ -242,5 +244,34 @@ describe("facteurs de blocage", () => {
     for (const f of BLOCKER_FACTORS) expect(block).toContain(f.label);
     expect(block).toContain("Budget, Achats et procédure");
     expect(block).toContain('"facteurs"');
+  });
+});
+
+describe("complexité du deal", () => {
+  it("le niveau combine secteur, taille et groupe", () => {
+    expect(computeComplexity({ clientSectorId: "generique", clientSize: "pme" }).level).toBe(1);
+    expect(computeComplexity({ clientSectorId: "industrie", clientSize: "pme" }).level).toBe(2);
+    expect(computeComplexity({ clientSectorId: "industrie", clientSize: "eti" }).level).toBe(3);
+    expect(computeComplexity({ clientSectorId: "banque-assurance", clientSize: "ge", multiEntity: true }).level).toBe(4);
+  });
+
+  it("plus le deal est complexe, plus il y a de questions et de blocages", () => {
+    for (const mt of MEETING_TYPES) {
+      const sizes = CLIENT_SIZES.map((c) => c.id);
+      const sims = [
+        buildSimulation({ clientSectorId: "generique", clientSize: "pme", sellerProfileId: null, meeting: mt.id, seed: 9 }),
+        buildSimulation({ clientSectorId: "industrie", clientSize: "pme", sellerProfileId: null, meeting: mt.id, seed: 9 }),
+        buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: null, meeting: mt.id, seed: 9 }),
+        buildSimulation({ clientSectorId: "banque-assurance", clientSize: "ge", sellerProfileId: null, meeting: mt.id, seed: 9 }),
+      ];
+      expect(sizes).toEqual(["pme", "eti", "ge"]);
+      expect(sims.map((x) => x.complexity.level)).toEqual([1, 2, 3, 4]);
+      for (let i = 1; i < sims.length; i++) {
+        expect(sims.at(i)!.steps.length, `${mt.id} niveau ${i + 1}`).toBeGreaterThan(sims.at(i - 1)!.steps.length);
+        expect(sims.at(i)!.blockers.length).toBeGreaterThanOrEqual(sims.at(i - 1)!.blockers.length);
+      }
+      expect(sims[0]!.blockers).toHaveLength(1);
+      expect(sims[3]!.blockers).toHaveLength(3);
+    }
   });
 });

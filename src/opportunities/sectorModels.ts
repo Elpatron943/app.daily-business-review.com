@@ -83,6 +83,11 @@ export type ClientSectorModel = {
   interlocutors: Record<MeetingTypeId, string>;
   /** Facteurs de blocage les plus fréquents dans ce secteur (hypothèse). */
   likelyBlockers: BlockerFactorId[];
+  /**
+   * Complexité de base du secteur (1 à 3), selon le nombre de passages
+   * obligatoires (hypothèse). La couche grands groupes ne s'en sert pas.
+   */
+  complexityBase: number;
   /** Couche transverse (grands groupes) : s'ajoute au secteur du client. */
   overlay?: boolean;
 };
@@ -160,6 +165,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R4: "Acheteur",
     },
     likelyBlockers: ["conformite", "decideur", "achats"],
+    complexityBase: 3,
   },
   {
     id: "public",
@@ -210,6 +216,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R4: "Acheteur public",
     },
     likelyBlockers: ["budget", "achats", "priorites"],
+    complexityBase: 2,
   },
   {
     id: "sante-publique",
@@ -260,6 +267,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R4: "Direction des achats du GHT",
     },
     likelyBlockers: ["achats", "capacite", "conformite"],
+    complexityBase: 3,
   },
   {
     id: "energie-eau-transports",
@@ -299,6 +307,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R4: "Acheteur",
     },
     likelyBlockers: ["conformite", "achats", "capacite"],
+    complexityBase: 2,
   },
   {
     id: "industrie",
@@ -341,6 +350,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R4: "Acheteur central",
     },
     likelyBlockers: ["achats", "budget", "influence"],
+    complexityBase: 2,
   },
   {
     id: "generique",
@@ -378,6 +388,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R4: "Acheteur",
     },
     likelyBlockers: ["valeur", "statu-quo", "decideur"],
+    complexityBase: 1,
   },
   {
     id: "grands-groupes",
@@ -423,6 +434,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R4: "Achats groupe",
     },
     likelyBlockers: ["consensus", "decideur", "achats"],
+    complexityBase: 0,
   },
 ];
 
@@ -617,4 +629,59 @@ Conditions d'achat propres : ${seller.purchase.join(", ")}.`);
 - Une règle « hypothèse » ou « à vérifier » se présente comme telle, jamais comme un fait.
 - Les faits restent ceux de <diagnostic> et des réponses du commercial.`);
   return parts.join("\n\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* Complexité du deal : secteur × taille du client × groupe            */
+/* ------------------------------------------------------------------ */
+
+export type ClientSizeId = "pme" | "eti" | "ge";
+
+/** Catégories d'entreprises (loi de modernisation de l'économie, 2008). */
+export const CLIENT_SIZES: readonly { id: ClientSizeId; label: string; detail: string; bonus: number }[] = [
+  { id: "pme", label: "PME", detail: "moins de 250 salariés", bonus: 0 },
+  { id: "eti", label: "ETI", detail: "250 à 4 999 salariés", bonus: 1 },
+  { id: "ge", label: "Grande entreprise", detail: "5 000 salariés et plus", bonus: 2 },
+];
+
+export type ComplexityLevel = 1 | 2 | 3 | 4;
+
+export const COMPLEXITY_LABELS: Record<ComplexityLevel, string> = {
+  1: "Simple",
+  2: "Standard",
+  3: "Complexe",
+  4: "Très complexe",
+};
+
+/** Tranche de taille de la fiche compte → catégorie (approximation). */
+export function clientSizeFromAccountSize(size: string | null | undefined): ClientSizeId | null {
+  switch (size) {
+    case "1-1000":
+      return "pme";
+    case "1001-2500":
+    case "2501-5000":
+      return "eti";
+    case "5001-10000":
+    case "10000+":
+      return "ge";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Niveau de complexité (hypothèse) : base du secteur + bonus de taille
+ * + 1 si le client est la filiale d'un groupe. Plus le niveau est haut,
+ * plus le rendez-vous simulé compte de questions et de blocages.
+ */
+export function computeComplexity(input: {
+  clientSectorId: string | null | undefined;
+  clientSize: ClientSizeId | null | undefined;
+  multiEntity?: boolean;
+}): { level: ComplexityLevel; label: string; score: number } {
+  const model = getClientSectorModel(input.clientSectorId) ?? getClientSectorModel("generique")!;
+  const bonus = CLIENT_SIZES.find((c) => c.id === input.clientSize)?.bonus ?? 0;
+  const score = model.complexityBase + bonus + (input.multiEntity ? 1 : 0);
+  const level: ComplexityLevel = score <= 1 ? 1 : score === 2 ? 2 : score <= 4 ? 3 : 4;
+  return { level, label: COMPLEXITY_LABELS[level], score };
 }

@@ -14241,3 +14241,11 @@ a {
 .deal-blockers-factor.is-blocking {
   border-color: color-mix(in srgb, #b91c1c 50%, var(--line));
 }
+
+.sim-level {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.86rem;
+}
