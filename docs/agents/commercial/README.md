@@ -52,3 +52,9 @@ Architecture : **patterns communs à tous les secteurs** (`src/opportunities/mee
 - **Revue du deal** (Pilotage) : le prompt IA reçoit en plus les variables du secteur client (comité, veto, procédure, revue, règles sourcées).
 
 Pour ajouter un secteur : renseigner ses variables dans `sectorModels.ts` (les tests vérifient qu'aucune n'est vide). Pour ajouter un moment de rendez-vous commun à tous : un pattern dans `meetingPatterns.ts`.
+
+### Packs métier (couche 3)
+
+`src/opportunities/metierPacks.ts` précise ce que le commercial vend exactement. Un pack ne réécrit pas le cadre commun : il reformule certains moments (`variants`, par id de pattern), ajoute ses questions propres (chacune rattachée à un des 11 facteurs de blocage), précise interlocuteurs, preuves et blocages fréquents. Des règles croisées métier × secteur client (`CROSS_RULES`) ajustent le rendez-vous là où ça change vraiment (ex. risque fournisseur vendu à une banque : registre DORA).
+
+Premier pack : **Cybersécurité**, 7 domaines — infrastructure et réseau, identités et accès, détection et réponse (SOC), gestion du risque fournisseur, gouvernance et conformité (NIS2, ISO 27001), sécurité du cloud, sensibilisation. Pour ajouter un métier : un pack sur le même modèle ; les tests vérifient facteurs, variantes et jouabilité de toutes les combinaisons.

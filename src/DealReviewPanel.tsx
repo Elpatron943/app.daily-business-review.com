@@ -273,6 +273,13 @@ export default function DealReviewPanel({
         subSectorId: subSectorId || null,
         sellerProfileId: sellerProfileId || null,
         clientSectorId: clientModelIdFromDealReviewSector(sectorId, subSectorId),
+        metierId: (() => {
+          try {
+            return window.localStorage.getItem("dbr.metierId") || null;
+          } catch {
+            return null;
+          }
+        })(),
         multiEntity,
         messages: history.map((m) => ({ role: m.role, content: m.text })),
         clientDiagnostic: diagnosticBundle.diagnostic,

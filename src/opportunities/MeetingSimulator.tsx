@@ -9,6 +9,7 @@ import {
   type MeetingTypeId,
 } from "./sectorModels";
 import { getBlockerFactor, type BlockerFactorId } from "./blockerFactors";
+import { METIER_PACKS, getMetierDomain } from "./metierPacks";
 import {
   applyChoice,
   buildDebrief,
@@ -34,6 +35,25 @@ type Props = {
 };
 
 type Phase = "setup" | "play" | "debrief";
+
+const METIER_KEY = "dbr.metierId";
+
+function readMetier(): string {
+  try {
+    return window.localStorage.getItem(METIER_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeMetier(id: string) {
+  try {
+    if (id) window.localStorage.setItem(METIER_KEY, id);
+    else window.localStorage.removeItem(METIER_KEY);
+  } catch {
+    /* stockage indisponible : le choix vaut pour la session */
+  }
+}
 
 function newSeed(): number {
   return Math.floor(Math.random() * 2 ** 31);
@@ -108,6 +128,15 @@ export default function MeetingSimulator({
   const [carryOver, setCarryOver] = useState<BlockerFactorId[]>([]);
   const [known, setKnown] = useState<BlockerFactorId[]>([]);
   const [state, setState] = useState<SimState | null>(null);
+  const [metierId, setMetierIdState] = useState(readMetier);
+  const metier = getMetierDomain(metierId);
+  const [packId, setPackId] = useState(metier?.pack.id ?? "");
+  const pack = METIER_PACKS.find((p) => p.id === packId) ?? null;
+
+  function setMetierId(id: string) {
+    setMetierIdState(id);
+    writeMetier(id);
+  }
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -119,10 +148,10 @@ export default function MeetingSimulator({
     // Ne suit le compte qu'avant la partie.
   }, [defaultClientSectorId, defaultMultiEntity, defaultClientSize]);
 
-  const settings = { clientSectorId, sellerProfileId, multiEntity, clientSize };
+  const settings = { clientSectorId, sellerProfileId, multiEntity, clientSize, metierId };
   const sim = useMemo(
     () => buildSimulation({ ...settings, meeting, seed, carryOver, known }),
-    [clientSectorId, sellerProfileId, multiEntity, clientSize, meeting, seed, carryOver, known],
+    [clientSectorId, sellerProfileId, multiEntity, clientSize, metierId, meeting, seed, carryOver, known],
   );
 
   const step = state && phase === "play" ? currentStep(state) : undefined;
@@ -182,6 +211,32 @@ export default function MeetingSimulator({
           onChange={onSellerProfileChange}
           disabled={disabled}
         />
+        <Chips
+          label="Ton métier (optionnel)"
+          value={packId}
+          options={[
+            { id: "", label: "Non précisé" },
+            ...METIER_PACKS.map((p) => ({ id: p.id, label: p.label })),
+          ]}
+          onChange={(id) => {
+            setPackId(id);
+            if (!id) setMetierId("");
+            else if (getMetierDomain(metierId)?.pack.id !== id) setMetierId("");
+          }}
+          disabled={disabled}
+        />
+        {pack ? (
+          <Chips
+            label={`Domaine (${pack.label})`}
+            value={metierId}
+            options={[
+              { id: "", label: "Tous" },
+              ...pack.domains.map((d) => ({ id: d.id, label: d.label })),
+            ]}
+            onChange={setMetierId}
+            disabled={disabled}
+          />
+        ) : null}
         <Chips
           label="Secteur de ton client"
           value={clientSectorId}

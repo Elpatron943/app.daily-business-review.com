@@ -25,6 +25,7 @@ import {
   type Simulation,
 } from "./meetingPatterns";
 import { DEAL_REVIEW_SECTORS } from "./dealReviewSectors";
+import { METIER_PACKS, crossRulesFor } from "./metierPacks";
 import {
   BLOCKER_FACTORS,
   buildBlockerFactorsAddendum,
@@ -346,5 +347,57 @@ describe("enchaînement des questions", () => {
     const d = buildDebrief(sim, play(sim, () => "argument"));
     expect(d.events.some((e) => e.includes("s'agace"))).toBe(true);
     expect(d.events.at(-1)).toContain("écourte le rendez-vous");
+  });
+});
+
+describe("packs métier", () => {
+  it("chaque domaine cyber a ses questions propres sur au moins trois rendez-vous, rattachées à un facteur", () => {
+    const factors = new Set(BLOCKER_FACTORS.map((f) => f.id));
+    const patternIds = new Set(listPatterns().map((p) => p.id));
+    for (const pack of METIER_PACKS) {
+      for (const d of pack.domains) {
+        expect(d.questions.length, d.id).toBeGreaterThanOrEqual(4);
+        expect(new Set(d.questions.map((q) => q.meeting)).size, d.id).toBeGreaterThanOrEqual(3);
+        for (const q of d.questions) expect(factors.has(q.factor), `${d.id} ${q.id}`).toBe(true);
+        for (const id of Object.keys(d.variants)) expect(patternIds.has(id), `${d.id} ${id}`).toBe(true);
+        for (const f of d.likelyBlockers) expect(factors.has(f)).toBe(true);
+      }
+    }
+    expect(METIER_PACKS.find((p) => p.id === "cybersecurite")!.domains).toHaveLength(7);
+  });
+
+  it("le métier reformule un moment commun et ajoute ses questions", () => {
+    const base = buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: "editeur-saas", meeting: "R1", seed: 6 });
+    const tprm = buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: "editeur-saas", meeting: "R1", seed: 6, metierId: "cyber-tprm" });
+    expect(tprm.steps.length).toBeGreaterThan(base.steps.length);
+    expect(tprm.steps.find((s) => s.id === "r1-probleme")!.goodQuestion).toContain("fournisseurs critiques");
+    expect(base.steps.find((s) => s.id === "r1-probleme")!.goodQuestion).not.toContain("fournisseurs critiques");
+    expect(tprm.steps.some((s) => s.id === "metier-tprm-proprietaire")).toBe(true);
+    expect(tprm.metier?.domain).toBe("Gestion du risque fournisseur");
+    expect(tprm.opening).toContain("gestion du risque fournisseur");
+  });
+
+  it("toutes les combinaisons métier restent jouables (3 boutons distincts par étape)", () => {
+    for (const d of METIER_PACKS.flatMap((p) => p.domains)) {
+      for (const m of CLIENT_SECTOR_MODELS.filter((x) => !x.overlay)) {
+        for (const mt of MEETING_TYPES) {
+          const sim = buildSimulation({ clientSectorId: m.id, clientSize: "ge", multiEntity: true, sellerProfileId: "editeur-saas", meeting: mt.id, seed: 13, metierId: d.id });
+          for (const step of sim.steps) {
+            expect(new Set(step.choices.map((c) => c.label)).size, `${d.id} ${m.id} ${mt.id} ${step.id}`).toBe(3);
+            expect(step.goodQuestion).not.toMatch(/undefined/);
+          }
+          const st = play(sim, () => "question");
+          expect(buildDebrief(sim, st).blockers.every((b) => b.status === "creuse")).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("une règle croisée change le rendez-vous : risque fournisseur vendu à une banque", () => {
+    const banque = buildSimulation({ clientSectorId: "banque-assurance", clientSize: "eti", sellerProfileId: null, meeting: "R1", seed: 3, metierId: "cyber-tprm" });
+    expect(banque.steps.find((s) => s.id === "r1-urgence")!.goodQuestion).toContain("DORA");
+    const industrie = buildSimulation({ clientSectorId: "industrie", clientSize: "eti", sellerProfileId: null, meeting: "R1", seed: 3, metierId: "cyber-tprm" });
+    expect(industrie.steps.find((s) => s.id === "r1-urgence")!.goodQuestion).not.toContain("DORA");
+    expect(crossRulesFor("cyber-tprm", "banque-assurance")).toHaveLength(1);
   });
 });

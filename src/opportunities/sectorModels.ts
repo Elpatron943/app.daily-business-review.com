@@ -15,6 +15,7 @@
  */
 
 import type { BlockerFactorId } from "./blockerFactors";
+import { crossRulesFor, getMetierDomain } from "./metierPacks";
 
 export type MeetingTypeId = "R1" | "R2" | "R3" | "R4";
 
@@ -607,13 +608,16 @@ export type SectorContextInput = {
   clientSectorId: string | null | undefined;
   sellerProfileId: string | null | undefined;
   multiEntity?: boolean;
+  /** Sous-domaine métier (metierPacks). */
+  metierId?: string | null;
 };
 
 export function buildSectorReviewAddendum(input: SectorContextInput): string | null {
   const model = getClientSectorModel(input.clientSectorId);
   const seller = getSellerProfile(input.sellerProfileId);
   const overlay = input.multiEntity ? getClientSectorModel("grands-groupes") : null;
-  if (!model && !seller && !overlay) return null;
+  const metier = getMetierDomain(input.metierId);
+  if (!model && !seller && !overlay && !metier) return null;
 
   const parts: string[] = ["# Modèle sectoriel (analyse de l'opportunité)"];
   if (model) parts.push(modelHeader(model));
@@ -622,6 +626,15 @@ export function buildSectorReviewAddendum(input: SectorContextInput): string | n
     parts.push(`## Profil du vendeur : ${seller.label} (vend ${seller.offer})
 Objections typiques : ${seller.objections.map((o) => `« ${o} »`).join(" ")}
 Conditions d'achat propres : ${seller.purchase.join(", ")}.`);
+  }
+  if (metier) {
+    const d = metier.domain;
+    const cross = crossRulesFor(d.id, model?.id);
+    parts.push(`## Métier du vendeur : ${metier.pack.label} · ${d.label} (vend ${d.offer})
+Interlocuteurs propres : ${Object.values(d.interlocutors).join(", ")}.
+Preuves attendues : ${d.proofs.join(", ")}.
+Questions propres au métier : ${d.questions.map((q) => `« ${q.question} »`).join(" ")}${cross.length ? `
+Règle croisée avec le secteur du client : ${cross.map((c) => c.why).join(" ")}` : ""}`);
   }
   parts.push(`## Comment t'en servir
 - Compare le comité de <diagnostic> au comité attendu : nomme les rôles qui peuvent dire non et qui ne sont pas couverts, sans inventer de personne.

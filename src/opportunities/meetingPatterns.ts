@@ -20,6 +20,12 @@ import {
   type BlockerFactorId,
 } from "./blockerFactors";
 import {
+  crossRulesFor,
+  getMetierDomain,
+  type MetierQuestion,
+  type QuestionVariant,
+} from "./metierPacks";
+import {
   getClientSectorModel,
   getMeetingType,
   getSellerProfile,
@@ -65,6 +71,8 @@ export type SimStep = {
 
 export type Simulation = {
   model: ClientSectorModel;
+  /** Métier précis du vendeur (pack métier), s'il est choisi. */
+  metier: { pack: string; domain: string; offer: string } | null;
   complexity: { level: ComplexityLevel; label: string };
   seller: SellerProfile | null;
   meeting: MeetingTypeId;
@@ -184,8 +192,13 @@ const ISSUES: Record<MeetingTypeId, string> = {
   R4: "Procédure, budget, signataire, consensus interne et date de décision connus.",
 };
 
+/** Espaces insécables avant ? ! : ; (typographie française). */
+function nbsp(text: string): string {
+  return text.replace(/ ([?!:;])/g, "\u00a0$1");
+}
+
 function q(text: string): string {
-  return `« ${text} »`;
+  return `«\u00a0${nbsp(text)}\u00a0»`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -865,6 +878,42 @@ function sellerObjectionPattern(seller: SellerProfile, objection: string, meetin
 /* Moteur                                                              */
 /* ------------------------------------------------------------------ */
 
+function spoken(label: string): string {
+  return nbsp(label.replace(/^« /, "«\u00a0").replace(/ »$/, "\u00a0»"));
+}
+
+/** Question propre à un métier → pattern du moteur. */
+function metierPattern(m: MetierQuestion): PatternDef {
+  return {
+    id: `metier-${m.id}`,
+    theme: m.theme,
+    meeting: m.meeting,
+    factor: m.factor,
+    minLevel: m.minLevel,
+    build: () => ({
+      buyerLine: m.buyerLine,
+      question: q(m.question),
+      good: m.good,
+      riskReply: m.risk?.reply,
+      risk: m.risk ? { level: m.risk.level, text: m.risk.text, action: m.risk.action } : undefined,
+      argument: [spoken(m.argument[0]), m.argument[1]],
+      vague: [spoken(m.vague[0]), m.vague[1]],
+    }),
+  };
+}
+
+/** Reformulation métier d'un moment commun. */
+function applyVariant(out: PatternOutput, v: QuestionVariant | undefined): PatternOutput {
+  if (!v) return out;
+  return {
+    ...out,
+    buyerLine: v.buyerLine ?? out.buyerLine,
+    question: v.question ? q(v.question) : out.question,
+    good: v.good ?? out.good,
+    riskReply: v.riskReply ?? out.riskReply,
+  };
+}
+
 function capitalize(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
@@ -938,6 +987,8 @@ export type SimulationSetup = {
   carryOver?: BlockerFactorId[];
   /** Facteurs explorés aux rendez-vous précédents. */
   known?: BlockerFactorId[];
+  /** Sous-domaine métier (metierPacks), ex. « cyber-tprm ». */
+  metierId?: string | null;
 };
 
 export function buildSimulation(setup: SimulationSetup): Simulation {
@@ -977,8 +1028,22 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     );
   }
 
+  // Couche métier : questions propres, reformulations, règles croisées.
+  const metier = getMetierDomain(setup.metierId);
+  const cross = crossRulesFor(metier?.domain.id, model.id);
+  if (metier) {
+    const extra = metier.domain.questions
+      .filter((m) => m.meeting === meeting && m.minLevel <= complexity.level)
+      .map(metierPattern);
+    defs.splice(Math.max(defs.length - 1, 0), 0, ...extra);
+  }
+  const variants: Record<string, QuestionVariant> = {
+    ...(metier?.domain.variants ?? {}),
+    ...Object.assign({}, ...cross.map((c) => c.variants ?? {})),
+  };
+
   const carried = [...new Set(setup.carryOver ?? [])].filter((f) => getBlockerFactor(f));
-  const built = defs.map((def) => ({ def, out: def.build(ctx) }));
+  const built = defs.map((def) => ({ def, out: applyVariant(def.build(ctx), variants[def.id]) }));
   const available = built
     .filter(({ def, out }) => def.factor && out.riskReply && out.risk)
     .map(({ def }) => def.factor!)
@@ -990,8 +1055,12 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
   const blockers = drawBlockers(
     available,
     {
-      sector: model.likelyBlockers,
-      other: [...(seller?.likelyBlockers ?? []), ...(groupModel?.likelyBlockers ?? [])],
+      sector: [...model.likelyBlockers, ...cross.flatMap((c) => c.addLikely ?? [])],
+      other: [
+        ...(seller?.likelyBlockers ?? []),
+        ...(groupModel?.likelyBlockers ?? []),
+        ...(metier?.domain.likelyBlockers ?? []),
+      ],
     },
     count,
     rand,
@@ -1030,16 +1099,22 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     ...baseSteps,
   ];
 
-  const interlocutor = (groupModel && meeting !== "R3" ? groupModel : model).interlocutors[meeting];
+  const interlocutor =
+    groupModel && meeting !== "R3"
+      ? groupModel.interlocutors[meeting]
+      : metier?.domain.interlocutors[meeting] ?? model.interlocutors[meeting];
   const meetingLabel = getMeetingType(meeting)?.label ?? meeting;
   return {
     model,
+    metier: metier
+      ? { pack: metier.pack.label, domain: metier.domain.label, offer: metier.domain.offer }
+      : null,
     complexity: { level: complexity.level, label: complexity.label },
     seller,
     meeting,
     multiEntity: Boolean(groupModel),
     interlocutor,
-    opening: `Rendez-vous ${meeting} · ${meetingLabel}. Vous êtes face à : ${interlocutor} (${model.label}${groupModel ? ", filiale d'un groupe" : ""}).`,
+    opening: `Rendez-vous ${meeting} · ${meetingLabel}. Vous êtes face à : ${interlocutor} (${model.label}${groupModel ? ", filiale d'un groupe" : ""}).${metier ? ` Tu vends ${metier.domain.offer}.` : ""}`,
     blockers: [...carried, ...blockers],
     carried,
     known: [...new Set(setup.known ?? [])],

@@ -31,6 +31,7 @@ import {
   getClientSectorModel,
   getSellerProfile,
 } from "../src/opportunities/sectorModels";
+import { getMetierDomain } from "../src/opportunities/metierPacks";
 import {
   BLOCKER_FACTORS,
   buildBlockerFactorsAddendum,
@@ -83,6 +84,8 @@ export type DealReviewRequest = {
   clientSectorId?: string | null;
   /** Compte rattaché à un groupe : ajoute les variables grands groupes. */
   multiEntity?: boolean;
+  /** Sous-domaine métier du vendeur (metierPacks). */
+  metierId?: string | null;
   messages?: DealReviewChatMessage[];
   /** Uniquement si le reload serveur échoue (dev). */
   clientDiagnostic?: DealReviewDiagnostic;
@@ -400,6 +403,7 @@ export async function runDealReview(
           clientSectorId: body.clientSectorId ?? null,
           sellerProfileId: body.sellerProfileId ?? null,
           multiEntity: Boolean(body.multiEntity),
+          metierId: body.metierId ?? null,
         })
       : null;
   // Grille des facteurs de blocage : pour tous (cœur du produit). Les facteurs
@@ -411,6 +415,7 @@ export async function runDealReview(
         ? getClientSectorModel(body.clientSectorId)?.likelyBlockers ?? []
         : []),
       ...(getSellerProfile(body.sellerProfileId)?.likelyBlockers ?? []),
+      ...(getMetierDomain(body.metierId)?.domain.likelyBlockers ?? []),
     ]),
   ];
   const blockerAddendum = buildBlockerFactorsAddendum(likelyBlockers);
