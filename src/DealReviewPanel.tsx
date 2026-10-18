@@ -281,6 +281,7 @@ export default function DealReviewPanel({
           }
         })(),
         multiEntity,
+        clientSize: clientSizeFromAccountSize(primaryAccount?.size),
         messages: history.map((m) => ({ role: m.role, content: m.text })),
         clientDiagnostic: diagnosticBundle.diagnostic,
       });

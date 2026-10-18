@@ -10,6 +10,7 @@ import {
 } from "./sectorModels";
 import { getBlockerFactor, type BlockerFactorId } from "./blockerFactors";
 import { METIER_PACKS, getMetierDomain } from "./metierPacks";
+import { MEDDPICC_STATUS_LABEL, type MeddpiccId, type MeddpiccStatus } from "./meddpicc";
 import {
   applyChoice,
   buildDebrief,
@@ -130,6 +131,7 @@ export default function MeetingSimulator({
   const [seed, setSeed] = useState(newSeed);
   const [carryOver, setCarryOver] = useState<BlockerFactorId[]>([]);
   const [known, setKnown] = useState<BlockerFactorId[]>([]);
+  const [grid, setGrid] = useState<Partial<Record<MeddpiccId, MeddpiccStatus>>>({});
   const [state, setState] = useState<SimState | null>(null);
   const [metierId, setMetierIdState] = useState(readMetier);
   const metier = getMetierDomain(metierId);
@@ -153,8 +155,8 @@ export default function MeetingSimulator({
 
   const settings = { clientSectorId, sellerProfileId, multiEntity, clientSize, metierId };
   const sim = useMemo(
-    () => buildSimulation({ ...settings, meeting, seed, carryOver, known }),
-    [clientSectorId, sellerProfileId, multiEntity, clientSize, metierId, meeting, seed, carryOver, known],
+    () => buildSimulation({ ...settings, meeting, seed, carryOver, known, meddpicc: grid }),
+    [clientSectorId, sellerProfileId, multiEntity, clientSize, metierId, meeting, seed, carryOver, known, grid],
   );
 
   const step = state && phase === "play" ? currentStep(state) : undefined;
@@ -169,10 +171,12 @@ export default function MeetingSimulator({
     meeting?: MeetingTypeId;
     carryOver?: BlockerFactorId[];
     known?: BlockerFactorId[];
+    meddpicc?: Partial<Record<MeddpiccId, MeddpiccStatus>>;
   }) {
     const nextMeetingId = opts?.meeting ?? meeting;
     const nextCarry = opts?.carryOver ?? [];
     const nextKnown = opts?.known ?? [];
+    const nextGrid = opts?.meddpicc ?? {};
     const nextSeed = newSeed();
     // Même entrée que le useMemo : la partie démarre sur la simulation affichée.
     const fresh = buildSimulation({
@@ -181,10 +185,12 @@ export default function MeetingSimulator({
       seed: nextSeed,
       carryOver: nextCarry,
       known: nextKnown,
+      meddpicc: nextGrid,
     });
     setMeeting(nextMeetingId);
     setCarryOver(nextCarry);
     setKnown(nextKnown);
+    setGrid(nextGrid);
     setSeed(nextSeed);
     setState(startSimulation(fresh));
     setPhase("play");
@@ -378,6 +384,28 @@ export default function MeetingSimulator({
       {debrief ? (
         <div className="deal-review-debrief sim-debrief">
           <h4>Débrief</h4>
+          {debrief.meddpicc ? (
+            <div className="deal-review-debrief-part">
+              <strong>MEDDPICC du deal</strong>
+              <span className="muted"> · vente complexe, sur tout le cycle</span>
+              <ul className="sim-meddpicc">
+                {debrief.meddpicc.map((m) => (
+                  <li key={m.id} className={`is-${m.status}`} title={m.question}>
+                    <span className="sim-meddpicc-letter" aria-hidden>
+                      {m.letter}
+                    </span>
+                    <span>
+                      <strong>{m.label}</strong>
+                      <span className="sim-meddpicc-status">
+                        {MEDDPICC_STATUS_LABEL[m.status]}
+                        {m.fromEarlier ? " · rendez-vous précédent" : ""}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="deal-review-debrief-part">
             <strong>La trame de découverte</strong>
             <ol className="sim-stages">
@@ -444,7 +472,9 @@ export default function MeetingSimulator({
             <button
               type="button"
               className="sim-chip"
-              onClick={() => start({ meeting, carryOver: sim.carried, known: sim.known })}
+              onClick={() =>
+                start({ meeting, carryOver: sim.carried, known: sim.known, meddpicc: sim.meddpiccBefore })
+              }
             >
               Rejouer ce rendez-vous
             </button>
@@ -453,7 +483,14 @@ export default function MeetingSimulator({
                 type="button"
                 className="sim-chip is-active"
                 onClick={() =>
-                  start({ meeting: nextMeeting, carryOver: debrief.carryOver, known: debrief.known })
+                  start({
+                    meeting: nextMeeting,
+                    carryOver: debrief.carryOver,
+                    known: debrief.known,
+                    meddpicc: debrief.meddpicc
+                      ? Object.fromEntries(debrief.meddpicc.map((m) => [m.id, m.status]))
+                      : {},
+                  })
                 }
               >
                 Rendez-vous suivant ({nextMeeting})
@@ -466,6 +503,7 @@ export default function MeetingSimulator({
                 setState(null);
                 setCarryOver([]);
                 setKnown([]);
+                setGrid({});
                 setPhase("setup");
               }}
             >

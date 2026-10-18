@@ -19,6 +19,7 @@ export type BlockerFactorId =
   | "budget"
   | "priorites"
   | "influence"
+  | "champion"
   | "consensus"
   | "achats"
   | "conformite"
@@ -120,6 +121,14 @@ export const BLOCKER_FACTORS: readonly BlockerFactor[] = [
     action: "Comparer sur leurs critères, sans dénigrer, et nommer ce qui compte pour eux.",
   },
   {
+    id: "champion",
+    label: "Pas de champion",
+    description: "Personne chez le client ne défend le projet en ton absence, ou ton contact n'a ni pouvoir ni intérêt à le faire.",
+    signals: ["« Je vais en parler en interne » sans retour", "Le contact ne peut obtenir ni rendez-vous ni information"],
+    question: "Qui défendra ce projet quand je ne serai pas dans la pièce, et qu'a-t-il à y gagner ?",
+    action: "Tester ton contact : lui demander un accès ou une information interne. S'il ne peut pas, chercher un autre champion.",
+  },
+  {
     id: "capacite",
     label: "Capacité de mise en œuvre",
     description: "Le client n'a pas le temps ni les équipes pour déployer.",
@@ -142,7 +151,7 @@ export function getBlockerFactor(id: string | null | undefined): BlockerFactor |
 const FINDING_FACTOR: Partial<Record<FindingCode, BlockerFactorId>> = {
   C1: "decideur",
   C2: "decideur",
-  C3: "influence",
+  C3: "champion",
   C4: "influence",
   C5: "influence",
   C6: "influence",

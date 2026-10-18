@@ -249,8 +249,9 @@ describe("facteurs de blocage", () => {
       { code: "U2", severity: "risque" },
       { code: "T1", severity: "bloquant" },
     ]);
-    expect(summary.map((s) => s.factor.id)).toEqual(["influence", "decideur", "valeur"]);
-    expect(summary.find((s) => s.factor.id === "influence")!.findings).toBe(2);
+    // C3 (aucun champion) relève du facteur « Pas de champion ».
+    expect(summary.map((s) => s.factor.id)).toEqual(["decideur", "influence", "champion", "valeur"]);
+    expect(summary.find((s) => s.factor.id === "champion")!.findings).toBe(1);
   });
 
   it("la revue IA reçoit la grille et doit nommer les facteurs", () => {
@@ -430,5 +431,63 @@ describe("trame de découverte", () => {
     const d = buildDebrief(sim, st);
     expect(d.stages[0]).toMatchObject({ stage: "situation", status: "manquee" });
     expect(d.stages.find((x) => x.stage === "probleme")!.status).toBe("couverte");
+  });
+});
+
+describe("MEDDPICC pour les ventes complexes", () => {
+  const base = { clientSectorId: "banque-assurance", sellerProfileId: "editeur-saas", seed: 5 } as const;
+
+  it("la grille s'active à partir d'un deal complexe, pas avant", () => {
+    const simple = buildSimulation({ ...base, clientSectorId: "generique", clientSize: "pme", meeting: "R1" });
+    const complexe = buildSimulation({ ...base, clientSize: "eti", meeting: "R1" });
+    expect(simple.meddpiccActive).toBe(false);
+    expect(complexe.meddpiccActive).toBe(true);
+    let st = startSimulation(simple);
+    while (!isFinished(st)) st = applyChoice(st, currentStep(st)!.choices[0]!.id);
+    expect(buildDebrief(simple, st).meddpicc).toBeNull();
+  });
+
+  it("un deal complexe teste le champion et les critères dès la découverte", () => {
+    const sim = buildSimulation({ ...base, clientSize: "ge", meeting: "R1" });
+    const ids = sim.steps.map((s) => s.id);
+    expect(ids).toContain("r1-champion");
+    expect(ids).toContain("r1-criteres");
+    expect(buildSimulation({ ...base, clientSize: "ge", meeting: "R2" }).steps.map((s) => s.id)).toContain("r2-champion");
+  });
+
+  it("toutes les lettres sont couvertes sur les quatre rendez-vous d'un deal complexe", () => {
+    const letters = new Set<string>();
+    for (const meeting of ["R1", "R2", "R3", "R4"] as const) {
+      buildSimulation({ ...base, clientSize: "ge", meeting }).steps.forEach((s) => s.meddpicc && letters.add(s.meddpicc));
+    }
+    expect(letters.size).toBe(8);
+  });
+
+  it("la grille se cumule d'un rendez-vous à l'autre", () => {
+    const r1 = buildSimulation({ ...base, clientSize: "ge", meeting: "R1" });
+    let st = startSimulation(r1);
+    while (!isFinished(st)) st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "question")!.id);
+    const d1 = buildDebrief(r1, st);
+    expect(d1.meddpicc!.find((m) => m.id === "pain")!.status).toBe("valide");
+    const r2 = buildSimulation({
+      ...base,
+      clientSize: "ge",
+      meeting: "R2",
+      meddpicc: Object.fromEntries(d1.meddpicc!.map((m) => [m.id, m.status])),
+    });
+    let st2 = startSimulation(r2);
+    while (!isFinished(st2)) st2 = applyChoice(st2, currentStep(st2)!.choices.find((c) => c.kind === "question")!.id);
+    const pain = buildDebrief(r2, st2).meddpicc!.find((m) => m.id === "pain")!;
+    expect(pain.status).toBe("valide");
+    expect(pain.fromEarlier).toBe(true);
+  });
+});
+
+describe("revue IA d'un deal complexe", () => {
+  it("la revue reçoit la grille MEDDPICC, lettre par lettre", async () => {
+    const { buildMeddpiccAddendum, MEDDPICC } = await import("./meddpicc");
+    const text = buildMeddpiccAddendum("Complexe");
+    for (const m of MEDDPICC) expect(text).toContain(m.name);
+    expect(text).toContain("lettre la plus faible");
   });
 });

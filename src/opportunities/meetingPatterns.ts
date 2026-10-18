@@ -16,6 +16,14 @@
  */
 
 import {
+  MEDDPICC,
+  MEDDPICC_MIN_LEVEL,
+  meddpiccForFactor,
+  type MeddpiccId,
+  type MeddpiccOutcome,
+  type MeddpiccStatus,
+} from "./meddpicc";
+import {
   getBlockerFactor,
   type BlockerFactorId,
 } from "./blockerFactors";
@@ -39,6 +47,8 @@ import {
 } from "./sectorModels";
 
 export type ChoiceKind = "question" | "argument" | "vague";
+
+export type { MeddpiccId, MeddpiccOutcome, MeddpiccStatus } from "./meddpicc";
 
 /**
  * Trame de découverte commune à tous les secteurs : chaque question du moteur
@@ -78,6 +88,7 @@ const STAGE_BY_FACTOR: Record<BlockerFactorId, DiscoveryStageId> = {
   budget: "decision",
   priorites: "situation",
   influence: "decision",
+  champion: "decision",
   consensus: "decision",
   achats: "decision",
   conformite: "solution",
@@ -113,6 +124,8 @@ export type SimStep = {
   theme: string;
   /** Étape de la trame de découverte (situation, problème, impact…). */
   stage: DiscoveryStageId;
+  /** Lettre MEDDPICC que l'étape qualifie (grille des ventes complexes). */
+  meddpicc: MeddpiccId | null;
   /** Facteur de blocage que cette étape permet de vérifier. */
   factor: BlockerFactorId | null;
   buyerLine: string;
@@ -129,6 +142,10 @@ export type Simulation = {
   /** Métier précis du vendeur (pack métier), s'il est choisi. */
   metier: { pack: string; domain: string; offer: string } | null;
   complexity: { level: ComplexityLevel; label: string };
+  /** Grille MEDDPICC active (deal complexe ou très complexe). */
+  meddpiccActive: boolean;
+  /** Statuts MEDDPICC acquis aux rendez-vous précédents. */
+  meddpiccBefore: Partial<Record<MeddpiccId, MeddpiccStatus>>;
   seller: SellerProfile | null;
   meeting: MeetingTypeId;
   multiEntity: boolean;
@@ -199,6 +216,8 @@ export type StageOutcome = {
 };
 
 export type SimDebrief = {
+  /** Grille MEDDPICC sur tout le cycle, pour les ventes complexes (null sinon). */
+  meddpicc: MeddpiccOutcome[] | null;
   /** Trame de découverte : chaque étape du rendez-vous, couverte ou non. */
   stages: StageOutcome[];
   asked: string[];
@@ -242,6 +261,8 @@ type PatternDef = {
   id: string;
   theme: string;
   stage: DiscoveryStageId;
+  /** Lettre MEDDPICC ; par défaut, déduite du facteur. */
+  meddpicc?: MeddpiccId | null;
   meeting: MeetingTypeId;
   factor: BlockerFactorId | null;
   /** Niveau de complexité à partir duquel la question apparaît (1 à 4). */
@@ -276,6 +297,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-situation",
     theme: "Les outils et l'organisation",
     stage: "situation",
+    meddpicc: "competition",
     meeting: "R1",
     factor: "concurrence",
     minLevel: 1,
@@ -297,6 +319,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-probleme",
     theme: "Ce qui ne va pas, et pour qui",
     stage: "probleme",
+    meddpicc: "pain",
     meeting: "R1",
     factor: "valeur",
     minLevel: 1,
@@ -318,6 +341,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-impact",
     theme: "Ce que ça coûte",
     stage: "impact",
+    meddpicc: "metrics",
     meeting: "R1",
     factor: "valeur",
     minLevel: 2,
@@ -339,6 +363,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-urgence",
     theme: "Si rien ne change",
     stage: "declencheur",
+    meddpicc: "pain",
     meeting: "R1",
     factor: "statu-quo",
     minLevel: 1,
@@ -360,6 +385,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-evenement",
     theme: "L'échéance qui oblige à décider",
     stage: "declencheur",
+    meddpicc: "pain",
     meeting: "R1",
     factor: "statu-quo",
     minLevel: 3,
@@ -381,6 +407,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-entite",
     theme: "Qui paie dans le groupe",
     stage: "decision",
+    meddpicc: "economic-buyer",
     meeting: "R1",
     factor: "budget",
     minLevel: 1,
@@ -403,6 +430,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-decideurs",
     theme: "Les décideurs et le veto",
     stage: "decision",
+    meddpicc: "decision-process",
     meeting: "R1",
     factor: "decideur",
     minLevel: 1,
@@ -424,6 +452,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-budget",
     theme: "Le budget",
     stage: "decision",
+    meddpicc: "economic-buyer",
     meeting: "R1",
     factor: "budget",
     minLevel: 1,
@@ -446,6 +475,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-priorites",
     theme: "Les projets en cours",
     stage: "situation",
+    meddpicc: "competition",
     meeting: "R1",
     factor: "priorites",
     minLevel: 3,
@@ -467,6 +497,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-achat",
     theme: "Le mode d'achat",
     stage: "decision",
+    meddpicc: "paper-process",
     meeting: "R1",
     factor: "achats",
     minLevel: 2,
@@ -488,6 +519,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-historique",
     theme: "Les tentatives passées",
     stage: "situation",
+    meddpicc: "competition",
     meeting: "R1",
     factor: "concurrence",
     minLevel: 4,
@@ -509,6 +541,7 @@ const PATTERNS: PatternDef[] = [
     id: "r1-calendrier",
     theme: "Les échéances internes",
     stage: "decision",
+    meddpicc: "decision-process",
     meeting: "R1",
     factor: "priorites",
     minLevel: 4,
@@ -527,9 +560,54 @@ const PATTERNS: PatternDef[] = [
     }),
   },
   {
+    id: "r1-criteres",
+    theme: "Comment ils choisiront",
+    stage: "solution",
+    meddpicc: "decision-criteria",
+    meeting: "R1",
+    factor: "concurrence",
+    minLevel: 3,
+    build: () => ({
+      buyerLine: "On regarde aussi d'autres solutions, je préfère être transparent.",
+      question: q("Sur quels critères allez-vous comparer les solutions, et qui les a fixés ?"),
+      good: "La rapidité de mise en route et la reprise de nos données. C'est la direction des opérations qui a fixé la liste.",
+      riskReply: "Le cahier des charges a été écrit avec un autre fournisseur, pour être honnête.",
+      risk: {
+        level: "risque_majeur",
+        text: "Critères écrits pour un concurrent : la comparaison est jouée d'avance.",
+        action: "Faire ajouter un critère où tu es fort, par la personne qui a fixé la liste.",
+      },
+      argument: [q("Sur tous les critères, nous sommes les meilleurs."), "Vous ne connaissez pas encore nos critères."],
+      vague: [q("Vous avez une grille de choix ?"), "Plus ou moins."],
+    }),
+  },
+  {
+    id: "r1-champion",
+    theme: "Qui portera le projet",
+    stage: "decision",
+    meddpicc: "champion",
+    meeting: "R1",
+    factor: "champion",
+    minLevel: 3,
+    build: () => ({
+      buyerLine: "Je vais en parler en interne et je reviens vers vous.",
+      question: q("Quand je ne serai pas dans la pièce, qui défendra ce projet, et qu'a-t-il à y gagner ?"),
+      good: "Moi : c'est mon objectif de l'année, et j'ai l'oreille du directeur général. Je peux vous obtenir le rendez-vous.",
+      riskReply: "Je transmettrai, mais je ne peux pas promettre que quelqu'un s'en empare.",
+      risk: {
+        level: "risque_majeur",
+        text: "Pas de champion : personne ne défend le projet en ton absence.",
+        action: "Tester ton contact sur une demande précise (un accès, une information) et chercher un autre porteur s'il ne peut pas.",
+      },
+      argument: [q("Je vous envoie une présentation à faire circuler."), "Une présentation de plus dans la boîte de tout le monde…"],
+      vague: [q("Vous allez en parler autour de vous ?"), "Oui, sûrement."],
+    }),
+  },
+  {
     id: "r1-suite",
     theme: "La prochaine étape",
     stage: "suite",
+    meddpicc: "decision-process",
     meeting: "R1",
     factor: null,
     minLevel: 1,
@@ -547,6 +625,7 @@ const PATTERNS: PatternDef[] = [
     id: "r2-cas",
     theme: "Le cas concret",
     stage: "solution",
+    meddpicc: "decision-criteria",
     meeting: "R2",
     factor: "valeur",
     minLevel: 1,
@@ -568,6 +647,7 @@ const PATTERNS: PatternDef[] = [
     id: "r2-influence",
     theme: "Soutiens et opposants",
     stage: "decision",
+    meddpicc: "champion",
     meeting: "R2",
     factor: "influence",
     minLevel: 2,
@@ -586,9 +666,32 @@ const PATTERNS: PatternDef[] = [
     }),
   },
   {
+    id: "r2-champion",
+    theme: "Le champion à l'épreuve",
+    stage: "decision",
+    meddpicc: "champion",
+    meeting: "R2",
+    factor: "champion",
+    minLevel: 3,
+    build: () => ({
+      buyerLine: "C'est convaincant. Il faudra le présenter en comité.",
+      question: q("Pourriez-vous présenter ce cas vous-même au comité, et que vous faudrait-il pour le faire ?"),
+      good: "Oui, si vous m'aidez à chiffrer le gain sur notre cas. Je le porterai, c'est mon projet.",
+      riskReply: "Je préférerais que vous le présentiez : ce n'est pas vraiment mon rôle d'arbitrer ça.",
+      risk: {
+        level: "risque_majeur",
+        text: "Champion fragile : ton contact ne portera pas le projet devant ceux qui décident.",
+        action: "Préparer le dossier avec lui pour qu'il le présente, ou trouver qui le portera à sa place.",
+      },
+      argument: [q("Je viendrai le présenter moi-même, ce sera plus simple."), "Le comité préfère entendre quelqu'un de chez nous."],
+      vague: [q("Le comité, ça devrait bien se passer ?"), "Je l'espère."],
+    }),
+  },
+  {
     id: "r2-utilisateurs",
     theme: "Les utilisateurs",
     stage: "solution",
+    meddpicc: "decision-process",
     meeting: "R2",
     factor: "consensus",
     minLevel: 1,
@@ -610,6 +713,7 @@ const PATTERNS: PatternDef[] = [
     id: "r2-groupe",
     theme: "Le groupe dans la boucle",
     stage: "decision",
+    meddpicc: "decision-process",
     meeting: "R2",
     factor: "consensus",
     minLevel: 1,
@@ -632,6 +736,7 @@ const PATTERNS: PatternDef[] = [
     id: "r2-concurrence",
     theme: "Les alternatives",
     stage: "solution",
+    meddpicc: "competition",
     meeting: "R2",
     factor: "concurrence",
     minLevel: 2,
@@ -653,6 +758,7 @@ const PATTERNS: PatternDef[] = [
     id: "r2-valeur-chiffree",
     theme: "La valeur chiffrée",
     stage: "impact",
+    meddpicc: "metrics",
     meeting: "R2",
     factor: "valeur",
     minLevel: 3,
@@ -674,6 +780,7 @@ const PATTERNS: PatternDef[] = [
     id: "r2-integration",
     theme: "L'intégration",
     stage: "solution",
+    meddpicc: "decision-criteria",
     meeting: "R2",
     factor: "capacite",
     minLevel: 4,
@@ -695,6 +802,7 @@ const PATTERNS: PatternDef[] = [
     id: "r2-critere",
     theme: "Le critère de succès",
     stage: "solution",
+    meddpicc: "decision-criteria",
     meeting: "R2",
     factor: "valeur",
     minLevel: 1,
@@ -718,6 +826,7 @@ const PATTERNS: PatternDef[] = [
     id: "r3-exigences",
     theme: "Les exigences",
     stage: "solution",
+    meddpicc: "decision-criteria",
     meeting: "R3",
     factor: "conformite",
     minLevel: 1,
@@ -739,6 +848,7 @@ const PATTERNS: PatternDef[] = [
     id: "r3-donnees",
     theme: "Les données et leurs règles",
     stage: "solution",
+    meddpicc: "decision-criteria",
     meeting: "R3",
     factor: null,
     minLevel: 2,
@@ -754,6 +864,7 @@ const PATTERNS: PatternDef[] = [
     id: "r3-capacite",
     theme: "La capacité à déployer",
     stage: "solution",
+    meddpicc: "decision-criteria",
     meeting: "R3",
     factor: "capacite",
     minLevel: 2,
@@ -775,6 +886,7 @@ const PATTERNS: PatternDef[] = [
     id: "r3-contrat",
     theme: "Les clauses",
     stage: "decision",
+    meddpicc: "paper-process",
     meeting: "R3",
     factor: "conformite",
     minLevel: 2,
@@ -796,6 +908,7 @@ const PATTERNS: PatternDef[] = [
     id: "r3-reversibilite",
     theme: "La sortie",
     stage: "decision",
+    meddpicc: "paper-process",
     meeting: "R3",
     factor: "conformite",
     minLevel: 3,
@@ -817,6 +930,7 @@ const PATTERNS: PatternDef[] = [
     id: "r3-comite",
     theme: "Le comité de validation",
     stage: "decision",
+    meddpicc: "decision-process",
     meeting: "R3",
     factor: "decideur",
     minLevel: 4,
@@ -838,6 +952,7 @@ const PATTERNS: PatternDef[] = [
     id: "r3-avis",
     theme: "L'avis et son délai",
     stage: "suite",
+    meddpicc: "decision-process",
     meeting: "R3",
     factor: null,
     minLevel: 1,
@@ -855,6 +970,7 @@ const PATTERNS: PatternDef[] = [
     id: "r4-procedure",
     theme: "La procédure",
     stage: "decision",
+    meddpicc: "paper-process",
     meeting: "R4",
     factor: "achats",
     minLevel: 1,
@@ -876,6 +992,7 @@ const PATTERNS: PatternDef[] = [
     id: "r4-groupe",
     theme: "Le référencement groupe",
     stage: "decision",
+    meddpicc: "paper-process",
     meeting: "R4",
     factor: "achats",
     minLevel: 1,
@@ -898,6 +1015,7 @@ const PATTERNS: PatternDef[] = [
     id: "r4-budget",
     theme: "L'arbitrage budgétaire",
     stage: "decision",
+    meddpicc: "economic-buyer",
     meeting: "R4",
     factor: "budget",
     minLevel: 2,
@@ -919,6 +1037,7 @@ const PATTERNS: PatternDef[] = [
     id: "r4-consensus",
     theme: "Le consensus interne",
     stage: "decision",
+    meddpicc: "decision-process",
     meeting: "R4",
     factor: "consensus",
     minLevel: 3,
@@ -940,6 +1059,7 @@ const PATTERNS: PatternDef[] = [
     id: "r4-signataire",
     theme: "Le signataire",
     stage: "decision",
+    meddpicc: "economic-buyer",
     meeting: "R4",
     factor: "decideur",
     minLevel: 1,
@@ -961,6 +1081,7 @@ const PATTERNS: PatternDef[] = [
     id: "r4-conditions",
     theme: "Les conditions",
     stage: "decision",
+    meddpicc: "paper-process",
     meeting: "R4",
     factor: null,
     minLevel: 2,
@@ -976,6 +1097,7 @@ const PATTERNS: PatternDef[] = [
     id: "r4-juridique",
     theme: "La relecture juridique",
     stage: "decision",
+    meddpicc: "paper-process",
     meeting: "R4",
     factor: "conformite",
     minLevel: 4,
@@ -997,6 +1119,7 @@ const PATTERNS: PatternDef[] = [
     id: "r4-delai",
     theme: "La date de décision",
     stage: "suite",
+    meddpicc: "decision-process",
     meeting: "R4",
     factor: null,
     minLevel: 1,
@@ -1152,6 +1275,8 @@ export type SimulationSetup = {
   known?: BlockerFactorId[];
   /** Sous-domaine métier (metierPacks), ex. « cyber-tprm ». */
   metierId?: string | null;
+  /** Grille MEDDPICC acquise aux rendez-vous précédents. */
+  meddpicc?: Partial<Record<MeddpiccId, MeddpiccStatus>>;
 };
 
 export function buildSimulation(setup: SimulationSetup): Simulation {
@@ -1252,6 +1377,7 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
       origin: "base" as const,
       theme: def.theme,
       stage: def.stage,
+      meddpicc: def.meddpicc !== undefined ? def.meddpicc : meddpiccForFactor(def.factor),
       factor: def.factor,
       buyerLine: out.buyerLine,
       choices,
@@ -1282,6 +1408,8 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
       ? { pack: metier.pack.label, domain: metier.domain.label, offer: metier.domain.offer }
       : null,
     complexity: { level: complexity.level, label: complexity.label },
+    meddpiccActive: complexity.level >= MEDDPICC_MIN_LEVEL,
+    meddpiccBefore: { ...(setup.meddpicc ?? {}) },
     seller,
     meeting,
     multiEntity: Boolean(groupModel),
@@ -1337,6 +1465,11 @@ const FOLLOW_UPS: Record<BlockerFactorId, FollowUp> = {
     question: "Qu'est-ce qui la ferait changer d'avis, et pouvons-nous la rencontrer ensemble ?",
     good: "Elle veut des garanties sur le coût total. Je peux organiser un point.",
   },
+  champion: {
+    buyerLine: "Je ne suis pas sûr de pouvoir porter le sujet seul.",
+    question: "Que vous faudrait-il pour présenter le projet vous-même à votre direction, et qui d'autre pourrait le porter avec vous ?",
+    good: "Un cas chiffré sur une page. Et la directrice des opérations : elle a le même problème et l'oreille du directeur général.",
+  },
   consensus: {
     buyerLine: "Ce désaccord n'est pas nouveau.",
     question: "Sur quel critère précis faudrait-il se mettre d'accord, et qui peut trancher ?",
@@ -1372,6 +1505,7 @@ const ESCALATIONS: Record<BlockerFactorId, string> = {
   budget: "Mauvaise nouvelle : le budget vient d'être gelé, personne ne l'avait vu venir.",
   priorites: "Le gros projet interne a pris du retard : il mobilise tout le monde, le vôtre passe après.",
   influence: "Le directeur financier a entendu parler du projet, et il n'y est pas favorable.",
+  champion: "Je dois vous dire : mon responsable a repris le dossier, et il ne connaît pas votre proposition.",
   consensus: "En interne, ça se tend : la DSI et le métier ne sont pas d'accord.",
   achats: "Les achats viennent de rappeler qu'on ne peut rien commander sans référencement.",
   conformite: "La sécurité s'est saisie du dossier et bloque tant qu'elle n'a pas ses preuves.",
@@ -1381,6 +1515,7 @@ const ESCALATIONS: Record<BlockerFactorId, string> = {
 
 /** Ce que dit l'acheteur quand on revient sur un sujet déjà exploré. */
 const RECALLS: Partial<Record<BlockerFactorId, string>> = {
+  champion: "Je vous l'ai dit, je porterai le sujet en interne.",
   decideur: "Comme je vous l'ai dit, plusieurs personnes devront valider.",
   budget: "On a déjà parlé du budget tout à l'heure.",
   valeur: "Vous avez compris ce qu'on attend, je ne reviens pas dessus.",
@@ -1404,6 +1539,7 @@ function followUpStep(factor: BlockerFactorId, rand: () => number): SimStep {
     origin: "relance",
     theme: `Relance : ${label}`,
     stage: stageForFactor(factor),
+    meddpicc: meddpiccForFactor(factor),
     factor,
     buyerLine: f.buyerLine,
     choices: shuffle(
@@ -1429,6 +1565,7 @@ function carriedStep(factor: BlockerFactorId, index: number, rand: () => number)
     origin: "retour",
     theme: `Blocage qui revient : ${factorDef.label}`,
     stage: stageForFactor(factor),
+    meddpicc: meddpiccForFactor(factor),
     factor,
     buyerLine: ESCALATIONS[factor],
     choices: shuffle(
@@ -1559,6 +1696,41 @@ export function applyChoice(state: SimState, choiceId: string): SimState {
   return next;
 }
 
+/** Grille MEDDPICC du cycle : ce rendez-vous, complété par les précédents. */
+function meddpiccGrid(sim: Simulation, state: SimState): MeddpiccOutcome[] {
+  const rank: Record<string, number> = { risque: 4, manque: 3, valide: 2, faible: 1 };
+  const worst: Partial<Record<MeddpiccId, string>> = {};
+  const bump = (id: MeddpiccId | null, v: string) => {
+    if (!id) return;
+    if (!worst[id] || rank[v]! > rank[worst[id]!]!) worst[id] = v;
+  };
+  for (const { step, turn } of state.played) {
+    if (turn.kind === "question") {
+      const open = turn.riskFound && step.factor && !state.dug.includes(step.factor);
+      bump(step.meddpicc, open ? "risque" : "valide");
+    } else {
+      bump(step.meddpicc, step.risky ? "manque" : "faible");
+    }
+  }
+  for (const step of state.lost) bump(step.meddpicc, step.risky ? "manque" : "faible");
+  return MEDDPICC.map((m) => {
+    const now = worst[m.id];
+    const before = sim.meddpiccBefore[m.id];
+    const status: MeddpiccStatus = now === "risque"
+      ? "risque"
+      : now === "manque"
+        ? "a-creuser"
+        : now === "valide"
+          ? "valide"
+          : before && before !== "non-aborde"
+            ? before
+            : now === "faible"
+              ? "a-creuser"
+              : "non-aborde";
+    return { ...m, status, fromEarlier: !now && Boolean(before) && before !== "non-aborde" };
+  });
+}
+
 export function buildDebrief(sim: Simulation, state: SimState): SimDebrief {
   const asked: string[] = [];
   const missed: string[] = [];
@@ -1637,6 +1809,7 @@ export function buildDebrief(sim: Simulation, state: SimState): SimDebrief {
     return { stage: id, label: getDiscoveryStage(id).label, status };
   });
   return {
+    meddpicc: sim.meddpiccActive ? meddpiccGrid(sim, state) : null,
     stages,
     asked,
     missed,

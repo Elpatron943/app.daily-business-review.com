@@ -28,9 +28,12 @@ import {
 } from "../src/opportunities/dealReviewSectors";
 import {
   buildSectorReviewAddendum,
+  computeComplexity,
   getClientSectorModel,
   getSellerProfile,
+  type ClientSizeId,
 } from "../src/opportunities/sectorModels";
+import { MEDDPICC_MIN_LEVEL, buildMeddpiccAddendum } from "../src/opportunities/meddpicc";
 import { getMetierDomain } from "../src/opportunities/metierPacks";
 import {
   BLOCKER_FACTORS,
@@ -86,6 +89,8 @@ export type DealReviewRequest = {
   multiEntity?: boolean;
   /** Sous-domaine métier du vendeur (metierPacks). */
   metierId?: string | null;
+  /** Taille du client (pme, eti, ge) : entre dans la complexité du deal. */
+  clientSize?: ClientSizeId | null;
   messages?: DealReviewChatMessage[];
   /** Uniquement si le reload serveur échoue (dev). */
   clientDiagnostic?: DealReviewDiagnostic;
@@ -418,7 +423,18 @@ export async function runDealReview(
       ...(getMetierDomain(body.metierId)?.domain.likelyBlockers ?? []),
     ]),
   ];
-  const blockerAddendum = buildBlockerFactorsAddendum(likelyBlockers);
+  // Vente complexe (niveau 3 ou 4) : la revue applique MEDDPICC.
+  const complexity = computeComplexity({
+    clientSectorId: body.clientSectorId ?? null,
+    clientSize: ["pme", "eti", "ge"].includes(String(body.clientSize)) ? body.clientSize! : null,
+    multiEntity: Boolean(body.multiEntity),
+  });
+  const blockerAddendum = [
+    buildBlockerFactorsAddendum(likelyBlockers),
+    complexity.level >= MEDDPICC_MIN_LEVEL ? buildMeddpiccAddendum(complexity.label) : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   const system = buildDealReviewSystemPrompt({
     orgName,
     sellerFirstName: seller || "toi",

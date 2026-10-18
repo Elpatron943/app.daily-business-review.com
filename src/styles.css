@@ -14340,3 +14340,74 @@ a {
   border-style: dashed;
   opacity: 0.75;
 }
+
+/* Grille MEDDPICC du débrief (ventes complexes) */
+.sim-meddpicc {
+  list-style: none;
+  padding-left: 0 !important;
+  margin: 0.4rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.35rem;
+}
+
+.sim-meddpicc li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  line-height: 1.25;
+}
+
+.sim-meddpicc li > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.sim-meddpicc-letter {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  border: 1px solid var(--line);
+}
+
+.sim-meddpicc-status {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sim-meddpicc li.is-valide {
+  border-color: color-mix(in srgb, #0f766e 45%, var(--line));
+}
+
+.sim-meddpicc li.is-valide .sim-meddpicc-status,
+.sim-meddpicc li.is-valide .sim-meddpicc-letter {
+  color: #0f766e;
+}
+
+.sim-meddpicc li.is-risque,
+.sim-meddpicc li.is-a-creuser {
+  border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
+}
+
+.sim-meddpicc li.is-risque .sim-meddpicc-status,
+.sim-meddpicc li.is-risque .sim-meddpicc-letter {
+  color: #b91c1c;
+}
+
+.sim-meddpicc li.is-a-creuser .sim-meddpicc-status {
+  color: #b45309;
+}
+
+.sim-meddpicc li.is-non-aborde {
+  border-style: dashed;
+  opacity: 0.7;
+}
