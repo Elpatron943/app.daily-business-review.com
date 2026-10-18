@@ -14293,125 +14293,73 @@ a {
   gap: 0.2rem;
 }
 
-/* Trame de découverte du débrief */
-.sim-stages {
+/* La trame du deal (débrief) : douze grandes questions */
+.sim-trame {
   list-style: none;
   padding-left: 0 !important;
-  margin: 0.35rem 0 0;
+  margin: 0.4rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.35rem;
+  counter-reset: trame;
+}
+
+.sim-trame li {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  line-height: 1.3;
+  font-size: 0.82rem;
+}
+
+.sim-trame-head {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-}
-
-.sim-stages li {
-  display: inline-flex;
-  gap: 0.35rem;
   align-items: baseline;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  font-size: 0.8rem;
 }
 
-.sim-stage-status {
+.sim-trame-head strong::before {
+  counter-increment: trame;
+  content: counter(trame) ". ";
+  opacity: 0.6;
+}
+
+.sim-trame-status {
   font-size: 0.68rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
-.sim-stages li.is-couverte {
+.sim-trame li.is-valide {
   border-color: color-mix(in srgb, #0f766e 45%, var(--line));
 }
 
-.sim-stages li.is-couverte .sim-stage-status {
+.sim-trame li.is-valide .sim-trame-status {
   color: #0f766e;
 }
 
-.sim-stages li.is-manquee {
+.sim-trame li.is-risque {
   border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
 }
 
-.sim-stages li.is-manquee .sim-stage-status {
+.sim-trame li.is-risque .sim-trame-status {
   color: #b91c1c;
 }
 
-.sim-stages li.is-perdue {
-  border-style: dashed;
-  opacity: 0.75;
+.sim-trame li.is-a-creuser {
+  border-color: color-mix(in srgb, #b45309 45%, var(--line));
 }
 
-/* Grille MEDDPICC du débrief (ventes complexes) */
-.sim-meddpicc {
-  list-style: none;
-  padding-left: 0 !important;
-  margin: 0.4rem 0 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 0.35rem;
-}
-
-.sim-meddpicc li {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  padding: 0.35rem 0.5rem;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  line-height: 1.25;
-}
-
-.sim-meddpicc li > span:last-child {
-  display: grid;
-  min-width: 0;
-}
-
-.sim-meddpicc li {
-  border-left-width: 4px;
-}
-
-.sim-meddpicc-letter {
-  flex: none;
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  border: 1px solid var(--line);
-}
-
-.sim-meddpicc-status {
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.sim-meddpicc li.is-valide {
-  border-color: color-mix(in srgb, #0f766e 45%, var(--line));
-}
-
-.sim-meddpicc li.is-valide .sim-meddpicc-status,
-.sim-meddpicc li.is-valide .sim-meddpicc-letter {
-  color: #0f766e;
-}
-
-.sim-meddpicc li.is-risque,
-.sim-meddpicc li.is-a-creuser {
-  border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
-}
-
-.sim-meddpicc li.is-risque .sim-meddpicc-status,
-.sim-meddpicc li.is-risque .sim-meddpicc-letter {
-  color: #b91c1c;
-}
-
-.sim-meddpicc li.is-a-creuser .sim-meddpicc-status {
+.sim-trame li.is-a-creuser .sim-trame-status {
   color: #b45309;
 }
 
-.sim-meddpicc li.is-non-aborde {
+.sim-trame li.is-non-aborde {
   border-style: dashed;
   opacity: 0.7;
 }

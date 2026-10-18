@@ -10,7 +10,6 @@ import {
 } from "./sectorModels";
 import { getBlockerFactor, type BlockerFactorId } from "./blockerFactors";
 import { METIER_PACKS, getMetierDomain } from "./metierPacks";
-import { MEDDPICC_STATUS_LABEL, type MeddpiccId, type MeddpiccStatus } from "./meddpicc";
 import {
   applyChoice,
   buildDebrief,
@@ -20,6 +19,9 @@ import {
   getDiscoveryStage,
   isFinished,
   startSimulation,
+  TRAME_STATUS_LABEL,
+  type DiscoveryStageId,
+  type TrameStatus,
   type SimState,
 } from "./meetingPatterns";
 
@@ -107,8 +109,6 @@ function PatienceMeter({ value, max }: { value: number; max: number }) {
   );
 }
 
-const STAGE_STATUS = { couverte: "Couverte", manquee: "Manquée", perdue: "Pas atteinte" } as const;
-
 const STATUS_LABEL = {
   creuse: "Trouvé et creusé",
   repere: "Trouvé, pas creusé",
@@ -131,7 +131,7 @@ export default function MeetingSimulator({
   const [seed, setSeed] = useState(newSeed);
   const [carryOver, setCarryOver] = useState<BlockerFactorId[]>([]);
   const [known, setKnown] = useState<BlockerFactorId[]>([]);
-  const [grid, setGrid] = useState<Partial<Record<MeddpiccId, MeddpiccStatus>>>({});
+  const [grid, setGrid] = useState<Partial<Record<DiscoveryStageId, TrameStatus>>>({});
   const [state, setState] = useState<SimState | null>(null);
   const [metierId, setMetierIdState] = useState(readMetier);
   const metier = getMetierDomain(metierId);
@@ -155,7 +155,7 @@ export default function MeetingSimulator({
 
   const settings = { clientSectorId, sellerProfileId, multiEntity, clientSize, metierId };
   const sim = useMemo(
-    () => buildSimulation({ ...settings, meeting, seed, carryOver, known, meddpicc: grid }),
+    () => buildSimulation({ ...settings, meeting, seed, carryOver, known, trame: grid }),
     [clientSectorId, sellerProfileId, multiEntity, clientSize, metierId, meeting, seed, carryOver, known, grid],
   );
 
@@ -171,12 +171,12 @@ export default function MeetingSimulator({
     meeting?: MeetingTypeId;
     carryOver?: BlockerFactorId[];
     known?: BlockerFactorId[];
-    meddpicc?: Partial<Record<MeddpiccId, MeddpiccStatus>>;
+    trame?: Partial<Record<DiscoveryStageId, TrameStatus>>;
   }) {
     const nextMeetingId = opts?.meeting ?? meeting;
     const nextCarry = opts?.carryOver ?? [];
     const nextKnown = opts?.known ?? [];
-    const nextGrid = opts?.meddpicc ?? {};
+    const nextGrid = opts?.trame ?? {};
     const nextSeed = newSeed();
     // Même entrée que le useMemo : la partie démarre sur la simulation affichée.
     const fresh = buildSimulation({
@@ -185,7 +185,7 @@ export default function MeetingSimulator({
       seed: nextSeed,
       carryOver: nextCarry,
       known: nextKnown,
-      meddpicc: nextGrid,
+      trame: nextGrid,
     });
     setMeeting(nextMeetingId);
     setCarryOver(nextCarry);
@@ -384,41 +384,26 @@ export default function MeetingSimulator({
       {debrief ? (
         <div className="deal-review-debrief sim-debrief">
           <h4>Débrief</h4>
-          {debrief.eventFound === false ? (
-            <div className="deal-review-debrief-part">
-              <strong>Qualification du deal</strong>
-              <p className="sim-flag is-risque_majeur">
-                Pas commencée : l'événement déclencheur n'a pas été identifié. Tant qu'on ne sait pas ce qui
-                amène le client à un projet maintenant, qualifier le deal ne sert à rien.
-              </p>
-            </div>
-          ) : null}
-          {debrief.meddpicc ? (
-            <div className="deal-review-debrief-part">
-              <strong>Qualification du deal</strong>
-              <span className="muted"> · vente complexe, sur tout le cycle</span>
-              <ul className="sim-meddpicc">
-                {debrief.meddpicc.map((m) => (
-                  <li key={m.id} className={`is-${m.status}`} title={m.question}>
-                    <span>
-                      <strong>{m.label}</strong>
-                      <span className="sim-meddpicc-status">
-                        {MEDDPICC_STATUS_LABEL[m.status]}
-                        {m.fromEarlier ? " · rendez-vous précédent" : ""}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
           <div className="deal-review-debrief-part">
-            <strong>La trame de découverte</strong>
-            <ol className="sim-stages">
-              {debrief.stages.map((st) => (
-                <li key={st.stage} className={`is-${st.status}`}>
-                  <span>{st.label}</span>
-                  <span className="sim-stage-status">{STAGE_STATUS[st.status]}</span>
+            <strong>La trame du deal</strong>
+            <span className="muted"> · sur tout le cycle</span>
+            {debrief.eventFound === false ? (
+              <p className="sim-flag is-risque_majeur">
+                Qualification pas commencée : on ne sait toujours pas pourquoi ce projet doit être lancé
+                maintenant. Sans cette priorité, sponsor, décideur, budget et la suite ne servent à rien.
+              </p>
+            ) : null}
+            <ol className="sim-trame">
+              {debrief.trame.map((t) => (
+                <li key={t.stage} className={`is-${t.status}`}>
+                  <span className="sim-trame-head">
+                    <strong>{t.label}</strong>
+                    <span className="sim-trame-status">
+                      {TRAME_STATUS_LABEL[t.status]}
+                      {t.fromEarlier ? " · rendez-vous précédent" : ""}
+                    </span>
+                  </span>
+                  <span className="muted">{t.question}</span>
                 </li>
               ))}
             </ol>
@@ -479,7 +464,7 @@ export default function MeetingSimulator({
               type="button"
               className="sim-chip"
               onClick={() =>
-                start({ meeting, carryOver: sim.carried, known: sim.known, meddpicc: sim.meddpiccBefore })
+                start({ meeting, carryOver: sim.carried, known: sim.known, trame: sim.trameBefore })
               }
             >
               Rejouer ce rendez-vous
@@ -493,9 +478,7 @@ export default function MeetingSimulator({
                     meeting: nextMeeting,
                     carryOver: debrief.carryOver,
                     known: debrief.known,
-                    meddpicc: debrief.meddpicc
-                      ? Object.fromEntries(debrief.meddpicc.map((m) => [m.id, m.status]))
-                      : {},
+                    trame: Object.fromEntries(debrief.trame.map((t) => [t.stage, t.status])),
                   })
                 }
               >

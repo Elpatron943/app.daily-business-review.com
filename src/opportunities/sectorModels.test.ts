@@ -24,6 +24,7 @@ import {
   type SimStep,
   type Simulation,
   DISCOVERY_STAGES,
+  buildTrameReviewAddendum,
   isQualificationStage,
 } from "./meetingPatterns";
 import { DEAL_REVIEW_SECTORS } from "./dealReviewSectors";
@@ -408,133 +409,112 @@ describe("packs métier", () => {
   });
 });
 
-describe("trame de découverte", () => {
-  it("la découverte suit situation, problème, impact, déclencheur, puis décision", () => {
-    const sim = buildSimulation({ clientSectorId: "banque-assurance", clientSize: "ge", sellerProfileId: "editeur-saas", meeting: "R1", seed: 3 });
-    const order = sim.steps.map((s) => DISCOVERY_STAGES.findIndex((d) => d.id === s.stage));
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
-    const stages = new Set(sim.steps.map((s) => s.stage));
-    for (const id of ["situation", "probleme", "impact", "declencheur", "decision", "suite"] as const) expect(stages.has(id)).toBe(true);
+describe("la trame du fondateur : douze grandes questions", () => {
+  it("la trame suit l'ordre du fondateur", () => {
+    expect(DISCOVERY_STAGES.map((d) => d.label)).toEqual([
+      "Besoin", "Enjeux", "Priorité", "Sponsor", "Décideur", "Budget",
+      "Calendrier", "Processus", "Concurrence", "Critères", "Risques", "Contractualisation",
+    ]);
+    expect(DISCOVERY_STAGES[2]!.question).toBe("Pourquoi ce projet doit-il être lancé maintenant ?");
   });
 
-  it("même un deal simple commence par ce qui amène au projet maintenant, puis la situation et le problème", () => {
+  it("la découverte suit la trame : besoin, enjeux, priorité, puis la qualification ; la prochaine étape en dernier", () => {
+    const sim = buildSimulation({ clientSectorId: "banque-assurance", clientSize: "ge", sellerProfileId: "editeur-saas", meeting: "R1", seed: 3 });
+    const body = sim.steps.slice(0, -1);
+    const order = body.map((s) => DISCOVERY_STAGES.findIndex((d) => d.id === s.stage));
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(sim.steps.at(-1)!.id).toBe("r1-suite");
+    expect(sim.steps[0]!.stage).toBe("besoin");
+  });
+
+  it("même un deal simple pose besoin, enjeux, priorité, sponsor, décideur et budget dès la découverte", () => {
     const sim = buildSimulation({ clientSectorId: "generique", clientSize: "pme", sellerProfileId: null, meeting: "R1", seed: 1 });
     expect(sim.complexity.level).toBe(1);
-    const ids = sim.steps.map((s) => s.id);
-    expect(ids.slice(0, 4)).toEqual(["r1-declencheur", "r1-situation", "r1-probleme", "r1-urgence"]);
+    const stages = sim.steps.map((s) => s.stage);
+    for (const id of ["besoin", "enjeux", "priorite", "sponsor", "decideur", "budget"] as const) expect(stages).toContain(id);
   });
 
-  it("le débrief dit quelles étapes de la trame sont couvertes", () => {
-    const sim = buildSimulation({ clientSectorId: "industrie", clientSize: "pme", sellerProfileId: null, meeting: "R1", seed: 2 });
-    let st = startSimulation(sim);
-    st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "vague")!.id);
-    while (!isFinished(st)) st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "question")!.id);
-    const d = buildDebrief(sim, st);
-    // Raté d'abord, puis rattrapé par la question « pourquoi maintenant » avant la qualification.
-    expect(d.stages[0]).toMatchObject({ stage: "declencheur", status: "couverte" });
-    expect(st.played.some((p) => p.step.origin === "verrou")).toBe(true);
-    expect(d.stages.find((x) => x.stage === "situation")!.status).toBe("couverte");
-    expect(d.stages.find((x) => x.stage === "probleme")!.status).toBe("couverte");
-  });
-});
-
-describe("MEDDPICC pour les ventes complexes", () => {
-  const base = { clientSectorId: "banque-assurance", sellerProfileId: "editeur-saas", seed: 5 } as const;
-
-  it("la grille s'active à partir d'un deal complexe, pas avant", () => {
-    const simple = buildSimulation({ ...base, clientSectorId: "generique", clientSize: "pme", meeting: "R1" });
-    const complexe = buildSimulation({ ...base, clientSize: "eti", meeting: "R1" });
-    expect(simple.meddpiccActive).toBe(false);
-    expect(complexe.meddpiccActive).toBe(true);
-    let st = startSimulation(simple);
-    while (!isFinished(st)) st = applyChoice(st, currentStep(st)!.choices[0]!.id);
-    expect(buildDebrief(simple, st).meddpicc).toBeNull();
-  });
-
-  it("un deal complexe teste le champion et les critères dès la découverte", () => {
-    const sim = buildSimulation({ ...base, clientSize: "ge", meeting: "R1" });
-    const ids = sim.steps.map((s) => s.id);
-    expect(ids).toContain("r1-champion");
-    expect(ids).toContain("r1-criteres");
-    expect(buildSimulation({ ...base, clientSize: "ge", meeting: "R2" }).steps.map((s) => s.id)).toContain("r2-champion");
-  });
-
-  it("toutes les lettres sont couvertes sur les quatre rendez-vous d'un deal complexe", () => {
-    const letters = new Set<string>();
-    for (const meeting of ["R1", "R2", "R3", "R4"] as const) {
-      buildSimulation({ ...base, clientSize: "ge", meeting }).steps.forEach((s) => s.meddpicc && letters.add(s.meddpicc));
+  it("sur les quatre rendez-vous, chacune des douze grandes questions a au moins une question sous-jacente, même pour un deal simple", () => {
+    for (const clientSize of ["pme", "ge"] as const) {
+      const seen = new Set<string>();
+      for (const meeting of ["R1", "R2", "R3", "R4"] as const) {
+        buildSimulation({ clientSectorId: "generique", clientSize, sellerProfileId: "editeur-saas", meeting, seed: 1 }).steps.forEach((s) => seen.add(s.stage));
+      }
+      expect(seen.size).toBe(12);
     }
-    expect(letters.size).toBe(8);
   });
 
-  it("la grille se cumule d'un rendez-vous à l'autre", () => {
-    const r1 = buildSimulation({ ...base, clientSize: "ge", meeting: "R1" });
+  it("plus le deal est complexe, plus il y a de questions sous-jacentes", () => {
+    const count = (clientSectorId: string, clientSize: "pme" | "ge", multiEntity: boolean) =>
+      (["R1", "R2", "R3", "R4"] as const).reduce(
+        (n, meeting) => n + buildSimulation({ clientSectorId, clientSize, multiEntity, sellerProfileId: "editeur-saas", meeting, seed: 1 }).steps.length,
+        0,
+      );
+    expect(count("banque-assurance", "ge", true)).toBeGreaterThan(count("generique", "pme", false));
+  });
+
+  it("le débrief remplit la trame et la cumule d'un rendez-vous à l'autre", () => {
+    const base = { clientSectorId: "banque-assurance", sellerProfileId: "editeur-saas", clientSize: "ge", seed: 5 } as const;
+    const r1 = buildSimulation({ ...base, meeting: "R1" });
     let st = startSimulation(r1);
     while (!isFinished(st)) st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "question")!.id);
     const d1 = buildDebrief(r1, st);
-    expect(d1.meddpicc!.find((m) => m.id === "pain")!.status).toBe("valide");
-    const r2 = buildSimulation({
-      ...base,
-      clientSize: "ge",
-      meeting: "R2",
-      meddpicc: Object.fromEntries(d1.meddpicc!.map((m) => [m.id, m.status])),
-    });
+    expect(d1.trame).toHaveLength(12);
+    expect(d1.trame.find((t) => t.stage === "priorite")!.status).not.toBe("non-aborde");
+    expect(d1.trame.find((t) => t.stage === "contractualisation")!.status).not.toBe("a-creuser");
+    const r2 = buildSimulation({ ...base, meeting: "R2", trame: Object.fromEntries(d1.trame.map((t) => [t.stage, t.status])) });
     let st2 = startSimulation(r2);
     while (!isFinished(st2)) st2 = applyChoice(st2, currentStep(st2)!.choices.find((c) => c.kind === "question")!.id);
-    const pain = buildDebrief(r2, st2).meddpicc!.find((m) => m.id === "pain")!;
-    expect(pain.status).toBe("valide");
-    expect(pain.fromEarlier).toBe(true);
+    const budget = buildDebrief(r2, st2).trame.find((t) => t.stage === "budget")!;
+    expect(budget.status).toBe(d1.trame.find((t) => t.stage === "budget")!.status);
+    expect(budget.fromEarlier).toBe(true);
+  });
+
+  it("le sponsor est testé dès la découverte, et mis à l'épreuve en démonstration pour un deal complexe", () => {
+    const base = { clientSectorId: "banque-assurance", sellerProfileId: "editeur-saas", clientSize: "ge", seed: 5 } as const;
+    expect(buildSimulation({ ...base, clientSize: "pme", clientSectorId: "generique", meeting: "R1" }).steps.map((s) => s.id)).toContain("r1-champion");
+    expect(buildSimulation({ ...base, meeting: "R2" }).steps.map((s) => s.id)).toContain("r2-champion");
   });
 });
 
-describe("revue IA d'un deal complexe", () => {
-  it("la revue reçoit la grille MEDDPICC, lettre par lettre", async () => {
-    const { buildMeddpiccAddendum, MEDDPICC } = await import("./meddpicc");
-    const text = buildMeddpiccAddendum("Complexe");
-    for (const m of MEDDPICC) expect(text).toContain(m.name);
-    expect(text).toContain("lettre la plus faible");
-    expect(text).toContain("N'écris jamais « MEDDPICC »");
+describe("revue IA du deal", () => {
+  it("la revue reçoit les douze grandes questions et la priorité d'abord", () => {
+    const text = buildTrameReviewAddendum("Complexe");
+    for (const st of DISCOVERY_STAGES) expect(text).toContain(st.question);
+    expect(text).toContain("Tant que la priorité");
+    expect(text).not.toMatch(/MEDDPICC/i);
   });
 });
 
-describe("l'événement déclencheur avant la qualification", () => {
+describe("la priorité avant la qualification", () => {
   const sim = buildSimulation({ clientSectorId: "industrie", clientSize: "pme", sellerProfileId: "editeur-saas", meeting: "R1", seed: 9 });
-  const kindFor = (step: { stage: string; origin: string }, missEvent: boolean) =>
-    missEvent && step.stage === "declencheur" ? "argument" : "question";
+  const kindFor = (step: { stage: string }, missEvent: boolean) =>
+    missEvent && step.stage === "priorite" ? "argument" : "question";
 
-  it("aucune question de qualification avant l'événement déclencheur", () => {
+  it("aucune question de qualification avant la priorité", () => {
     const firstQualif = sim.steps.findIndex((s) => isQualificationStage(s.stage));
-    const event = sim.steps.findIndex((s) => s.id === "r1-declencheur");
-    expect(event).toBe(0);
-    expect(firstQualif).toBeGreaterThan(event);
+    const priorite = sim.steps.findIndex((s) => s.id === "r1-declencheur");
+    expect(priorite).toBeGreaterThan(-1);
+    expect(firstQualif).toBeGreaterThan(priorite);
+    expect(sim.steps.slice(0, priorite).every((s) => s.stage === "besoin" || s.stage === "enjeux")).toBe(true);
   });
 
-  it("sans événement déclencheur, l'acheteur exige une raison avant de qualifier", () => {
+  it("sans priorité établie, l'acheteur exige une raison avant de qualifier", () => {
     let st = startSimulation(sim);
     while (!isFinished(st) && currentStep(st)!.origin !== "verrou") {
       st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === kindFor(currentStep(st)!, true))!.id);
     }
     expect(currentStep(st)!.origin).toBe("verrou");
     expect(st.played.some((p) => isQualificationStage(p.step.stage))).toBe(false);
-    // Rattrapage réussi : la qualification commence.
     const ok = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "question")!.id);
     expect(ok.eventFound).toBe(true);
     expect(isQualificationStage(currentStep(ok)!.stage)).toBe(true);
-    // Rattrapage raté : l'acheteur clôt le rendez-vous, la qualification est perdue.
     const ko = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "vague")!.id);
     expect(ko.endedEarly).toBe(true);
     expect(ko.lost.every((s) => isQualificationStage(s.stage))).toBe(true);
-    expect(buildDebrief(sim, ko).eventFound).toBe(false);
-  });
-
-  it("la grille de qualification n'est pas remplie tant que l'événement déclencheur manque", () => {
-    const complexe = buildSimulation({ clientSectorId: "banque-assurance", clientSize: "ge", sellerProfileId: null, meeting: "R1", seed: 2 });
-    let st = startSimulation(complexe);
-    while (!isFinished(st)) {
-      const step = currentStep(st)!;
-      const kind = step.stage === "declencheur" ? "vague" : "question";
-      st = applyChoice(st, step.choices.find((c) => c.kind === kind)!.id);
-    }
-    expect(buildDebrief(complexe, st).meddpicc).toBeNull();
+    const d = buildDebrief(sim, ko);
+    expect(d.eventFound).toBe(false);
+    // Qualification jamais ouverte : ces points restent « pas abordés ».
+    expect(d.trame.filter((t) => isQualificationStage(t.stage)).every((t) => t.status === "non-aborde")).toBe(true);
   });
 });

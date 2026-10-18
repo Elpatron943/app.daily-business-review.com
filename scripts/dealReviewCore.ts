@@ -33,7 +33,7 @@ import {
   getSellerProfile,
   type ClientSizeId,
 } from "../src/opportunities/sectorModels";
-import { MEDDPICC_MIN_LEVEL, buildMeddpiccAddendum } from "../src/opportunities/meddpicc";
+import { buildTrameReviewAddendum } from "../src/opportunities/meetingPatterns";
 import { getMetierDomain } from "../src/opportunities/metierPacks";
 import {
   BLOCKER_FACTORS,
@@ -423,7 +423,7 @@ export async function runDealReview(
       ...(getMetierDomain(body.metierId)?.domain.likelyBlockers ?? []),
     ]),
   ];
-  // Vente complexe (niveau 3 ou 4) : la revue applique MEDDPICC.
+  // Trame de qualification du fondateur (douze grandes questions), pour tous les deals.
   const complexity = computeComplexity({
     clientSectorId: body.clientSectorId ?? null,
     clientSize: ["pme", "eti", "ge"].includes(String(body.clientSize)) ? body.clientSize! : null,
@@ -431,7 +431,7 @@ export async function runDealReview(
   });
   const blockerAddendum = [
     buildBlockerFactorsAddendum(likelyBlockers),
-    complexity.level >= MEDDPICC_MIN_LEVEL ? buildMeddpiccAddendum(complexity.label) : null,
+    buildTrameReviewAddendum(complexity.label),
   ]
     .filter(Boolean)
     .join("\n\n");
