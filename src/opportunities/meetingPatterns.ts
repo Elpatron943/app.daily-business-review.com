@@ -1,18 +1,24 @@
 /**
  * Rendez-vous simulés à boutons — PATTERNS communs à tous les secteurs.
  *
- * Chaque pattern décrit un moment de rendez-vous qui existe dans tous les
- * secteurs (le problème, les décideurs, le budget, le mode d'achat, la revue,
- * le signataire…). Les variables du secteur client (sectorModels.ts) remplissent
- * les trous ; le profil vendeur ajoute son objection. Le moteur est déterministe
- * (graine) : pas d'appel IA, même partie rejouable, coût nul.
+ * Chaque pattern est un moment de rendez-vous qui existe dans tous les
+ * secteurs. Les variables du secteur client (sectorModels.ts) remplissent les
+ * trous ; le profil vendeur ajoute son objection.
  *
- * À chaque étape, le commercial choisit entre trois boutons :
- * - une bonne question (révèle l'information, et le risque s'il y en a un) ;
- * - un argument (ligne DBR : on questionne, on n'argumente pas) ;
- * - une question vague ou fermée.
+ * Facteurs de blocage (blockerFactors.ts) : chaque partie cache un ou
+ * plusieurs facteurs réels (décideur, valeur, budget, projets en cours,
+ * circuit d'influence…), tirés selon le secteur et l'offre. Un pattern sonde
+ * un facteur : si ce facteur bloque le deal, la bonne question le révèle ;
+ * un argument ou une question vague le laisse caché. Le débrief dit ce qui
+ * bloquait réellement le deal.
+ *
+ * Moteur déterministe (graine) : pas d'appel IA, partie rejouable, coût nul.
  */
 
+import {
+  getBlockerFactor,
+  type BlockerFactorId,
+} from "./blockerFactors";
 import {
   getClientSectorModel,
   getMeetingType,
@@ -26,6 +32,7 @@ import {
 export type ChoiceKind = "question" | "argument" | "vague";
 
 export type SimRisk = {
+  factor: BlockerFactorId;
   level: "risque" | "risque_majeur";
   text: string;
   action: string;
@@ -40,15 +47,13 @@ export type SimChoice = {
 export type SimStep = {
   id: string;
   theme: string;
-  /** Ce que dit l'acheteur avant le choix du commercial. */
+  /** Facteur de blocage que cette étape permet de vérifier. */
+  factor: BlockerFactorId | null;
   buyerLine: string;
-  /** Trois boutons, dans un ordre tiré par la graine. */
   choices: SimChoice[];
-  /** Libellé de la bonne question (pour le débrief). */
   goodQuestion: string;
-  /** Réponse de l'acheteur, selon le choix. */
   replies: Record<ChoiceKind, string>;
-  /** Branche tirée : si vrai, la bonne question révèle le risque. */
+  /** Vrai si le facteur sondé bloque ce deal. */
   risky: boolean;
   risk?: SimRisk;
 };
@@ -60,6 +65,8 @@ export type Simulation = {
   multiEntity: boolean;
   interlocutor: string;
   opening: string;
+  /** Facteurs qui bloquent réellement ce deal (cachés pendant la partie). */
+  blockers: BlockerFactorId[];
   steps: SimStep[];
   issue: string;
 };
@@ -72,11 +79,22 @@ export type SimTurn = {
   riskFound?: SimRisk;
 };
 
+export type BlockerOutcome = {
+  factor: BlockerFactorId;
+  label: string;
+  found: boolean;
+  /** Ce qui l'a révélé, ou la question qui l'aurait révélé. */
+  evidence: string;
+  action: string;
+};
+
 export type SimDebrief = {
   asked: string[];
   missed: string[];
   risksFound: SimRisk[];
   risksMissed: SimRisk[];
+  /** Ce qui bloquait réellement le deal, repéré ou non. */
+  blockers: BlockerOutcome[];
   issueReached: boolean;
   nextStep: string;
 };
@@ -92,8 +110,9 @@ type PatternOutput = {
   buyerLine: string;
   question: string;
   good: string;
+  /** Réponse quand le facteur sondé bloque le deal. */
   riskReply?: string;
-  risk?: SimRisk;
+  risk?: Omit<SimRisk, "factor">;
   argument: [label: string, reply: string];
   vague: [label: string, reply: string];
 };
@@ -102,17 +121,21 @@ type PatternDef = {
   id: string;
   theme: string;
   meeting: MeetingTypeId;
-  /** Pattern actif seulement si la condition est vraie. */
+  factor: BlockerFactorId | null;
   when?: (ctx: Ctx) => boolean;
   build: (ctx: Ctx) => PatternOutput;
 };
 
 const ISSUES: Record<MeetingTypeId, string> = {
   R1: "Problème relié à un indicateur, décideurs et veto identifiés, budget et mode d'achat connus, démonstration datée.",
-  R2: "Cas d'usage validé par les utilisateurs, critère de succès fixé, revue sécurité préparée.",
-  R3: "Exigences listées avec leurs preuves, clauses connues, date de l'avis.",
-  R4: "Procédure, signataire, conditions et date de décision connus.",
+  R2: "Cas d'usage validé par les utilisateurs, soutiens et opposants connus, critère de succès fixé.",
+  R3: "Exigences listées avec leurs preuves, clauses connues, capacité de déploiement vérifiée, date de l'avis.",
+  R4: "Procédure, budget, signataire, consensus interne et date de décision connus.",
 };
+
+function q(text: string): string {
+  return `« ${text} »`;
+}
 
 /* ------------------------------------------------------------------ */
 /* Patterns communs                                                    */
@@ -122,66 +145,90 @@ const PATTERNS: PatternDef[] = [
   // ---------- R1 · Découverte ----------
   {
     id: "r1-probleme",
-    theme: "Le problème et son coût",
+    theme: "Le problème et sa valeur",
     meeting: "R1",
+    factor: "valeur",
     build: () => ({
       buyerLine: "On m'a dit que vous pouviez nous aider. Je vous écoute, j'ai vingt minutes.",
-      question: "« Quel problème voulez-vous résoudre, et que vous coûte-t-il aujourd'hui ? »",
+      question: q("Quel problème voulez-vous résoudre, et que vous coûte-t-il aujourd'hui ?"),
       good: "Mes équipes perdent du temps à consolider l'information, et la direction le voit dans ses indicateurs.",
-      riskReply: "Honnêtement, ce n'est pas urgent : ça fonctionne à peu près.",
+      riskReply: "Je ne sais pas trop, c'est la direction qui m'a demandé de regarder.",
       risk: {
         level: "risque",
-        text: "Pas d'urgence : le deal risque de finir sans décision.",
-        action: "Relier le sujet à un indicateur que le sponsor suit.",
+        text: "Valeur non perçue : le client ne formule ni problème ni gain.",
+        action: "Faire formuler le gain attendu et son indicateur, avec ses mots.",
       },
-      argument: ["« Je vous présente d'abord ce que fait notre offre. »", "Très bien… mais je ne vois pas encore en quoi ça me concerne."],
-      vague: ["« Tout va bien de votre côté ? »", "Oui, globalement ça va."],
+      argument: [q("Je vous présente d'abord ce que fait notre offre."), "Très bien… mais je ne vois pas encore en quoi ça me concerne."],
+      vague: [q("Tout va bien de votre côté ?"), "Oui, globalement ça va."],
+    }),
+  },
+  {
+    id: "r1-urgence",
+    theme: "L'urgence",
+    meeting: "R1",
+    factor: "statu-quo",
+    build: () => ({
+      buyerLine: "C'est un sujet dont on parle depuis un moment.",
+      question: q("Que se passe-t-il si vous ne faites rien d'ici un an ?"),
+      good: "On perd des affaires : la direction veut que ce soit réglé avant la fin de l'année.",
+      riskReply: "Rien de grave : on vit avec depuis des années.",
+      risk: {
+        level: "risque",
+        text: "Statu quo : rien n'oblige le client à changer maintenant.",
+        action: "Chercher l'événement qui rend le changement nécessaire maintenant.",
+      },
+      argument: [q("Plus vous attendez, plus ça vous coûtera."), "C'est ce que disent tous les fournisseurs."],
+      vague: [q("C'est un sujet important pour vous ?"), "Oui, comme beaucoup d'autres."],
     }),
   },
   {
     id: "r1-entite",
     theme: "Qui paie dans le groupe",
     meeting: "R1",
+    factor: "budget",
     when: (c) => Boolean(c.group),
     build: (c) => ({
       buyerLine: "Je précise : nous sommes une filiale d'un groupe.",
-      question: "« Quelle entité paiera : votre filiale, une autre, ou le groupe ? »",
+      question: q("Quelle entité paiera : votre filiale, une autre, ou le groupe ?"),
       good: "Notre filiale, sur son propre budget.",
       riskReply: c.group!.budgetRisk,
       risk: {
         level: "risque_majeur",
-        text: "Le sponsor n'a pas le budget : la décision est au groupe.",
+        text: "Budget au groupe : le sponsor ne le détient pas.",
         action: "Identifier qui détient le budget au groupe et obtenir une introduction.",
       },
-      argument: ["« Notre offre conviendra à tout le groupe. »", "Peut-être, mais ce n'est pas moi qui en décide."],
-      vague: ["« Le groupe est au courant ? »", "Plus ou moins."],
+      argument: [q("Notre offre conviendra à tout le groupe."), "Peut-être, mais ce n'est pas moi qui en décide."],
+      vague: [q("Le groupe est au courant ?"), "Plus ou moins."],
     }),
   },
   {
     id: "r1-decideurs",
     theme: "Les décideurs et le veto",
     meeting: "R1",
+    factor: "decideur",
     build: ({ v }) => ({
       buyerLine: "Si ça m'intéresse, je peux avancer assez vite.",
-      question: `« En dehors de vous, qui devra valider : ${v.vetoRoles} ? »`,
+      question: q(`En dehors de vous, qui devra valider : ${v.vetoRoles} ?`),
       good: `Il faudra l'accord de ${v.vetoRoles}. Je peux vous les présenter.`,
       riskReply: "On verra ça plus tard, c'est moi qui porte le sujet.",
       risk: {
         level: "risque_majeur",
-        text: "Comité inconnu : les rôles qui peuvent dire non ne sont pas identifiés.",
-        action: "Proposer de cartographier ensemble le circuit de validation.",
+        text: "Décideur inconnu : les rôles qui peuvent dire non ne sont pas identifiés.",
+        action: "Proposer de cartographier ensemble le circuit de décision et obtenir un accès au décideur.",
       },
-      argument: ["« Je vous envoie une proposition dès demain. »", "Envoyez, je regarderai."],
-      vague: ["« C'est bien vous qui décidez ? »", "Oui, c'est moi qui décide."],
+      argument: [q("Je vous envoie une proposition dès demain."), "Envoyez, je regarderai."],
+      vague: [q("C'est bien vous qui décidez ?"), "Oui, c'est moi qui décide."],
     }),
   },
   {
     id: "r1-budget",
     theme: "Le budget",
     meeting: "R1",
+    factor: "budget",
+    when: (c) => !c.group,
     build: ({ v }) => ({
       buyerLine: "Sur le principe, l'idée me plaît.",
-      question: `« Sur quel budget ce projet passerait-il (${v.budget}), et y a-t-il une enveloppe ? »`,
+      question: q(`Sur quel budget ce projet passerait-il (${v.budget}), et qui l'arbitre ?`),
       good: `C'est sur ${v.budget}, et il y a une enveloppe pour ce type de sujet.`,
       riskReply: v.budgetRisk,
       risk: {
@@ -189,38 +236,59 @@ const PATTERNS: PatternDef[] = [
         text: "Pas de budget identifié.",
         action: "Obtenir la date du prochain arbitrage budgétaire et qui le défend.",
       },
-      argument: ["« Pour vous situer, voici notre prix. »", "C'est un chiffre, mais je ne sais pas encore à quoi le comparer."],
-      vague: ["« Vous avez du budget ? »", "On trouve toujours du budget quand c'est utile."],
+      argument: [q("Pour vous situer, voici notre prix."), "C'est un chiffre, mais je ne sais pas encore à quoi le comparer."],
+      vague: [q("Vous avez du budget ?"), "On trouve toujours du budget quand c'est utile."],
+    }),
+  },
+  {
+    id: "r1-priorites",
+    theme: "Les projets en cours",
+    meeting: "R1",
+    factor: "priorites",
+    build: () => ({
+      buyerLine: "Je vous préviens, nous avons beaucoup de sujets en ce moment.",
+      question: q("Qu'est-ce qui est déjà en cours chez vous, et où se place ce projet par rapport à eux ?"),
+      good: "Ce projet fait partie des trois priorités de l'année, juste après la migration en cours.",
+      riskReply: "Honnêtement, on lance un gros projet interne : tout le reste passe après.",
+      risk: {
+        level: "risque_majeur",
+        text: "Projets en cours : un autre chantier passe avant et mobilise les équipes.",
+        action: "Situer le projet dans leur feuille de route et trouver ce qui le rend prioritaire.",
+      },
+      argument: [q("Notre solution peut se déployer en parallèle sans effort."), "Tout le monde dit ça, et ça finit toujours par nous prendre du temps."],
+      vague: [q("Vous êtes débordés en ce moment ?"), "Comme tout le monde."],
     }),
   },
   {
     id: "r1-achat",
     theme: "Le mode d'achat",
     meeting: "R1",
+    factor: "achats",
     build: ({ v }) => ({
       buyerLine: "Admettons que ça marche chez nous.",
-      question: `« Comment achetez-vous ce type d'offre (${v.procurement}) ? »`,
+      question: q(`Comment achetez-vous ce type d'offre (${v.procurement}) ?`),
       good: "Pour ce montant, c'est assez simple : les achats suivront.",
       riskReply: v.procurementRisk,
       risk: {
         level: "risque_majeur",
-        text: `Mode d'achat bloquant : « ${v.procurementRisk} »`,
+        text: `Achats et procédure : « ${v.procurementRisk} »`,
         action: `${capitalize(v.procurementAction)}.`,
       },
-      argument: ["« Nous pouvons démarrer dès la semaine prochaine. »", "La rapidité, c'est bien, mais ce ne sont pas les opérationnels qui achètent."],
-      vague: ["« Les achats, ça ne pose pas de problème ? »", "Pas plus que d'habitude."],
+      argument: [q("Nous pouvons démarrer dès la semaine prochaine."), "La rapidité, c'est bien, mais ce ne sont pas les opérationnels qui achètent."],
+      vague: [q("Les achats, ça ne pose pas de problème ?"), "Pas plus que d'habitude."],
     }),
   },
   {
     id: "r1-suite",
     theme: "La prochaine étape",
     meeting: "R1",
+    factor: null,
     build: () => ({
       buyerLine: "Bon, il faut que je file.",
-      question: "« Qui faut-il réunir pour la démonstration, et à quelle date ? »",
+      question: q("Qui faut-il réunir pour la démonstration, et à quelle date ?"),
       good: "Faisons-la dans deux semaines, avec deux personnes de l'équipe.",
-      argument: ["« Je vous rappelle la semaine prochaine ? »", "Rappelez-moi, oui."],
-      vague: ["« Merci beaucoup pour votre temps. »", "Avec plaisir, au revoir."],
+      argument: [q("Je vous rappelle la semaine prochaine ?"), "Rappelez-moi, oui."],
+      vague: [q("Merci beaucoup pour votre temps."), "Avec plaisir, au revoir."],
     }),
   },
 
@@ -229,79 +297,115 @@ const PATTERNS: PatternDef[] = [
     id: "r2-cas",
     theme: "Le cas concret",
     meeting: "R2",
+    factor: "valeur",
     build: ({ v }) => ({
       buyerLine: `Allons-y. ${v.demo}`,
-      question: "« Sur quel cas concret de votre quotidien voulez-vous juger ce que nous proposons ? »",
+      question: q("Sur quel cas concret de votre quotidien voulez-vous juger ce que nous proposons ?"),
       good: "Prenons le dossier qui nous a posé problème le mois dernier.",
-      argument: ["« Je vous montre tout, du début à la fin. »", "C'est très complet… mais ce n'est pas notre façon de travailler."],
-      vague: ["« Vous avez des questions ? »", "Pas pour l'instant."],
+      riskReply: "Je ne sais pas… montrez-nous ce que vous montrez d'habitude.",
+      risk: {
+        level: "risque",
+        text: "Valeur non perçue : aucun cas réel à résoudre, la démonstration reste théorique.",
+        action: "Obtenir un cas réel avant la démonstration, ou la reporter.",
+      },
+      argument: [q("Je vous montre tout, du début à la fin."), "C'est très complet… mais ce n'est pas notre façon de travailler."],
+      vague: [q("Vous avez des questions ?"), "Pas pour l'instant."],
+    }),
+  },
+  {
+    id: "r2-influence",
+    theme: "Soutiens et opposants",
+    meeting: "R2",
+    factor: "influence",
+    build: () => ({
+      buyerLine: "Personnellement, je trouve ça intéressant.",
+      question: q("Qui d'autre que vous doit être convaincu, et qui pourrait s'y opposer ?"),
+      good: "Le directeur financier, mais il suivra si l'équipe est convaincue.",
+      riskReply: "Le directeur financier est contre tout nouvel outil cette année.",
+      risk: {
+        level: "risque_majeur",
+        text: "Circuit d'influence : un opposant influent n'est pas traité.",
+        action: "Rencontrer l'opposant avec le sponsor et comprendre son critère.",
+      },
+      argument: [q("Avec votre soutien, ça passera sans problème."), "Je ne suis pas seul à décider."],
+      vague: [q("Tout le monde est partant ?"), "Je pense."],
     }),
   },
   {
     id: "r2-utilisateurs",
     theme: "Les utilisateurs",
     meeting: "R2",
+    factor: "consensus",
     build: () => ({
       buyerLine: "Mon équipe est là : c'est elle qui l'utiliserait au quotidien.",
-      question: "« Qui l'utilisera chaque semaine, et que fera-t-il autrement ? »",
+      question: q("Qui l'utilisera chaque semaine, et que fera-t-il autrement ?"),
       good: "Les deux personnes ici : elles arrêteraient de tout consolider à la main.",
       riskReply: "Eux ? Ils s'adapteront, c'est moi qui décide.",
       risk: {
         level: "risque",
-        text: "Pas d'adhésion terrain : seul le sponsor parle.",
+        text: "Désaccord interne : les utilisateurs ne sont pas embarqués.",
         action: "Demander un atelier avec deux utilisateurs.",
       },
-      argument: ["« Regardez nos fonctions avancées. »", "Impressionnant, mais on n'en utiliserait pas la moitié."],
-      vague: ["« Ça vous plaît ? »", "Oui, c'est joli."],
+      argument: [q("Regardez nos fonctions avancées."), "Impressionnant, mais on n'en utiliserait pas la moitié."],
+      vague: [q("Ça vous plaît ?"), "Oui, c'est joli."],
     }),
   },
   {
     id: "r2-groupe",
     theme: "Le groupe dans la boucle",
     meeting: "R2",
+    factor: "consensus",
     when: (c) => Boolean(c.group),
     build: (c) => ({
       buyerLine: c.group!.demo,
-      question: "« Qui, côté groupe, doit voir la démonstration, et sur quels critères ? »",
+      question: q("Qui, côté groupe, doit voir la démonstration, et sur quels critères ?"),
       good: "Le responsable métier du groupe : il regardera surtout l'extension aux autres filiales.",
       riskReply: "Le groupe ? On lui présentera le projet une fois décidé.",
       risk: {
         level: "risque_majeur",
-        text: "Décision prise sans le groupe : elle peut être bloquée ensuite.",
+        text: "Désaccord interne : le groupe n'est pas dans la boucle et peut bloquer ensuite.",
         action: "Inviter un représentant du groupe avant la revue.",
       },
-      argument: ["« Le groupe suivra, c'est certain. »", "Vous ne connaissez pas notre groupe."],
-      vague: ["« Le groupe est d'accord ? »", "En principe."],
+      argument: [q("Le groupe suivra, c'est certain."), "Vous ne connaissez pas notre groupe."],
+      vague: [q("Le groupe est d'accord ?"), "En principe."],
+    }),
+  },
+  {
+    id: "r2-concurrence",
+    theme: "Les alternatives",
+    meeting: "R2",
+    factor: "concurrence",
+    build: () => ({
+      buyerLine: "On regarde aussi d'autres options, vous vous en doutez.",
+      question: q("Qu'est-ce que vous regardez d'autre, y compris faire en interne, et sur quels critères ?"),
+      good: "Deux autres offres, et nous comparerons surtout la facilité d'usage.",
+      riskReply: "Notre DSI propose de le développer en interne.",
+      risk: {
+        level: "risque",
+        text: "Concurrence ou fait-maison : une solution interne est sur la table.",
+        action: "Comparer avec eux le coût et le délai du fait-maison, sans dénigrer.",
+      },
+      argument: [q("Nous sommes les meilleurs du marché."), "On verra."],
+      vague: [q("Vous avez vu d'autres fournisseurs ?"), "Quelques-uns."],
     }),
   },
   {
     id: "r2-critere",
     theme: "Le critère de succès",
     meeting: "R2",
+    factor: "valeur",
     build: () => ({
       buyerLine: "On commence à voir l'intérêt.",
-      question: "« À quoi verrez-vous, dans trois mois, que ça a marché ? »",
+      question: q("À quoi verrez-vous, dans trois mois, que ça a marché ?"),
       good: "Si l'équipe gagne une demi-journée par semaine sur la consolidation, c'est gagné.",
       riskReply: "Je ne sais pas, on verra à l'usage.",
       risk: {
         level: "risque",
-        text: "Aucun critère de succès : la valeur ne pourra pas être prouvée.",
+        text: "Valeur non perçue : aucun critère de succès, la valeur ne pourra pas être prouvée.",
         action: "Fixer avec eux un critère mesurable.",
       },
-      argument: ["« Nos clients gagnent beaucoup de temps. »", "Chez les autres, peut-être. Et chez nous ?"],
-      vague: ["« Vous êtes convaincus ? »", "À moitié."],
-    }),
-  },
-  {
-    id: "r2-donnees",
-    theme: "Les données",
-    meeting: "R2",
-    build: ({ v }) => ({
-      buyerLine: "Une question me vient pour la suite.",
-      question: "« Quelles données passeront dans la solution, et qui devra le valider ? »",
-      good: `Il y aura ${v.data} : il faudra passer par ${v.review}.`,
-      argument: ["« Rassurez-vous, tout est sécurisé. »", "Vous direz ça à notre sécurité : ils voudront des preuves."],
-      vague: ["« On passe à la suite ? »", "D'accord."],
+      argument: [q("Nos clients gagnent beaucoup de temps."), "Chez les autres, peut-être. Et chez nous ?"],
+      vague: [q("Vous êtes convaincus ?"), "À moitié."],
     }),
   },
 
@@ -310,60 +414,83 @@ const PATTERNS: PatternDef[] = [
     id: "r3-exigences",
     theme: "Les exigences",
     meeting: "R3",
+    factor: "conformite",
     build: ({ v }) => ({
       buyerLine: `Je suis là pour ${v.review}.`,
-      question: "« Quelles sont vos exigences, et sous quelle forme voulez-vous les preuves ? »",
+      question: q("Quelles sont vos exigences, et sous quelle forme voulez-vous les preuves ?"),
       good: `Il nous faut ${v.reviewProof}.`,
       riskReply: "Nos exigences vont au-delà de ce que vous avez montré jusqu'ici.",
       risk: {
         level: "risque_majeur",
-        text: "Exigence que le vendeur ne peut peut-être pas prouver.",
+        text: "Sécurité et conformité : une exigence que le vendeur ne peut peut-être pas prouver.",
         action: "Lister ce qui est prouvable et remonter le reste : aucune garantie sans preuve.",
       },
-      argument: ["« Nous sommes conformes à tout. »", "Tout le monde dit ça. Je veux des documents."],
-      vague: ["« C'est une formalité, non ? »", "Ce n'est jamais une formalité."],
+      argument: [q("Nous sommes conformes à tout."), "Tout le monde dit ça. Je veux des documents."],
+      vague: [q("C'est une formalité, non ?"), "Ce n'est jamais une formalité."],
     }),
   },
   {
     id: "r3-donnees",
     theme: "Les données et leurs règles",
     meeting: "R3",
+    factor: null,
     build: ({ v }) => ({
       buyerLine: "Parlons des données.",
-      question: "« Quelles données exactement, et quelles règles internes s'y appliquent ? »",
+      question: q("Quelles données exactement, et quelles règles internes s'y appliquent ?"),
       good: `Ce sont ${v.data}, avec nos règles d'hébergement et de conservation.`,
-      argument: ["« Laissez-moi vous détailler notre architecture. »", "Je lirai la documentation. Ma question portait sur nos règles."],
-      vague: ["« Les données, ça pose problème ? »", "Ça dépend."],
+      argument: [q("Laissez-moi vous détailler notre architecture."), "Je lirai la documentation. Ma question portait sur nos règles."],
+      vague: [q("Les données, ça pose problème ?"), "Ça dépend."],
+    }),
+  },
+  {
+    id: "r3-capacite",
+    theme: "La capacité à déployer",
+    meeting: "R3",
+    factor: "capacite",
+    build: () => ({
+      buyerLine: "Côté technique, je vous préviens, on est très chargés.",
+      question: q("Qui, chez vous, aura le temps de mettre en place la solution, et quand ?"),
+      good: "Une personne de mon équipe, à mi-temps, à partir du mois prochain.",
+      riskReply: "Personne avant six mois : l'équipe est sur d'autres chantiers.",
+      risk: {
+        level: "risque",
+        text: "Capacité de mise en œuvre : personne n'est disponible pour déployer.",
+        action: "Proposer une mise en place légère ou dater le démarrage avec eux.",
+      },
+      argument: [q("La mise en place est très simple."), "C'est toujours plus long que prévu."],
+      vague: [q("Vous avez du monde pour le projet ?"), "On s'organisera."],
     }),
   },
   {
     id: "r3-contrat",
     theme: "Les clauses",
     meeting: "R3",
+    factor: "conformite",
     build: () => ({
       buyerLine: "Il y aura aussi le volet contractuel.",
-      question: "« Quel modèle de contrat et quelles clauses de sécurité imposez-vous ? »",
+      question: q("Quel modèle de contrat et quelles clauses de sécurité imposez-vous ?"),
       good: "Nos clauses types : je vous les envoie ce soir.",
       riskReply: "Il faudra accepter nos clauses d'audit sur site.",
       risk: {
         level: "risque",
-        text: "Clause lourde à négocier.",
+        text: "Sécurité et conformité : clause lourde à négocier.",
         action: "Remonter à la direction : contrat et clauses sont son arbitrage.",
       },
-      argument: ["« Partons sur notre contrat standard. »", "Nous travaillons avec nos modèles."],
-      vague: ["« Votre juridique est d'accord ? »", "Il n'a pas encore vu le dossier."],
+      argument: [q("Partons sur notre contrat standard."), "Nous travaillons avec nos modèles."],
+      vague: [q("Votre juridique est d'accord ?"), "Il n'a pas encore vu le dossier."],
     }),
   },
   {
     id: "r3-avis",
     theme: "L'avis et son délai",
     meeting: "R3",
+    factor: null,
     build: () => ({
       buyerLine: "Je ne pourrai pas conclure aujourd'hui.",
-      question: "« Qui rend l'avis final, et dans quel délai ? »",
+      question: q("Qui rend l'avis final, et dans quel délai ?"),
       good: "Moi, d'ici trois semaines si j'ai toutes les pièces.",
-      argument: ["« Vous pouvez valider aujourd'hui ? »", "Ce n'est pas possible sans les pièces."],
-      vague: ["« J'attends votre retour. »", "Vous l'aurez."],
+      argument: [q("Vous pouvez valider aujourd'hui ?"), "Ce n'est pas possible sans les pièces."],
+      vague: [q("J'attends votre retour."), "Vous l'aurez."],
     }),
   },
 
@@ -372,95 +499,133 @@ const PATTERNS: PatternDef[] = [
     id: "r4-procedure",
     theme: "La procédure",
     meeting: "R4",
+    factor: "achats",
     build: ({ v }) => ({
       buyerLine: "Je reprends le dossier côté achats.",
-      question: `« Quelle procédure s'applique ici (${v.procurement}) ? »`,
+      question: q(`Quelle procédure s'applique ici (${v.procurement}) ?`),
       good: "Pour ce montant, une consultation simple suffit.",
       riskReply: v.procurementRisk,
       risk: {
         level: "risque_majeur",
-        text: `Mode d'achat bloquant : « ${v.procurementRisk} »`,
+        text: `Achats et procédure : « ${v.procurementRisk} »`,
         action: `${capitalize(v.procurementAction)}.`,
       },
-      argument: ["« Avec une remise, on peut aller plus vite ? »", "Une remise ne change pas la procédure."],
-      vague: ["« C'est compliqué, chez vous ? »", "Ça dépend du montant."],
+      argument: [q("Avec une remise, on peut aller plus vite ?"), "Une remise ne change pas la procédure."],
+      vague: [q("C'est compliqué, chez vous ?"), "Ça dépend du montant."],
     }),
   },
   {
     id: "r4-groupe",
     theme: "Le référencement groupe",
     meeting: "R4",
+    factor: "achats",
     when: (c) => Boolean(c.group),
     build: (c) => ({
       buyerLine: "Je dois aussi en parler au groupe.",
-      question: "« Faut-il un référencement groupe, et qui signe : la filiale ou le groupe ? »",
+      question: q("Faut-il un référencement groupe, et qui signe : la filiale ou le groupe ?"),
       good: "Le groupe vous référence, puis la filiale signe.",
       riskReply: c.group!.procurementRisk,
       risk: {
         level: "risque_majeur",
-        text: `Blocage groupe : « ${c.group!.procurementRisk} »`,
+        text: `Achats et procédure : « ${c.group!.procurementRisk} »`,
         action: `${capitalize(c.group!.procurementAction)}.`,
       },
-      argument: ["« On peut signer sans passer par le groupe ? »", "Ce n'est pas comme ça que ça marche ici."],
-      vague: ["« Le groupe suit ? »", "Je ne sais pas."],
+      argument: [q("On peut signer sans passer par le groupe ?"), "Ce n'est pas comme ça que ça marche ici."],
+      vague: [q("Le groupe suit ?"), "Je ne sais pas."],
+    }),
+  },
+  {
+    id: "r4-budget",
+    theme: "L'arbitrage budgétaire",
+    meeting: "R4",
+    factor: "budget",
+    build: ({ v }) => ({
+      buyerLine: "Il faut maintenant que je défende le budget.",
+      question: q("Qui arbitre ce budget, et face à quels autres projets ?"),
+      good: `C'est sur ${v.budget} : l'arbitrage est favorable si le dossier est complet.`,
+      riskReply: "Le budget est gelé jusqu'au prochain exercice.",
+      risk: {
+        level: "risque_majeur",
+        text: "Budget gelé : la décision glisse au prochain exercice.",
+        action: "Obtenir la date du dégel et préparer le dossier pour cet arbitrage.",
+      },
+      argument: [q("Notre prix est très compétitif."), "Le prix n'est pas le sujet, c'est l'enveloppe."],
+      vague: [q("Le budget, ça va ?"), "On verra."],
+    }),
+  },
+  {
+    id: "r4-consensus",
+    theme: "Le consensus interne",
+    meeting: "R4",
+    factor: "consensus",
+    build: () => ({
+      buyerLine: "En interne, on en discute encore.",
+      question: q("Sur quoi les avis divergent-ils, et qui tranche ?"),
+      good: "Tout le monde est aligné, il reste juste la signature.",
+      riskReply: "La DSI et le métier ne veulent pas la même chose.",
+      risk: {
+        level: "risque_majeur",
+        text: "Désaccord interne : métier et DSI ne sont pas d'accord.",
+        action: "Organiser un point commun pour fixer les critères de décision.",
+      },
+      argument: [q("Notre offre répond à tout le monde."), "Ce n'est pas aussi simple."],
+      vague: [q("Tout le monde est d'accord ?"), "Globalement."],
     }),
   },
   {
     id: "r4-signataire",
     theme: "Le signataire",
     meeting: "R4",
+    factor: "decideur",
     build: ({ v }) => ({
       buyerLine: "Votre offre est en cours d'analyse.",
-      question: `« Qui signe, et faut-il passer par ${v.signature} ? »`,
+      question: q(`Qui signe, et faut-il passer par ${v.signature} ?`),
       good: `Oui, par ${v.signature} ; la prochaine occasion est à la fin du mois.`,
       riskReply: "Je ne sais pas encore qui signera.",
       risk: {
         level: "risque",
-        text: "Signataire inconnu : la date de signature n'est pas défendable.",
+        text: "Décideur : signataire inconnu, la date de signature n'est pas défendable.",
         action: "Obtenir le circuit de signature par écrit.",
       },
-      argument: ["« On peut signer avant la fin du trimestre ? »", "Votre fin de trimestre n'est pas notre calendrier."],
-      vague: ["« Ça va signer ? »", "Probablement."],
-    }),
-  },
-  {
-    id: "r4-conditions",
-    theme: "Les conditions",
-    meeting: "R4",
-    build: () => ({
-      buyerLine: "Il reste à cadrer les conditions.",
-      question: "« Quelles conditions sont non négociables pour vous ? »",
-      good: "Nos délais de paiement habituels, la réversibilité et nos clauses types.",
-      argument: ["« Nos conditions générales sont standard. »", "Nous verrons ça avec le juridique."],
-      vague: ["« Il y a des points bloquants ? »", "Pas à ma connaissance."],
+      argument: [q("On peut signer avant la fin du trimestre ?"), "Votre fin de trimestre n'est pas notre calendrier."],
+      vague: [q("Ça va signer ?"), "Probablement."],
     }),
   },
   {
     id: "r4-delai",
     theme: "La date de décision",
     meeting: "R4",
+    factor: null,
     build: ({ v }) => ({
       buyerLine: "Vous voulez sans doute une date.",
-      question: `« Compte tenu de ${v.delay}, quelle date de décision est réaliste ? »`,
+      question: q(`Compte tenu de ${v.delay}, quelle date de décision est réaliste ?`),
       good: "Réaliste ? D'ici deux mois, si tout est complet.",
-      argument: ["« Visons une signature dans quinze jours. »", "C'est votre souhait, pas notre calendrier."],
-      vague: ["« C'est pour bientôt ? »", "On verra."],
+      argument: [q("Visons une signature dans quinze jours."), "C'est votre souhait, pas notre calendrier."],
+      vague: [q("C'est pour bientôt ?"), "On verra."],
     }),
   },
 ];
 
 /** Objection du profil vendeur, insérée avant la dernière étape. */
-function sellerObjectionPattern(seller: SellerProfile, objection: string): PatternDef {
+function sellerObjectionPattern(seller: SellerProfile, objection: string, meeting: MeetingTypeId): PatternDef {
+  const factor = getBlockerFactor(seller.objectionFactor)!;
   return {
     id: "objection-vendeur",
     theme: `L'objection (${seller.label})`,
-    meeting: "R1",
+    meeting,
+    factor: seller.objectionFactor,
     build: () => ({
       buyerLine: objection,
-      question: "« Qu'est-ce qui vous amène à poser cette question ? »",
+      question: q("Qu'est-ce qui vous amène à poser cette question ?"),
       good: `On a déjà été déçus là-dessus. Ce qui nous rassurerait : ${lowerFirst(seller.proofs[0] ?? "des preuves concrètes")}.`,
-      argument: ["« Je vous réponds point par point. »", "C'est ce que disent tous les fournisseurs."],
-      vague: ["« Je peux faire un geste sur le prix. »", "Le sujet n'est pas le prix."],
+      riskReply: `Pour être franc, c'est le point qui peut tout faire échouer chez nous.`,
+      risk: {
+        level: "risque_majeur",
+        text: `${factor.label} : l'objection cache un vrai blocage.`,
+        action: factor.action,
+      },
+      argument: [q("Je vous réponds point par point."), "C'est ce que disent tous les fournisseurs."],
+      vague: [q("Je peux faire un geste sur le prix."), "Le sujet n'est pas le prix."],
     }),
   };
 }
@@ -500,8 +665,35 @@ function shuffle<T>(items: T[], rand: () => number): T[] {
   return out;
 }
 
-/** Part des étapes à risque tirées dans une partie (mécanique de jeu, pas une statistique). */
-const RISK_DRAW = 0.45;
+/**
+ * Tire les facteurs qui bloquent ce deal parmi ceux que le rendez-vous peut
+ * révéler. Poids (mécanique de jeu, pas une statistique) : facteur fréquent
+ * du secteur 3, du profil vendeur ou de la couche groupe 2, autre 1.
+ */
+function drawBlockers(
+  available: BlockerFactorId[],
+  likely: { sector: BlockerFactorId[]; other: BlockerFactorId[] },
+  count: number,
+  rand: () => number,
+): BlockerFactorId[] {
+  const pool = [...new Set(available)];
+  const picked: BlockerFactorId[] = [];
+  while (picked.length < count && pool.length > 0) {
+    const weights = pool.map((f) =>
+      likely.sector.includes(f) ? 3 : likely.other.includes(f) ? 2 : 1,
+    );
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = rand() * total;
+    let idx = 0;
+    for (; idx < pool.length - 1; idx++) {
+      r -= weights.at(idx)!;
+      if (r < 0) break;
+    }
+    picked.push(pool.at(idx)!);
+    pool.splice(idx, 1);
+  }
+  return picked;
+}
 
 export type SimulationSetup = {
   clientSectorId: string | null | undefined;
@@ -532,15 +724,31 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     const objection =
       seller.objections.at(Math.floor(rand() * seller.objections.length)) ??
       seller.objections[0]!;
-    defs.splice(Math.max(defs.length - 1, 0), 0, sellerObjectionPattern(seller, objection));
+    defs.splice(
+      Math.max(defs.length - 1, 0),
+      0,
+      sellerObjectionPattern(seller, objection, meeting),
+    );
   }
 
-  let riskyCount = 0;
-  const steps: SimStep[] = defs.map((def) => {
-    const out = def.build(ctx);
-    const canBeRisky = Boolean(out.risk && out.riskReply);
-    const risky = canBeRisky && rand() < RISK_DRAW;
-    if (risky) riskyCount += 1;
+  const built = defs.map((def) => ({ def, out: def.build(ctx) }));
+  const available = built
+    .filter(({ def, out }) => def.factor && out.riskReply && out.risk)
+    .map(({ def }) => def.factor!);
+  // Plus le client est complexe (filiale de groupe), plus il y a de blocages.
+  const count = groupModel ? 3 : 2;
+  const blockers = drawBlockers(
+    available,
+    {
+      sector: model.likelyBlockers,
+      other: [...(seller?.likelyBlockers ?? []), ...(groupModel?.likelyBlockers ?? [])],
+    },
+    count,
+    rand,
+  );
+
+  const steps: SimStep[] = built.map(({ def, out }) => {
+    const risky = Boolean(def.factor && out.riskReply && out.risk && blockers.includes(def.factor));
     const choices = shuffle(
       [
         { id: `${def.id}:question`, kind: "question" as const, label: out.question },
@@ -552,6 +760,7 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     return {
       id: def.id,
       theme: def.theme,
+      factor: def.factor,
       buyerLine: out.buyerLine,
       choices,
       goodQuestion: out.question,
@@ -561,22 +770,9 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
         vague: out.vague[1],
       },
       risky,
-      risk: out.risk,
+      risk: out.risk && def.factor ? { ...out.risk, factor: def.factor } : undefined,
     };
   });
-
-  // Au moins un risque par partie quand c'est possible : sinon le jeu n'apprend rien.
-  if (riskyCount === 0) {
-    const candidate = steps.find((s, i) => {
-      const def = defs.at(i)!;
-      return Boolean(def.build(ctx).riskReply && s.risk);
-    });
-    if (candidate) {
-      const def = defs.find((d) => d.id === candidate.id)!;
-      candidate.risky = true;
-      candidate.replies.question = def.build(ctx).riskReply!;
-    }
-  }
 
   const interlocutor = (groupModel && meeting !== "R3" ? groupModel : model).interlocutors[meeting];
   const meetingLabel = getMeetingType(meeting)?.label ?? meeting;
@@ -587,6 +783,7 @@ export function buildSimulation(setup: SimulationSetup): Simulation {
     multiEntity: Boolean(groupModel),
     interlocutor,
     opening: `Rendez-vous ${meeting} · ${meetingLabel}. Vous êtes face à : ${interlocutor} (${model.label}${groupModel ? ", filiale d'un groupe" : ""}).`,
+    blockers,
     steps,
     issue: ISSUES[meeting],
   };
@@ -620,24 +817,48 @@ export function buildDebrief(sim: Simulation, turns: SimTurn[]): SimDebrief {
       else risksMissed.push(step.risk);
     }
   }
+
+  const blockers: BlockerOutcome[] = sim.blockers.map((id) => {
+    const factor = getBlockerFactor(id)!;
+    const steps = sim.steps.filter((s) => s.factor === id && s.risky);
+    const foundStep = steps.find((s) => byStep.get(s.id)?.riskFound);
+    return {
+      factor: id,
+      label: factor.label,
+      found: Boolean(foundStep),
+      evidence: foundStep
+        ? `Repéré grâce à ${foundStep.goodQuestion}`
+        : `Question qui l'aurait révélé : ${steps[0]?.goodQuestion ?? `« ${factor.question} »`}`,
+      action: steps[0]?.risk?.action ?? factor.action,
+    };
+  });
+
   const issueReached = missed.length === 0;
-  const firstMissedRisk = risksMissed[0];
-  const nextStep = firstMissedRisk
-    ? `Dans le vrai deal, vérifie ce point : ${firstMissedRisk.text} ${firstMissedRisk.action}`
-    : risksFound[0]
-      ? `Traite le signal repéré : ${risksFound[0].action}`
+  const hidden = blockers.find((b) => !b.found);
+  const seen = blockers.find((b) => b.found);
+  const nextStep = hidden
+    ? `Dans le vrai deal, vérifie d'abord ce blocage : ${hidden.label}. ${hidden.action}`
+    : seen
+      ? `Traite le blocage repéré : ${seen.label}. ${seen.action}`
       : missed[0]
         ? `Dans le vrai deal, pose la question oubliée : ${missed[0]}`
         : `Issue atteinte : ${sim.issue}`;
-  return { asked, missed, risksFound, risksMissed, issueReached, nextStep };
+  return { asked, missed, risksFound, risksMissed, blockers, issueReached, nextStep };
 }
 
 /** Pour la doc et les tests : patterns communs par rendez-vous. */
-export function listPatterns(): Array<{ id: string; theme: string; meeting: MeetingTypeId; sectorSpecific: boolean }> {
+export function listPatterns(): Array<{
+  id: string;
+  theme: string;
+  meeting: MeetingTypeId;
+  factor: BlockerFactorId | null;
+  sectorSpecific: boolean;
+}> {
   return PATTERNS.map((p) => ({
     id: p.id,
     theme: p.theme,
     meeting: p.meeting,
+    factor: p.factor,
     sectorSpecific: Boolean(p.when),
   }));
 }

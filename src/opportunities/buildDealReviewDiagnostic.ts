@@ -183,8 +183,10 @@ export function buildDealReviewSystemPrompt(opts: {
   agentFirstName?: string | null;
   /** Agent complet du sous-secteur (docs/agents/commercial). */
   sectorAddendum?: string | null;
-  /** Modèle sectoriel client + profil vendeur (sectorModels, Pilotage). */
+  /** Variables du secteur client + profil vendeur (sectorModels, Pilotage). */
   sectorModelAddendum?: string | null;
+  /** Grille des facteurs de blocage (blockerFactors). */
+  blockerAddendum?: string | null;
 }): string {
   const agentName = opts.agentFirstName?.trim();
   const who = agentName
@@ -198,9 +200,11 @@ Tu incarnes la persona suivante (prioritaire pour le vocabulaire et les relances
 ${opts.sectorAddendum.trim()}
 Sans inventer de faits hors <diagnostic>.`
     : "";
-  const modelBlock = opts.sectorModelAddendum?.trim()
-    ? `\n\n${opts.sectorModelAddendum.trim()}`
-    : "";
+  const modelBlock = [opts.blockerAddendum, opts.sectorModelAddendum]
+    .map((b) => b?.trim())
+    .filter(Boolean)
+    .map((b) => `\n\n${b}`)
+    .join("");
 
   return `${who}. Tu fais une revue de deal avec ${opts.sellerFirstName} sur l'opportunité décrite dans <diagnostic>.
 
@@ -228,5 +232,6 @@ Réponds uniquement en JSON :
 { "message": "ce que tu dis au commercial",
   "topic": "code du constat traité (ex. C2)",
   "proposed_updates": [ { "type": "stakeholder_status | process_answer | action | note", "target": "…", "value": "…" } ],
+  "facteurs": ["identifiants des facteurs de blocage en jeu"],
   "done": false }`;
 }

@@ -25,6 +25,7 @@ import {
   type Opportunity,
 } from "./opportunities/OpportunityContext";
 import MeetingSimulator from "./opportunities/MeetingSimulator";
+import { getBlockerFactor } from "./opportunities/blockerFactors";
 import {
   SELLER_PROFILES,
   clientModelIdFromDealReviewSector,
@@ -33,7 +34,12 @@ import { supabase } from "./supabase/client";
 import DealBlockersPanel from "./DealBlockersPanel";
 import { resolveAccountSector } from "./SameSectorPanel";
 
-type ChatMsg = { role: "assistant" | "user"; text: string; topic?: string };
+type ChatMsg = {
+  role: "assistant" | "user";
+  text: string;
+  topic?: string;
+  facteurs?: string[];
+};
 
 type ChatMode = "review" | "simulation";
 
@@ -73,6 +79,7 @@ async function postDealReview(body: unknown): Promise<{
   topic?: string;
   proposed_updates?: ProposedUpdate[];
   done?: boolean;
+  facteurs?: string[];
   diagnosticFindingsCount?: number;
 }> {
   const session = supabase
@@ -95,6 +102,7 @@ async function postDealReview(body: unknown): Promise<{
     topic?: string;
     proposed_updates?: ProposedUpdate[];
     done?: boolean;
+    facteurs?: string[];
     diagnosticFindingsCount?: number;
   };
   if (!res.ok) {
@@ -106,6 +114,7 @@ async function postDealReview(body: unknown): Promise<{
     topic: data.topic,
     proposed_updates: data.proposed_updates,
     done: data.done,
+    facteurs: data.facteurs,
     diagnosticFindingsCount: data.diagnosticFindingsCount,
   };
 }
@@ -273,6 +282,7 @@ export default function DealReviewPanel({
           role: "assistant",
           text: reply.message,
           topic: reply.topic,
+          facteurs: reply.facteurs,
         },
       ]);
       setProposals(reply.proposed_updates ?? []);
@@ -509,6 +519,15 @@ export default function DealReviewPanel({
                   <span className="deal-review-topic">{m.topic}</span>
                 ) : null}
                 {m.text}
+                {m.facteurs && m.facteurs.length > 0 ? (
+                  <span className="deal-blockers-factors">
+                    {m.facteurs.map((id) => (
+                      <span key={id} className="deal-blockers-factor">
+                        {getBlockerFactor(id)?.label ?? id}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
               </div>
             </div>
           ))}

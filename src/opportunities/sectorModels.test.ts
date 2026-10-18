@@ -16,6 +16,11 @@ import {
   type SimTurn,
 } from "./meetingPatterns";
 import { DEAL_REVIEW_SECTORS } from "./dealReviewSectors";
+import {
+  BLOCKER_FACTORS,
+  buildBlockerFactorsAddendum,
+  summarizeFactors,
+} from "./blockerFactors";
 
 describe("variables sectorielles", () => {
   it("chaque secteur renseigne toutes les variables et un interlocuteur par rendez-vous", () => {
@@ -160,5 +165,82 @@ describe("rendez-vous à boutons", () => {
     expect(bad.risksFound).toHaveLength(0);
     expect(bad.risksMissed.length).toBeGreaterThan(0);
     expect(bad.nextStep).toContain("vrai deal");
+  });
+});
+
+describe("facteurs de blocage", () => {
+  it("chaque facteur peut être découvert dans au moins un rendez-vous", () => {
+    const probed = new Set(listPatterns().map((p) => p.factor).filter(Boolean));
+    for (const f of BLOCKER_FACTORS) {
+      expect(probed.has(f.id), f.id).toBe(true);
+    }
+  });
+
+  it("les facteurs fréquents des secteurs et des profils existent dans la grille", () => {
+    const ids = new Set(BLOCKER_FACTORS.map((f) => f.id));
+    for (const m of CLIENT_SECTOR_MODELS) {
+      for (const f of m.likelyBlockers) expect(ids.has(f), `${m.id} ${f}`).toBe(true);
+    }
+    for (const p of SELLER_PROFILES) {
+      for (const f of [...p.likelyBlockers, p.objectionFactor]) {
+        expect(ids.has(f), `${p.id} ${f}`).toBe(true);
+      }
+    }
+  });
+
+  it("chaque partie cache plusieurs blocages, chacun découvrable par une étape", () => {
+    for (const m of CLIENT_SECTOR_MODELS.filter((x) => !x.overlay)) {
+      for (const mt of MEETING_TYPES) {
+        for (const multi of [false, true]) {
+          const sim = buildSimulation({ clientSectorId: m.id, sellerProfileId: "editeur-saas", multiEntity: multi, meeting: mt.id, seed: 5 });
+          expect(sim.blockers.length, `${m.id} ${mt.id}`).toBeGreaterThanOrEqual(2);
+          expect(new Set(sim.blockers).size).toBe(sim.blockers.length);
+          for (const b of sim.blockers) {
+            expect(sim.steps.some((s) => s.factor === b && s.risky), `${m.id} ${mt.id} ${b}`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it("le débrief dit ce qui bloquait le deal, trouvé ou non", () => {
+    const sim = buildSimulation({ clientSectorId: "public", sellerProfileId: "esn-integrateur", meeting: "R1", seed: 21 });
+    const good = buildDebrief(sim, sim.steps.map((s) => playChoice(s, s.choices.find((c) => c.kind === "question")!.id)));
+    expect(good.blockers.map((b) => b.factor)).toEqual(sim.blockers);
+    expect(good.blockers.every((b) => b.found)).toBe(true);
+    const vague = buildDebrief(sim, sim.steps.map((s) => playChoice(s, s.choices.find((c) => c.kind === "vague")!.id)));
+    expect(vague.blockers.every((b) => !b.found)).toBe(true);
+    expect(vague.nextStep).toContain("vérifie d'abord ce blocage");
+  });
+
+  it("le secteur oriente le tirage des blocages", () => {
+    const count = (sector: string, factor: string) => {
+      let n = 0;
+      for (let seed = 1; seed <= 200; seed++) {
+        const sim = buildSimulation({ clientSectorId: sector, sellerProfileId: null, meeting: "R1", seed });
+        if (sim.blockers.includes(factor as never)) n++;
+      }
+      return n;
+    };
+    expect(count("public", "budget")).toBeGreaterThan(count("generique", "budget"));
+  });
+
+  it("les constats du diagnostic sont rattachés aux facteurs", () => {
+    const summary = summarizeFactors([
+      { code: "C1", severity: "bloquant" },
+      { code: "C3", severity: "risque" },
+      { code: "C5", severity: "bloquant" },
+      { code: "U2", severity: "risque" },
+      { code: "T1", severity: "bloquant" },
+    ]);
+    expect(summary.map((s) => s.factor.id)).toEqual(["influence", "decideur", "valeur"]);
+    expect(summary.find((s) => s.factor.id === "influence")!.findings).toBe(2);
+  });
+
+  it("la revue IA reçoit la grille et doit nommer les facteurs", () => {
+    const block = buildBlockerFactorsAddendum(["budget", "achats"]);
+    for (const f of BLOCKER_FACTORS) expect(block).toContain(f.label);
+    expect(block).toContain("Budget, Achats et procédure");
+    expect(block).toContain('"facteurs"');
   });
 });

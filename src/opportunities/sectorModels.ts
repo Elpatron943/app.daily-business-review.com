@@ -14,6 +14,8 @@
  * Miroir lisible : cerveau DBR, notes secteur-* et projet-modeles-sectoriels.
  */
 
+import type { BlockerFactorId } from "./blockerFactors";
+
 export type MeetingTypeId = "R1" | "R2" | "R3" | "R4";
 
 export type MeetingTypeDef = {
@@ -79,6 +81,8 @@ export type ClientSectorModel = {
   vars: SectorVariables;
   /** Interlocuteur type par rendez-vous. */
   interlocutors: Record<MeetingTypeId, string>;
+  /** Facteurs de blocage les plus fréquents dans ce secteur (hypothèse). */
+  likelyBlockers: BlockerFactorId[];
   /** Couche transverse (grands groupes) : s'ajoute au secteur du client. */
   overlay?: boolean;
 };
@@ -91,6 +95,10 @@ export type SellerProfile = {
   proofs: string[];
   purchase: string[];
   byMeeting: Record<MeetingTypeId, string[]>;
+  /** Facteurs de blocage fréquents pour ce type d'offre (hypothèse). */
+  likelyBlockers: BlockerFactorId[];
+  /** Facteur que l'objection typique de ce profil met en jeu. */
+  objectionFactor: BlockerFactorId;
 };
 
 const AS_OF = "2026-10-18";
@@ -151,6 +159,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R3: "Responsable des risques TIC",
       R4: "Acheteur",
     },
+    likelyBlockers: ["conformite", "decideur", "achats"],
   },
   {
     id: "public",
@@ -200,6 +209,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R3: "DSI de la collectivité",
       R4: "Acheteur public",
     },
+    likelyBlockers: ["budget", "achats", "priorites"],
   },
   {
     id: "sante-publique",
@@ -249,6 +259,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R3: "RSSI du GHT",
       R4: "Direction des achats du GHT",
     },
+    likelyBlockers: ["achats", "capacite", "conformite"],
   },
   {
     id: "energie-eau-transports",
@@ -287,6 +298,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R3: "Responsable cybersécurité",
       R4: "Acheteur",
     },
+    likelyBlockers: ["conformite", "achats", "capacite"],
   },
   {
     id: "industrie",
@@ -328,6 +340,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R3: "DSI",
       R4: "Acheteur central",
     },
+    likelyBlockers: ["achats", "budget", "influence"],
   },
   {
     id: "generique",
@@ -364,6 +377,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R3: "Responsable sécurité",
       R4: "Acheteur",
     },
+    likelyBlockers: ["valeur", "statu-quo", "decideur"],
   },
   {
     id: "grands-groupes",
@@ -408,6 +422,7 @@ export const CLIENT_SECTOR_MODELS: readonly ClientSectorModel[] = [
       R3: "Sécurité groupe",
       R4: "Achats groupe",
     },
+    likelyBlockers: ["consensus", "decideur", "achats"],
   },
 ];
 
@@ -429,6 +444,8 @@ export const SELLER_PROFILES: readonly SellerProfile[] = [
       R3: ["Hébergement, sous-traitants, réversibilité, intégration au SI"],
       R4: ["Durée d'engagement, licences, conditions de sortie"],
     },
+    likelyBlockers: ["conformite", "capacite", "concurrence"],
+    objectionFactor: "conformite",
   },
   {
     id: "esn-integrateur",
@@ -447,6 +464,8 @@ export const SELLER_PROFILES: readonly SellerProfile[] = [
       R3: ["Accès des consultants au SI, sous-traitance, confidentialité"],
       R4: ["Taux journaliers, mode de facturation, référencement prestataire"],
     },
+    likelyBlockers: ["concurrence", "achats", "valeur"],
+    objectionFactor: "concurrence",
   },
   {
     id: "conseil",
@@ -465,6 +484,8 @@ export const SELLER_PROFILES: readonly SellerProfile[] = [
       R3: ["Confidentialité, accès aux données"],
       R4: ["Forfait par jalon, conditions de recette"],
     },
+    likelyBlockers: ["valeur", "decideur", "statu-quo"],
+    objectionFactor: "valeur",
   },
   {
     id: "fabricant",
@@ -483,6 +504,8 @@ export const SELLER_PROFILES: readonly SellerProfile[] = [
       R3: ["Conformité technique et sécurité de l'équipement"],
       R4: ["Délais, garantie, contrat de maintenance"],
     },
+    likelyBlockers: ["concurrence", "achats", "budget"],
+    objectionFactor: "concurrence",
   },
   {
     id: "services-recurrents",
@@ -501,6 +524,8 @@ export const SELLER_PROFILES: readonly SellerProfile[] = [
       R3: ["Accès aux sites et aux données, continuité de service"],
       R4: ["Durée du contrat-cadre, niveaux de service, pénalités"],
     },
+    likelyBlockers: ["statu-quo", "concurrence", "achats"],
+    objectionFactor: "statu-quo",
   },
 ];
 

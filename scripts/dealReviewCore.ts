@@ -26,7 +26,16 @@ import {
   buildDealReviewSectorAddendum,
   getDealReviewSubSector,
 } from "../src/opportunities/dealReviewSectors";
-import { buildSectorReviewAddendum } from "../src/opportunities/sectorModels";
+import {
+  buildSectorReviewAddendum,
+  getClientSectorModel,
+  getSellerProfile,
+} from "../src/opportunities/sectorModels";
+import {
+  BLOCKER_FACTORS,
+  buildBlockerFactorsAddendum,
+  type BlockerFactorId,
+} from "../src/opportunities/blockerFactors";
 import { productLineForPlanCode } from "../src/billing/entitlements";
 import type { Opportunity } from "../src/opportunities/OpportunityContext";
 import type { OppMappingSubtypeDef } from "../src/config/types";
@@ -88,6 +97,8 @@ export type DealReviewAiJson = {
     value: string;
   }>;
   done?: boolean;
+  /** Facteurs de blocage en jeu (identifiants de blockerFactors). */
+  facteurs?: string[];
 };
 
 function callOpenAi(
@@ -391,6 +402,18 @@ export async function runDealReview(
           multiEntity: Boolean(body.multiEntity),
         })
       : null;
+  // Grille des facteurs de blocage : pour tous (cœur du produit). Les facteurs
+  // fréquents du secteur client ne sont donnés qu'en Pilotage.
+  const isPilotage = productLineForPlanCode(planCode) === "pilotage";
+  const likelyBlockers: BlockerFactorId[] = [
+    ...new Set([
+      ...(isPilotage
+        ? getClientSectorModel(body.clientSectorId)?.likelyBlockers ?? []
+        : []),
+      ...(getSellerProfile(body.sellerProfileId)?.likelyBlockers ?? []),
+    ]),
+  ];
+  const blockerAddendum = buildBlockerFactorsAddendum(likelyBlockers);
   const system = buildDealReviewSystemPrompt({
     orgName,
     sellerFirstName: seller || "toi",
@@ -400,6 +423,7 @@ export async function runDealReview(
       body.subSectorId,
     ),
     sectorModelAddendum,
+    blockerAddendum,
   });
   const history = (body.messages ?? [])
     .map((m) => `${m.role === "user" ? "Commercial" : "Directeur"}: ${m.content}`)
@@ -441,6 +465,10 @@ Réponds en JSON selon le format imposé.`;
   }
 
   const parsed = parseAiJson(content);
+  const knownFactors = new Set<string>(BLOCKER_FACTORS.map((f) => f.id));
+  parsed.facteurs = Array.isArray(parsed.facteurs)
+    ? parsed.facteurs.filter((f) => typeof f === "string" && knownFactors.has(f))
+    : [];
 
   const userAnswers = (body.messages ?? [])
     .filter((m) => m.role === "user")

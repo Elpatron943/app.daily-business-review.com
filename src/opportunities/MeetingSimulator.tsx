@@ -187,6 +187,10 @@ export default function MeetingSimulator({
     <div className="sim-root">
       <div className="deal-review-messages sim-messages" ref={scrollerRef}>
         <p className="sim-opening">{sim.opening}</p>
+        <p className="sim-opening">
+          Ce deal cache {sim.blockers.length} blocage
+          {sim.blockers.length > 1 ? "s" : ""} : à toi de les trouver.
+        </p>
         {sim.steps.slice(0, stepIndex + (phase === "play" ? 1 : 0)).map((step, i) => {
           const turn = turns.at(i);
           return (
@@ -252,6 +256,24 @@ export default function MeetingSimulator({
       {debrief ? (
         <div className="deal-review-debrief sim-debrief">
           <h4>Débrief</h4>
+          <div className="deal-review-debrief-part">
+            <strong>Ce qui bloquait ce deal</strong>
+            <ul className="sim-blockers">
+              {debrief.blockers.map((b) => (
+                <li
+                  key={b.factor}
+                  className={b.found ? "is-found" : "is-missed"}
+                >
+                  <span className="sim-blocker-status">
+                    {b.found ? "Trouvé" : "Pas trouvé"}
+                  </span>{" "}
+                  <strong>{b.label}</strong> — {b.evidence}.
+                  <br />
+                  <span className="muted">À faire : {b.action}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
           <p>
             <strong>Questions posées :</strong> {debrief.asked.length} sur{" "}
             {sim.steps.length}
@@ -262,30 +284,6 @@ export default function MeetingSimulator({
               <ul>
                 {debrief.missed.map((q) => (
                   <li key={q}>{q}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {debrief.risksFound.length > 0 ? (
-            <div className="deal-review-debrief-part">
-              <strong>Signaux repérés</strong>
-              <ul>
-                {debrief.risksFound.map((r) => (
-                  <li key={r.text}>
-                    {r.text} → {r.action}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {debrief.risksMissed.length > 0 ? (
-            <div className="deal-review-debrief-part">
-              <strong>Signaux manqués</strong>
-              <ul>
-                {debrief.risksMissed.map((r) => (
-                  <li key={r.text}>
-                    {r.text} → {r.action}
-                  </li>
                 ))}
               </ul>
             </div>

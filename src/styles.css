@@ -14185,3 +14185,59 @@ a {
 .deal-review-debrief p {
   margin: 0;
 }
+
+.sim-blockers {
+  list-style: none;
+  padding-left: 0 !important;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.sim-blockers li {
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  line-height: 1.4;
+}
+
+.sim-blockers li.is-found {
+  border-color: color-mix(in srgb, #0f766e 45%, var(--line));
+}
+
+.sim-blockers li.is-missed {
+  border-color: color-mix(in srgb, #b91c1c 45%, var(--line));
+}
+
+.sim-blocker-status {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sim-blockers li.is-found .sim-blocker-status {
+  color: #0f766e;
+}
+
+.sim-blockers li.is-missed .sim-blocker-status {
+  color: #b91c1c;
+}
+
+.deal-blockers-factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.6rem;
+}
+
+.deal-blockers-factor {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.deal-blockers-factor.is-blocking {
+  border-color: color-mix(in srgb, #b91c1c 50%, var(--line));
+}
