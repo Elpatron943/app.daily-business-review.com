@@ -318,7 +318,7 @@ export default function MeetingSimulator({
               <span className="deal-review-avatar size-sm sim-buyer" aria-hidden>
                 A
               </span>
-              <div className={`deal-review-bubble bot${s.origin === "retour" ? " sim-escalation" : ""}`}>
+              <div className={`deal-review-bubble bot${s.origin === "retour" || s.origin === "verrou" ? " sim-escalation" : ""}`}>
                 <span className="deal-review-topic">
                   {getDiscoveryStage(s.stage).label} · {s.theme}
                 </span>
@@ -346,7 +346,7 @@ export default function MeetingSimulator({
             <span className="deal-review-avatar size-sm sim-buyer" aria-hidden>
               A
             </span>
-            <div className={`deal-review-bubble bot${step.origin === "retour" ? " sim-escalation" : ""}`}>
+            <div className={`deal-review-bubble bot${step.origin === "retour" || step.origin === "verrou" ? " sim-escalation" : ""}`}>
               {step.origin !== "base" ? <span className="deal-review-topic">{step.theme}</span> : null}
               {buyerLineFor(state, step)}
             </div>
@@ -384,6 +384,15 @@ export default function MeetingSimulator({
       {debrief ? (
         <div className="deal-review-debrief sim-debrief">
           <h4>Débrief</h4>
+          {debrief.eventFound === false ? (
+            <div className="deal-review-debrief-part">
+              <strong>Qualification du deal</strong>
+              <p className="sim-flag is-risque_majeur">
+                Pas commencée : l'événement déclencheur n'a pas été identifié. Tant qu'on ne sait pas ce qui
+                amène le client à un projet maintenant, qualifier le deal ne sert à rien.
+              </p>
+            </div>
+          ) : null}
           {debrief.meddpicc ? (
             <div className="deal-review-debrief-part">
               <strong>Qualification du deal</strong>

@@ -24,6 +24,7 @@ import {
   type SimStep,
   type Simulation,
   DISCOVERY_STAGES,
+  isQualificationStage,
 } from "./meetingPatterns";
 import { DEAL_REVIEW_SECTORS } from "./dealReviewSectors";
 import { METIER_PACKS, crossRulesFor } from "./metierPacks";
@@ -416,11 +417,11 @@ describe("trame de découverte", () => {
     for (const id of ["situation", "probleme", "impact", "declencheur", "decision", "suite"] as const) expect(stages.has(id)).toBe(true);
   });
 
-  it("même un deal simple pose la situation, le problème et ce qui se passe si rien ne change", () => {
+  it("même un deal simple commence par ce qui amène au projet maintenant, puis la situation et le problème", () => {
     const sim = buildSimulation({ clientSectorId: "generique", clientSize: "pme", sellerProfileId: null, meeting: "R1", seed: 1 });
     expect(sim.complexity.level).toBe(1);
     const ids = sim.steps.map((s) => s.id);
-    expect(ids.slice(0, 3)).toEqual(["r1-situation", "r1-probleme", "r1-urgence"]);
+    expect(ids.slice(0, 4)).toEqual(["r1-declencheur", "r1-situation", "r1-probleme", "r1-urgence"]);
   });
 
   it("le débrief dit quelles étapes de la trame sont couvertes", () => {
@@ -429,7 +430,10 @@ describe("trame de découverte", () => {
     st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "vague")!.id);
     while (!isFinished(st)) st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "question")!.id);
     const d = buildDebrief(sim, st);
-    expect(d.stages[0]).toMatchObject({ stage: "situation", status: "manquee" });
+    // Raté d'abord, puis rattrapé par la question « pourquoi maintenant » avant la qualification.
+    expect(d.stages[0]).toMatchObject({ stage: "declencheur", status: "couverte" });
+    expect(st.played.some((p) => p.step.origin === "verrou")).toBe(true);
+    expect(d.stages.find((x) => x.stage === "situation")!.status).toBe("couverte");
     expect(d.stages.find((x) => x.stage === "probleme")!.status).toBe("couverte");
   });
 });
@@ -490,5 +494,47 @@ describe("revue IA d'un deal complexe", () => {
     for (const m of MEDDPICC) expect(text).toContain(m.name);
     expect(text).toContain("lettre la plus faible");
     expect(text).toContain("N'écris jamais « MEDDPICC »");
+  });
+});
+
+describe("l'événement déclencheur avant la qualification", () => {
+  const sim = buildSimulation({ clientSectorId: "industrie", clientSize: "pme", sellerProfileId: "editeur-saas", meeting: "R1", seed: 9 });
+  const kindFor = (step: { stage: string; origin: string }, missEvent: boolean) =>
+    missEvent && step.stage === "declencheur" ? "argument" : "question";
+
+  it("aucune question de qualification avant l'événement déclencheur", () => {
+    const firstQualif = sim.steps.findIndex((s) => isQualificationStage(s.stage));
+    const event = sim.steps.findIndex((s) => s.id === "r1-declencheur");
+    expect(event).toBe(0);
+    expect(firstQualif).toBeGreaterThan(event);
+  });
+
+  it("sans événement déclencheur, l'acheteur exige une raison avant de qualifier", () => {
+    let st = startSimulation(sim);
+    while (!isFinished(st) && currentStep(st)!.origin !== "verrou") {
+      st = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === kindFor(currentStep(st)!, true))!.id);
+    }
+    expect(currentStep(st)!.origin).toBe("verrou");
+    expect(st.played.some((p) => isQualificationStage(p.step.stage))).toBe(false);
+    // Rattrapage réussi : la qualification commence.
+    const ok = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "question")!.id);
+    expect(ok.eventFound).toBe(true);
+    expect(isQualificationStage(currentStep(ok)!.stage)).toBe(true);
+    // Rattrapage raté : l'acheteur clôt le rendez-vous, la qualification est perdue.
+    const ko = applyChoice(st, currentStep(st)!.choices.find((c) => c.kind === "vague")!.id);
+    expect(ko.endedEarly).toBe(true);
+    expect(ko.lost.every((s) => isQualificationStage(s.stage))).toBe(true);
+    expect(buildDebrief(sim, ko).eventFound).toBe(false);
+  });
+
+  it("la grille de qualification n'est pas remplie tant que l'événement déclencheur manque", () => {
+    const complexe = buildSimulation({ clientSectorId: "banque-assurance", clientSize: "ge", sellerProfileId: null, meeting: "R1", seed: 2 });
+    let st = startSimulation(complexe);
+    while (!isFinished(st)) {
+      const step = currentStep(st)!;
+      const kind = step.stage === "declencheur" ? "vague" : "question";
+      st = applyChoice(st, step.choices.find((c) => c.kind === kind)!.id);
+    }
+    expect(buildDebrief(complexe, st).meddpicc).toBeNull();
   });
 });

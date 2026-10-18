@@ -52,8 +52,11 @@ export type { MeddpiccId, MeddpiccOutcome, MeddpiccStatus } from "./meddpicc";
 
 /**
  * Trame de découverte commune à tous les secteurs : chaque question du moteur
- * appartient à une étape. Situation → problème → impact → événement déclencheur
- * → solution attendue → décision → prochaine étape.
+ * appartient à une étape. Événement déclencheur (ce qui amène à un projet
+ * maintenant) → situation → problème → impact → solution attendue → décision
+ * → prochaine étape. En découverte, la qualification (solution attendue,
+ * décision, objection, prochaine étape) reste verrouillée tant que
+ * l'événement déclencheur n'est pas identifié (fondateur, 18 oct. 2026).
  */
 export type DiscoveryStageId =
   | "situation"
@@ -66,10 +69,10 @@ export type DiscoveryStageId =
   | "suite";
 
 export const DISCOVERY_STAGES: readonly { id: DiscoveryStageId; label: string; question: string }[] = [
+  { id: "declencheur", label: "Événement déclencheur", question: "Qu'est-ce qui amène le client à un projet maintenant, et avant quelle date ?" },
   { id: "situation", label: "Situation actuelle", question: "Comment ça se passe aujourd'hui, avec qui et avec quels outils ?" },
   { id: "probleme", label: "Problème", question: "Qu'est-ce qui ne va pas, et qui en souffre ?" },
-  { id: "impact", label: "Impact", question: "Combien ça coûte, sur quel indicateur ?" },
-  { id: "declencheur", label: "Événement déclencheur", question: "Que se passe-t-il si rien ne change, et avant quelle date faut-il décider ?" },
+  { id: "impact", label: "Impact", question: "Combien ça coûte, et que se passe-t-il si rien ne change ?" },
   { id: "solution", label: "Solution attendue", question: "À quoi le client reconnaîtra-t-il la bonne solution ?" },
   { id: "decision", label: "Décision", question: "Qui décide, sur quel budget, par quel circuit ?" },
   { id: "objection", label: "Objection", question: "Qu'est-ce qui inquiète le client ?" },
@@ -100,6 +103,13 @@ export function stageForFactor(factor: BlockerFactorId | null | undefined): Disc
   return factor ? STAGE_BY_FACTOR[factor] : "suite";
 }
 
+/** Étapes de qualification, verrouillées en découverte tant que l'événement déclencheur n'est pas identifié. */
+const QUALIFICATION_STAGES: readonly DiscoveryStageId[] = ["solution", "decision", "objection", "suite"];
+
+export function isQualificationStage(id: DiscoveryStageId): boolean {
+  return QUALIFICATION_STAGES.includes(id);
+}
+
 export function getDiscoveryStage(id: DiscoveryStageId) {
   return DISCOVERY_STAGES.find((s) => s.id === id)!;
 }
@@ -120,7 +130,7 @@ export type SimChoice = {
 export type SimStep = {
   id: string;
   /** base : question du rendez-vous ; relance : débloquée par une bonne question ; retour : blocage raté qui revient. */
-  origin: "base" | "relance" | "retour";
+  origin: "base" | "relance" | "retour" | "verrou";
   theme: string;
   /** Étape de la trame de découverte (situation, problème, impact…). */
   stage: DiscoveryStageId;
@@ -185,6 +195,12 @@ export type SimState = {
   dug: BlockerFactorId[];
   /** Récit de la partie, pour le débrief. */
   events: string[];
+  /** Découverte : la qualification attend l'événement déclencheur. */
+  gated: boolean;
+  /** Événement déclencheur identifié (bonne question sur cette étape). */
+  eventFound: boolean;
+  /** La question de rattrapage « pourquoi maintenant » a déjà été posée. */
+  gateAsked: boolean;
 };
 
 export type SimTurn = {
@@ -216,6 +232,8 @@ export type StageOutcome = {
 };
 
 export type SimDebrief = {
+  /** Découverte : l'événement déclencheur a-t-il été identifié ? (null hors découverte) */
+  eventFound: boolean | null;
   /** Grille MEDDPICC sur tout le cycle, pour les ventes complexes (null sinon). */
   meddpicc: MeddpiccOutcome[] | null;
   /** Trame de découverte : chaque étape du rendez-vous, couverte ou non. */
@@ -294,6 +312,28 @@ function q(text: string): string {
 const PATTERNS: PatternDef[] = [
   // ---------- R1 · Découverte ----------
   {
+    id: "r1-declencheur",
+    theme: "Pourquoi maintenant",
+    stage: "declencheur",
+    meddpicc: "pain",
+    meeting: "R1",
+    factor: "statu-quo",
+    minLevel: 1,
+    build: () => ({
+      buyerLine: "On m'a dit que vous pouviez nous aider. Je vous écoute, j'ai vingt minutes.",
+      question: q("Qu'est-ce qui vous amène à regarder ce sujet maintenant, et pas l'an dernier ?"),
+      good: "Un nouveau directeur commercial est arrivé à la rentrée : il veut un pilotage fiable avant le prochain budget.",
+      riskReply: "Rien de particulier, on regarde ce qui se fait.",
+      risk: {
+        level: "risque_majeur",
+        text: "Pas d'événement déclencheur : rien n'amène le client à un projet maintenant.",
+        action: "Chercher ce qui a changé (une arrivée, un échec, une échéance, une réglementation) et ce qui se passe si rien ne bouge.",
+      },
+      argument: [q("Nous aidons justement les entreprises comme la vôtre à se transformer."), "C'est ce que tout le monde dit."],
+      vague: [q("C'est un bon moment pour vous ?"), "Ni plus ni moins qu'un autre."],
+    }),
+  },
+  {
     id: "r1-situation",
     theme: "Les outils et l'organisation",
     stage: "situation",
@@ -302,7 +342,7 @@ const PATTERNS: PatternDef[] = [
     factor: "concurrence",
     minLevel: 1,
     build: () => ({
-      buyerLine: "On m'a dit que vous pouviez nous aider. Je vous écoute, j'ai vingt minutes.",
+      buyerLine: "Je vous explique comment on fonctionne, si vous voulez.",
       question: q("Comment ça se passe aujourd'hui : qui s'en occupe, et avec quels outils ?"),
       good: "Chacun tient son tableur, et on consolide à la main en fin de mois.",
       riskReply: "On a un outil maison qui fait le travail, à peu près. L'équipe y tient.",
@@ -362,7 +402,7 @@ const PATTERNS: PatternDef[] = [
   {
     id: "r1-urgence",
     theme: "Si rien ne change",
-    stage: "declencheur",
+    stage: "impact",
     meddpicc: "pain",
     meeting: "R1",
     factor: "statu-quo",
@@ -1624,7 +1664,51 @@ export function startSimulation(sim: Simulation): SimState {
     events: sim.carried.map(
       (f) => `Un blocage raté au rendez-vous précédent revient : ${getBlockerFactor(f)!.label}.`,
     ),
+    gated: sim.meeting === "R1",
+    eventFound: false,
+    gateAsked: false,
   };
+}
+
+/** Rattrapage : l'acheteur refuse de parler qualification sans raison d'agir maintenant. */
+function gateStep(seed: number): SimStep {
+  const question = q("Avant d'aller plus loin : qu'est-ce qui, chez vous, rend ce projet nécessaire maintenant ?");
+  return {
+    id: "verrou-declencheur",
+    origin: "verrou",
+    theme: "Pourquoi maintenant, avant de qualifier",
+    stage: "declencheur",
+    meddpicc: "pain",
+    factor: null,
+    buyerLine: "Attendez : avant de parler de qui décide et de budget, je ne suis pas sûr qu'on lance quoi que ce soit cette année.",
+    choices: shuffle(
+      [
+        { id: "verrou-declencheur:argument", kind: "argument" as const, label: q("Justement, je peux vous faire une offre de lancement.") },
+        { id: "verrou-declencheur:question", kind: "question" as const, label: question },
+        { id: "verrou-declencheur:vague", kind: "vague" as const, label: q("Vous y réfléchirez tranquillement ?") },
+      ],
+      seededRandom(seed),
+    ),
+    goodQuestion: question,
+    replies: {
+      question: "Bonne question. L'audit de fin d'année va pointer le sujet : la direction veut l'avoir réglé avant.",
+      argument: "Une offre ne crée pas de projet chez nous.",
+      vague: "Oui, on verra.",
+    },
+    risky: false,
+  };
+}
+
+/** Verrou de la découverte : pas de qualification avant l'événement déclencheur. */
+function applyGate(next: SimState): SimState {
+  if (!next.gated || next.eventFound || next.endedEarly) return next;
+  const head = next.queue[0];
+  if (!head || !isQualificationStage(head.stage)) return next;
+  if (!next.gateAsked) {
+    next.gateAsked = true;
+    next.queue = [gateStep(next.played.length * 104729 + 17), ...next.queue];
+  }
+  return next;
 }
 
 export function currentStep(state: SimState): SimStep | undefined {
@@ -1658,6 +1742,14 @@ export function applyChoice(state: SimState, choiceId: string): SimState {
 
   if (turn.kind === "question") {
     next.patience = Math.min(state.maxPatience, state.patience + 1);
+    if (step.stage === "declencheur" && !next.eventFound) {
+      next.eventFound = true;
+      next.events.push(
+        step.origin === "verrou"
+          ? `Étape ${order} : l'événement déclencheur est enfin identifié, la qualification peut commencer.`
+          : `Étape ${order} : événement déclencheur identifié — ce qui amène le client à un projet maintenant.`,
+      );
+    }
     if (step.factor && !next.known.includes(step.factor)) next.known.push(step.factor);
     if (step.origin === "relance" && step.factor) {
       next.dug.push(step.factor);
@@ -1677,13 +1769,24 @@ export function applyChoice(state: SimState, choiceId: string): SimState {
         next.queue = [followUpStep(factor, rand), ...next.queue];
       }
     }
-    return next;
+    return applyGate(next);
   }
 
   next.patience = state.patience - 1;
   next.events.push(
     `Étape ${order} : ${turn.kind === "argument" ? "argument" : "question vague"} — l'acheteur ${next.patience > 0 ? "s'agace" : "décroche"}.`,
   );
+  if (step.origin === "verrou" && next.queue.length > 0) {
+    // Toujours pas de raison d'agir maintenant : l'acheteur clôt le rendez-vous.
+    next.endedEarly = true;
+    next.lost = [...next.queue];
+    next.queue = [];
+    next.closingLine = "Revenez vers moi quand ce sera d'actualité chez nous.";
+    next.events.push(
+      `Aucun événement déclencheur identifié : l'acheteur ne voit pas pourquoi avancer maintenant et refuse de parler qualification (${next.lost.length} question${next.lost.length > 1 ? "s" : ""} perdue${next.lost.length > 1 ? "s" : ""}).`,
+    );
+    return next;
+  }
   if (next.patience <= 0 && next.queue.length > 0) {
     next.endedEarly = true;
     next.lost = [...next.queue];
@@ -1693,7 +1796,7 @@ export function applyChoice(state: SimState, choiceId: string): SimState {
       `L'acheteur écourte le rendez-vous : ${next.lost.length} question${next.lost.length > 1 ? "s" : ""} perdue${next.lost.length > 1 ? "s" : ""}.`,
     );
   }
-  return next;
+  return applyGate(next);
 }
 
 /** Grille MEDDPICC du cycle : ce rendez-vous, complété par les précédents. */
@@ -1788,7 +1891,9 @@ export function buildDebrief(sim: Simulation, state: SimState): SimDebrief {
   const issueReached = !state.endedEarly && missed.length === 0;
   const hidden = blockers.find((b) => b.status === "manque");
   const shallow = blockers.find((b) => b.status === "repere");
-  const nextStep = state.endedEarly
+  const nextStep = state.gated && !state.eventFound
+    ? `${state.endedEarly ? "L'acheteur a écourté. " : ""}Dans le vrai deal, trouve d'abord ce qui amène le client à un projet maintenant (une arrivée, un échec, une échéance, une réglementation). Sans événement déclencheur, la qualification ne sert à rien.`
+    : state.endedEarly
     ? `L'acheteur a écourté : dans le vrai deal, obtiens un nouveau rendez-vous en partant de son problème, pas de ton offre.${hidden ? ` Puis vérifie ce blocage : ${hidden.label}.` : ""}`
     : hidden
       ? `Dans le vrai deal, vérifie d'abord ce blocage : ${hidden.label}. ${hidden.action}`
@@ -1809,7 +1914,8 @@ export function buildDebrief(sim: Simulation, state: SimState): SimDebrief {
     return { stage: id, label: getDiscoveryStage(id).label, status };
   });
   return {
-    meddpicc: sim.meddpiccActive ? meddpiccGrid(sim, state) : null,
+    eventFound: state.gated ? state.eventFound : null,
+    meddpicc: sim.meddpiccActive && (!state.gated || state.eventFound) ? meddpiccGrid(sim, state) : null,
     stages,
     asked,
     missed,
