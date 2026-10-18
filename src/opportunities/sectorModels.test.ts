@@ -489,5 +489,6 @@ describe("revue IA d'un deal complexe", () => {
     const text = buildMeddpiccAddendum("Complexe");
     for (const m of MEDDPICC) expect(text).toContain(m.name);
     expect(text).toContain("lettre la plus faible");
+    expect(text).toContain("N'écris jamais « MEDDPICC »");
   });
 });

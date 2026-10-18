@@ -14366,6 +14366,10 @@ a {
   min-width: 0;
 }
 
+.sim-meddpicc li {
+  border-left-width: 4px;
+}
+
 .sim-meddpicc-letter {
   flex: none;
   width: 1.6rem;

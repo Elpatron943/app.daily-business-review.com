@@ -90,7 +90,7 @@ export const MEDDPICC_STATUS_LABEL: Record<MeddpiccStatus, string> = {
 export function buildMeddpiccAddendum(levelLabel: string): string {
   const lines = MEDDPICC.map((m) => `- ${m.letter} · ${m.name} (${m.label}) : ${m.question}`);
   return `# MEDDPICC (vente complexe : ${levelLabel})
-Ce deal est une vente complexe : qualifie-le avec MEDDPICC.
+Ce deal est une vente complexe : qualifie-le avec la grille ci-dessous (méthode MEDDPICC). N'écris jamais « MEDDPICC », ni les noms anglais ou les lettres de la grille : parle uniquement avec les libellés français entre parenthèses.
 ${lines.join("\n")}
 
 Pour chaque lettre, dis si <diagnostic> ou les réponses du commercial la valident, la mettent en risque, ou ne disent rien. Commence par la lettre la plus faible et pose la question qui la valide. Le Champion et le Decision process se prouvent par des faits (un accès obtenu, une étape datée), pas par une impression du commercial.`;

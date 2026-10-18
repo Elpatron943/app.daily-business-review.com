@@ -386,14 +386,11 @@ export default function MeetingSimulator({
           <h4>Débrief</h4>
           {debrief.meddpicc ? (
             <div className="deal-review-debrief-part">
-              <strong>MEDDPICC du deal</strong>
+              <strong>Qualification du deal</strong>
               <span className="muted"> · vente complexe, sur tout le cycle</span>
               <ul className="sim-meddpicc">
                 {debrief.meddpicc.map((m) => (
                   <li key={m.id} className={`is-${m.status}`} title={m.question}>
-                    <span className="sim-meddpicc-letter" aria-hidden>
-                      {m.letter}
-                    </span>
                     <span>
                       <strong>{m.label}</strong>
                       <span className="sim-meddpicc-status">
