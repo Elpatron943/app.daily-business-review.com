@@ -43,3 +43,12 @@ Source runtime : `src/opportunities/dealReviewSectors.ts` (ces fichiers MD sont 
 ## Usage prévu
 
 Injecter l’agent du sous-secteur choisi en complément du prompt système générique, sans jamais inventer de faits hors `<diagnostic>`.
+
+## Modèles sectoriels : rendez-vous simulés et analyse (oct. 2026)
+
+Source runtime : `src/opportunities/sectorModels.ts`. Le commercial choisit **ce qu'il vend** (profil vendeur : éditeur SaaS, ESN, conseil, fabricant, services récurrents) et **le secteur de son client** (familles ci-dessus, ramenées à un modèle client : banque-assurance, public, santé publique, énergie-eau-transports, industrie, ou générique ; couche « grands groupes » si le compte est rattaché à un groupe).
+
+- **Rendez-vous simulé** (Sales et Pilotage) : l'IA joue l'acheteur d'un rendez-vous R1 découverte, R2 démonstration, R3 revue sécurité-conformité-juridique ou R4 achats, en suivant l'arbre de décision du secteur client et les objections du profil vendeur ; débrief à la fin (« débrief »). Rien n'est écrit dans la fiche.
+- **Revue du deal** (Pilotage) : le prompt reçoit en plus le comité attendu, les détenteurs du veto, les règles sourcées et les passages clés du secteur client.
+
+Règles marquées « sourcé » (lien + date) ou « hypothèse » / « à vérifier » : à calibrer sur 30 deals clos par secteur. Miroir lisible : cerveau DBR, notes `secteur-*` et `projet-modeles-sectoriels`.

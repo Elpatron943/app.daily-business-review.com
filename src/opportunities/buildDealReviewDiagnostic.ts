@@ -183,6 +183,8 @@ export function buildDealReviewSystemPrompt(opts: {
   agentFirstName?: string | null;
   /** Agent complet du sous-secteur (docs/agents/commercial). */
   sectorAddendum?: string | null;
+  /** Modèle sectoriel client + profil vendeur (sectorModels, Pilotage). */
+  sectorModelAddendum?: string | null;
 }): string {
   const agentName = opts.agentFirstName?.trim();
   const who = agentName
@@ -195,6 +197,9 @@ export function buildDealReviewSystemPrompt(opts: {
 Tu incarnes la persona suivante (prioritaire pour le vocabulaire et les relances)${agentName ? ` — tu t'appelles ${agentName}` : ""} :
 ${opts.sectorAddendum.trim()}
 Sans inventer de faits hors <diagnostic>.`
+    : "";
+  const modelBlock = opts.sectorModelAddendum?.trim()
+    ? `\n\n${opts.sectorModelAddendum.trim()}`
     : "";
 
   return `${who}. Tu fais une revue de deal avec ${opts.sellerFirstName} sur l'opportunité décrite dans <diagnostic>.
@@ -216,7 +221,7 @@ Aider le commercial à voir lui-même pourquoi ce deal bloque et quelle est la p
 - Tu ne notes pas le commercial et tu ne le compares à personne.
 - Si <previous_answers> contient un engagement passé, demande ce qui s'est passé avant d'aller plus loin.
 - Tu tutoies, tu restes direct et cordial. Pas de jargon gratuit, pas de flatterie, pas d'emoji.
-- Messages courts : 3 phrases au plus, sauf le résumé final.${sectorBlock}
+- Messages courts : 3 phrases au plus, sauf le résumé final.${sectorBlock}${modelBlock}
 
 # Format de chaque réponse
 Réponds uniquement en JSON :
