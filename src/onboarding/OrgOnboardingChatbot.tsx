@@ -16,6 +16,10 @@ import { supabase } from "../supabase/client";
 import { mergeOnboardingDraft } from "./applyOnboardingDraft";
 import { buildHeuristicDraft } from "./buildOnboardingEnrichmentPrompt";
 import {
+  savedAnswerSections,
+  savedConfigSections,
+} from "./savedSetup";
+import {
   EMPTY_ANSWERS,
   ONBOARDING_FUNNEL,
   type OnboardingAnswers,
@@ -23,7 +27,7 @@ import {
   type OnboardingDraftItem,
 } from "./types";
 
-type Phase = "chat" | "enriching" | "review" | "done";
+type Phase = "chat" | "enriching" | "review" | "done" | "recap";
 
 type ChatMsg = {
   id: string;
@@ -125,27 +129,32 @@ export default function OrgOnboardingChatbot() {
     setBusy(false);
   }
 
-  function openAssistant() {
-    resetConversation();
-    setOpen(true);
-  }
-
-  useEffect(() => {
-    if (!open || startedRef.current) return;
-    startedRef.current = true;
+  function openingMessages(): ChatMsg[] {
     const first = ONBOARDING_FUNNEL[0];
-    setMessages([
+    const firstName = profile?.full_name?.split(/\s+/)[0];
+    return [
       {
         id: "welcome",
         role: "bot",
-        text: `Bienvenue${profile?.full_name ? ` ${profile.full_name.split(/\s+/)[0]}` : ""} ! On configure DBR en mode questions/réponses — offre, Pourquoi, Pourquoi maintenant, Pourquoi nous. Réponds librement ; tu valideras tout avant application.`,
+        text: `Bienvenue${firstName ? ` ${firstName}` : ""} ! On configure DBR en mode questions/réponses — offre, Pourquoi, Pourquoi maintenant, Pourquoi nous. Réponds librement ; tu valideras tout avant application.`,
       },
       {
         id: `q-${first.id}`,
         role: "bot",
         text: first.botMessage,
       },
-    ]);
+    ];
+  }
+
+  function startChat() {
+    startedRef.current = true;
+    setPhase("chat");
+    setStepIndex(0);
+    setAnswers(EMPTY_ANSWERS);
+    setInput("");
+    setMessages(openingMessages());
+    setDraft(null);
+    setError(null);
     void checkOpenAiStatus().then((s) => {
       if (!s.configured) {
         setAiHint(
@@ -153,6 +162,20 @@ export default function OrgOnboardingChatbot() {
         );
       }
     });
+  }
+
+  function openAssistant() {
+    resetConversation();
+    if (organization?.onboarding_completed_at) {
+      startedRef.current = true;
+      setPhase("recap");
+    }
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open || startedRef.current) return;
+    startChat();
   }, [open, profile?.full_name]);
 
   useEffect(() => {
@@ -162,10 +185,38 @@ export default function OrgOnboardingChatbot() {
   }, [messages, phase, draft, open]);
 
   const progress = useMemo(() => {
-    if (phase === "review" || phase === "done") return 100;
-    if (phase === "enriching") return 92;
-    return Math.round((stepIndex / ONBOARDING_FUNNEL.length) * 90);
+    const total = ONBOARDING_FUNNEL.length;
+    if (
+      phase === "review" ||
+      phase === "done" ||
+      phase === "enriching" ||
+      phase === "recap"
+    ) {
+      return 100;
+    }
+    return Math.round(((stepIndex + 1) / total) * 100);
   }, [phase, stepIndex]);
+
+  const progressLabel = useMemo(() => {
+    const total = ONBOARDING_FUNNEL.length;
+    if (phase === "recap") return "Paramétrage enregistré";
+    if (phase === "done") return "Terminé";
+    if (phase === "review") return "Validation";
+    if (phase === "enriching") return "Préparation de la proposition";
+    const current = Math.min(stepIndex + 1, total);
+    return `Question ${current} sur ${total}`;
+  }, [phase, stepIndex]);
+
+  const savedSections = useMemo(() => {
+    const fromAnswers = savedAnswerSections(config.onboardingAnswers);
+    if (fromAnswers.length) {
+      return { source: "answers" as const, sections: fromAnswers };
+    }
+    return {
+      source: "config" as const,
+      sections: savedConfigSections(config, organization?.name ?? ""),
+    };
+  }, [config, organization?.name]);
 
   if (!forceModal && !canUseSalesAssistant) return null;
 
@@ -268,7 +319,10 @@ export default function OrgOnboardingChatbot() {
     setBusy(true);
     setError(null);
     try {
-      const next = mergeOnboardingDraft(config, draft);
+      const next = {
+        ...mergeOnboardingDraft(config, draft),
+        onboardingAnswers: { ...answers },
+      };
       replaceConfig(next);
       if (supabase && draft.orgName.trim()) {
         await supabase
@@ -287,7 +341,7 @@ export default function OrgOnboardingChatbot() {
           id: `done-${Date.now()}`,
           role: "bot",
           text: canUseSalesAssistant
-            ? "C’est appliqué. Pour ajuster plus tard, rouvre l’assistant — pas besoin de menus de configuration."
+            ? "C’est appliqué. Rouvre l’assistant pour revoir ces réponses."
             : "Paramètres appliqués. Tu peux maintenant continuer dans DBR.",
         },
       ]);
@@ -354,8 +408,9 @@ export default function OrgOnboardingChatbot() {
                 </p>
                 <h2>Assistant de paramétrage</h2>
                 <p className="muted onboard-sub">
-                  Questions / réponses — tu valides avant que quoi que ce soit
-                  soit écrit.
+                  {phase === "recap"
+                    ? "Données validées pour ton organisation."
+                    : "Questions / réponses — tu valides avant que quoi que ce soit soit écrit."}
                 </p>
               </div>
               <button
@@ -368,13 +423,69 @@ export default function OrgOnboardingChatbot() {
               </button>
             </header>
 
-            <div className="onboard-progress" aria-hidden>
-              <div style={{ width: `${progress}%` }} />
+            <div className="onboard-gauge">
+              <div className="onboard-gauge-meta">
+                <span>{progressLabel}</span>
+                <span>{progress}%</span>
+              </div>
+              <div
+                className="onboard-progress"
+                role="progressbar"
+                aria-valuenow={progress}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={progressLabel}
+              >
+                <div style={{ width: `${progress}%` }} />
+              </div>
             </div>
 
             {aiHint ? <p className="muted onboard-ai-hint">{aiHint}</p> : null}
             {error ? <p className="auth-error">{error}</p> : null}
 
+            {phase === "recap" ? (
+              <div className="onboard-recap">
+                <p className="onboard-summary">
+                  {savedSections.sections.length
+                    ? savedSections.source === "answers"
+                      ? "Voici les réponses enregistrées lors de la dernière validation."
+                      : "Voici le paramétrage écrit dans DBR à partir de tes réponses."
+                    : "Aucune donnée enregistrée. Le questionnaire a été passé sans validation."}
+                </p>
+                {savedSections.sections.map((section) => (
+                  <section
+                    key={section.title}
+                    className="onboard-review-section"
+                  >
+                    <h3>{section.title}</h3>
+                    <ul className="onboard-review-list">
+                      {section.lines.map((line, index) => (
+                        <li
+                          key={`${section.title}-${index}`}
+                          className="onboard-recap-line"
+                        >
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+                <div className="onboard-actions">
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setOpen(false)}
+                  >
+                    Fermer
+                  </button>
+                  <button type="button" onClick={startChat}>
+                    Reprendre le questionnaire
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {phase !== "recap" ? (
             <div className="onboard-chat" ref={scrollerRef}>
               {messages.map((m) => (
                 <div
@@ -392,6 +503,7 @@ export default function OrgOnboardingChatbot() {
                 <div className="onboard-bubble bot muted">Analyse en cours…</div>
               ) : null}
             </div>
+            ) : null}
 
             {phase === "chat" && step ? (
               <form

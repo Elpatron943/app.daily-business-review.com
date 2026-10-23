@@ -657,6 +657,11 @@ export type OrgConfig = {
   accountSizes: AccountSizeDef[];
   /** Règles de calcul CA installé / cible. */
   kpiRules: KpiRulesConfig;
+  /**
+   * Réponses brutes du dernier assistant de paramétrage validé.
+   * Absent pour les orgs configurées avant l’enregistrement de ce champ.
+   */
+  onboardingAnswers?: Record<string, string> | null;
 };
 
 /** Rôle d’une phase dans les KPI / filtres. */

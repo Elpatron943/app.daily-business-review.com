@@ -20,6 +20,7 @@ import {
   pushOrgConfigRemote,
   upsertOrgConfigRemote,
 } from "../sync";
+import { normalizeOnboardingAnswers } from "../onboarding/savedSetup";
 import { defaultConfig } from "./defaults";
 import {
   normalizeOppMappingSubtypes,
@@ -839,6 +840,9 @@ export function hydrateOrgConfig(parsed: OrgConfig | null | undefined): OrgConfi
         }
         return rules;
       })(),
+      onboardingAnswers: normalizeOnboardingAnswers(
+        (parsed as OrgConfig & { onboardingAnswers?: unknown }).onboardingAnswers,
+      ),
     };
   } catch {
     return structuredClone(defaultConfig);
